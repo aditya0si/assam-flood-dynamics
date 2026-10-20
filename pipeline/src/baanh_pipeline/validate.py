@@ -9,12 +9,14 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import jsonschema
+import numpy as np
+import rasterio
 from PIL import Image
 from shapely.geometry import Polygon, shape
 from shapely.validation import make_valid
 
 from .config import Config
-from .geo import geodesic_area_km2, iter_coords
+from .geo import geodesic_area_km2, iter_coords, project_geom, row_cell_areas_km2
 from .schemas import (
     BANDS,
     CLASSES,
@@ -22,7 +24,18 @@ from .schemas import (
     SCHEMAS,
     VALIDATION_SCHEMA,
 )
-from .util import atomic_write_json, ensure_dirs, sha256_file, utc_now
+from .util import (
+    atomic_write_json,
+    ensure_dirs,
+    load_fragments,
+    path_size,
+    sha256_file,
+    utc_now,
+)
+
+REQUIRED_GATE_IDS = [f"V{index:02d}" for index in range(1, 21)] + [
+    f"V-A{index}" for index in range(1, 9)
+]
 
 
 REQUIRED_JSON = [
@@ -465,7 +478,8 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         _check(
             "V11",
             "Series and stage consistency",
-            "series = summary at every step (1e−6); threshold = 4.0; stage = mainstem + backwater",
+            "series = summary at every step (1e−6); "
+            f"threshold = {cfg.scenario.threshold_m}; stage = mainstem + backwater",
             f"{len(series_map)} series, {len(steps)} steps, {len(series_failures)} mismatch(es)",
             "; ".join(series_failures[:5]) if series_failures else "series and stage arithmetic consistent",
             "fail" if series_failures else "pass",
@@ -674,11 +688,18 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         )
     )
 
-    # V17 — channel coverage.
+    # V17 — channel coverage (AOI v2 denominator, REVIEW-02).
     hand_meta_path = cfg.root / "pipeline" / "work" / "hand-meta.json"
     hand_meta = _strict_json(hand_meta_path) if hand_meta_path.exists() else {}
-    valid_share = float(hand_meta.get("valid_assam_share", 0.0))
-    clamped_share = float(hand_meta.get("clamped_negative_share", 0.0))
+    valid_share = float(
+        hand_meta.get("valid_aoi_v2_share", hand_meta.get("valid_assam_share", 0.0))
+    )
+    clamped_share = float(
+        hand_meta.get(
+            "clamped_negative_share_aoi_v2",
+            hand_meta.get("clamped_negative_share", 0.0),
+        )
+    )
     min_share = float(cfg.pipeline["validation"]["min_valid_hand_share"])
     warn_share = float(cfg.pipeline["validation"]["warn_valid_hand_share"])
     max_clamped = float(cfg.pipeline["validation"]["max_clamped_negative_share"])
@@ -688,15 +709,19 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         status = "warn"
     else:
         status = "pass"
-    detail = f"valid Assam HAND share {valid_share:.2%}; clamped negatives {clamped_share:.2%}; nodata cells {hand_meta.get('nodata_cells')}"
+    detail = (
+        f"valid AOI v2 HAND share {valid_share:.2%}; clamped negatives "
+        f"{clamped_share:.2%}; nodata cells {hand_meta.get('nodata_cells')}"
+    )
     if clamped_share > max_clamped:
         status = "warn" if status != "fail" else status
-        detail += "; clamped negatives exceed 2%"
+        detail += f"; clamped negatives exceed {max_clamped:.1%} (hard gate V-A6)"
     checks.append(
         _check(
             "V17",
             "Channel coverage",
-            "≥85% of Assam-masked cells valid HAND; no-channel cells reported; clamped negatives ≤2%",
+            "≥85% of AOI v2 cells valid HAND (warn 80–85%, fail <80%); clamped "
+            f"negatives ≤{max_clamped:.1%} (V-A6)",
             f"valid {valid_share:.2%}, clamped {clamped_share:.2%}",
             detail,
             status,
@@ -811,6 +836,346 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         )
     )
 
+    # ------------------------------------------------------------------
+    # REVIEW-02 A4 gates.  V-A1…V-A8 are evaluated from the committed files
+    # and the stage work artifacts; none is hard-coded to pass.
+    # ------------------------------------------------------------------
+    work = cfg.root / "pipeline" / "work"
+    aoi_meta_path = work / "aoi-v2.json"
+    core_mask_path = work / "aoi-v2-core-90m.tif"
+    clip_mask_path = work / "aoi-v2-clip-5km-90m.tif"
+    aoi_meta: dict[str, Any] = {}
+    core_mask = None
+    core_transform = None
+    if aoi_meta_path.exists():
+        aoi_meta = _strict_json(aoi_meta_path)
+    if core_mask_path.exists():
+        with rasterio.open(core_mask_path) as src:
+            core_mask = src.read(1).astype(bool)
+            core_transform = src.transform
+            core_height, core_width = src.height, src.width
+
+    # V-A1 — AOI v2 area.
+    a1_failures = []
+    aoi_area = None
+    if not aoi_meta_path.exists():
+        a1_failures.append("aoi-v2.json missing")
+    if core_mask is None:
+        a1_failures.append("aoi-v2-core-90m.tif missing")
+    if core_mask is not None:
+        grid_areas = row_cell_areas_km2(
+            core_transform, core_height, core_width, cfg.aoi.analysis_crs
+        )
+        aoi_area = float(grid_areas[:, 0].dot(core_mask.sum(axis=1)))
+        aoi_min = float(cfg.pipeline["inundation"]["aoi_v2_area_min_km2"])
+        aoi_max = float(cfg.pipeline["inundation"]["aoi_v2_area_max_km2"])
+        if not (aoi_min <= aoi_area <= aoi_max):
+            a1_failures.append(
+                f"area {aoi_area:,.0f} km² outside {aoi_min:,.0f}–{aoi_max:,.0f} km²"
+            )
+        meta_area = float(aoi_meta.get("core_area_km2", -1.0))
+        if abs(meta_area - aoi_area) > 1.0:
+            a1_failures.append(
+                f"metadata area {meta_area:,.1f} differs from mask area {aoi_area:,.1f}"
+            )
+    checks.append(
+        _check(
+            "V-A1",
+            "AOI v2 area",
+            "AOI v2 (inside Assam, DEM ≤120 m) area between 45,000 and 56,000 km²",
+            f"{aoi_area:,.1f} km²" if aoi_area is not None else "AOI v2 mask missing",
+            "; ".join(a1_failures) if a1_failures else "AOI v2 area inside the review band",
+            "fail" if a1_failures else "pass",
+        )
+    )
+
+    # V-A2 — channel share and midpoint/waterway policy.
+    a2_failures = []
+    channel_cells_aoi = None
+    channel_share_aoi = None
+    channels_path = work / "channels-90m.tif"
+    channel_lines_path = work / "channel-lines.geojson"
+    channel_limit = float(cfg.pipeline["rivers"]["max_channel_cell_share_of_aoi_v2"])
+    if core_mask is None:
+        a2_failures.append("AOI v2 core mask missing")
+    if not channels_path.exists():
+        a2_failures.append("channels-90m.tif missing")
+    elif core_mask is not None:
+        with rasterio.open(channels_path) as src:
+            channel_mask = src.read(1) > 0
+            if channel_mask.shape != core_mask.shape:
+                a2_failures.append("channel mask shape differs from AOI v2 mask")
+            else:
+                channel_cells_aoi = int(channel_mask[core_mask].sum())
+                channel_share_aoi = channel_cells_aoi / int(core_mask.sum())
+                if channel_share_aoi > channel_limit:
+                    a2_failures.append(
+                        f"channel share {channel_share_aoi:.2%} > {channel_limit:.1%}"
+                    )
+    midpoint_outside = None
+    nonriver = None
+    if not channel_lines_path.exists():
+        a2_failures.append("channel-lines.geojson missing")
+    elif core_mask is None or not clip_mask_path.exists():
+        a2_failures.append("AOI v2 clip mask missing for midpoint check")
+    else:
+        channel_lines = _strict_json(channel_lines_path)
+        with rasterio.open(clip_mask_path) as src:
+            clip_mask = src.read(1).astype(bool)
+            clip_transform = src.transform
+            clip_height, clip_width = src.height, src.width
+        midpoint_outside = 0
+        nonriver = 0
+        for channel_feature in channel_lines.get("features", []):
+            props = channel_feature.get("properties", {})
+            if props.get("waterway") != "river":
+                nonriver += 1
+            geom = project_geom(
+                shape(channel_feature["geometry"]),
+                cfg.aoi.output_crs,
+                cfg.aoi.analysis_crs,
+            )
+            midpoint = geom.interpolate(0.5, normalized=True)
+            col, row = ~clip_transform * (midpoint.x, midpoint.y)
+            col_i, row_i = int(math.floor(col)), int(math.floor(row))
+            if not (
+                0 <= row_i < clip_height
+                and 0 <= col_i < clip_width
+                and bool(clip_mask[row_i, col_i])
+            ):
+                midpoint_outside += 1
+        if midpoint_outside:
+            a2_failures.append(
+                f"{midpoint_outside} channel midpoint(s) outside AOI v2 + 5 km"
+            )
+        if nonriver:
+            a2_failures.append(f"{nonriver} non-river waterway(s) in the model set")
+    checks.append(
+        _check(
+            "V-A2",
+            "Channel policy",
+            "channel cells ≤4.0% of AOI v2; zero channel ways with midpoint outside "
+            "AOI v2 + 5 km; every model way is waterway=river",
+            (
+                f"{channel_cells_aoi:,} cells = {channel_share_aoi:.2%} of AOI v2; "
+                f"midpoints outside {midpoint_outside}; non-river {nonriver}"
+                if channel_share_aoi is not None and midpoint_outside is not None
+                else "channel mask or lines missing"
+            ),
+            "; ".join(a2_failures) if a2_failures else "channel share and policy inside the gate",
+            "fail" if a2_failures else "pass",
+        )
+    )
+
+    # V-A3 — stage table v2.
+    scenario_doc = docs.get("scenario.json") or {}
+    scenario_steps = scenario_doc.get("steps", [])
+    stage_values = [float(step["stage_m"]) for step in scenario_steps]
+    a3_failures = []
+    if len(stage_values) != 12:
+        a3_failures.append(f"{len(stage_values)} steps")
+    else:
+        for index in range(7):
+            if stage_values[index + 1] <= stage_values[index]:
+                a3_failures.append(
+                    f"S{index:02d}->S{index + 1:02d} not strictly rising"
+                )
+        for index in range(8, 11):
+            if stage_values[index + 1] >= stage_values[index]:
+                a3_failures.append(
+                    f"S{index:02d}->S{index + 1:02d} not strictly falling"
+                )
+        if abs(stage_values[7] - 2.50) > 1e-9:
+            a3_failures.append(f"peak {stage_values[7]:.3f} m != 2.50 m")
+        if max(stage_values) != stage_values[7]:
+            a3_failures.append(f"maximum at S{stage_values.index(max(stage_values)):02d}")
+        if int(scenario_doc.get("peak_step", -1)) != 7:
+            a3_failures.append(f"peak_step {scenario_doc.get('peak_step')} != 7")
+    checks.append(
+        _check(
+            "V-A3",
+            "Stage series v2",
+            "strictly increases S00→S07; strictly decreases S08→S11; peak = 2.50 m at S07",
+            " -> ".join(f"{value:.2f}" for value in stage_values)
+            if stage_values
+            else "scenario.json missing",
+            "; ".join(a3_failures) if a3_failures else "stage table v2 shape and peak valid",
+            "fail" if a3_failures else "pass",
+        )
+    )
+
+    # V-A4 — peak extent plausibility band.
+    totals = summary.get("totals", {}) if isinstance(summary, dict) else {}
+    peak_km2 = float(totals.get("max_area_km2", max(areas) if areas else 0.0))
+    peak_min = float(cfg.pipeline["inundation"]["peak_extent_min_km2"])
+    peak_max = float(cfg.pipeline["inundation"]["peak_extent_max_km2"])
+    flood_prone_area = float(cfg.aoi.raw["flood_prone_area_km2"])
+    max_flood_prone_share = float(
+        cfg.pipeline["inundation"]["max_peak_area_share_of_flood_prone"]
+    )
+    flood_prone_share = peak_km2 / flood_prone_area if flood_prone_area else 0.0
+    a4_failures = []
+    if not (peak_min <= peak_km2 <= peak_max):
+        a4_failures.append(
+            f"{peak_km2:,.0f} km² outside {peak_min:,.0f}–{peak_max:,.0f} km²"
+        )
+    if flood_prone_share > max_flood_prone_share:
+        a4_failures.append(
+            f"{flood_prone_share:.1%} of flood-prone area > {max_flood_prone_share:.0%}"
+        )
+    checks.append(
+        _check(
+            "V-A4",
+            "Peak extent plausibility",
+            f"peak extent {peak_min:,.0f}–{peak_max:,.0f} km² and ≤"
+            f"{max_flood_prone_share:.0%} of the {flood_prone_area:,.0f} km² "
+            "flood-prone area",
+            f"{peak_km2:,.0f} km² = {flood_prone_share:.1%} of flood-prone"
+            + (
+                f"; {peak_km2 / float(totals['aoi_v2_area_km2']):.1%} of AOI v2"
+                if totals.get("aoi_v2_area_km2")
+                else ""
+            ),
+            "; ".join(a4_failures)
+            if a4_failures
+            else "peak extent inside the reviewer-selected band",
+            "fail" if a4_failures else "pass",
+        )
+    )
+
+    # V-A5 — peak depth.
+    a5_failures = []
+    peak_index_summary = int(summary.get("peak_step", -1)) if isinstance(summary, dict) else -1
+    peak_step_summary = (
+        steps[peak_index_summary]
+        if 0 <= peak_index_summary < len(steps)
+        else {}
+    )
+    peak_median = peak_step_summary.get("median_depth_m")
+    peak_max_depth = peak_step_summary.get("max_depth_m")
+    if peak_median is None:
+        a5_failures.append("summary has no median_depth_m at the peak")
+    elif float(peak_median) > 1.5:
+        a5_failures.append(f"median {float(peak_median):.3f} m > 1.5 m")
+    if peak_max_depth is None:
+        a5_failures.append("summary has no max_depth_m at the peak")
+    elif float(peak_max_depth) > 2.60 + 1e-9:
+        a5_failures.append(f"max {float(peak_max_depth):.3f} m > 2.60 m")
+    checks.append(
+        _check(
+            "V-A5",
+            "Peak depth",
+            "peak-step median depth ≤1.5 m and max depth ≤2.60 m (stage − HAND)",
+            f"median {peak_median}, max {peak_max_depth}"
+            if peak_median is not None and peak_max_depth is not None
+            else "peak depth missing",
+            "; ".join(a5_failures) if a5_failures else "peak depth inside the gate",
+            "fail" if a5_failures else "pass",
+        )
+    )
+
+    # V-A6 — clamped HAND.
+    clamped_aoi = float(
+        hand_meta.get(
+            "clamped_negative_share_aoi_v2",
+            hand_meta.get("clamped_negative_share", 1.0),
+        )
+    )
+    clamped_limit = float(cfg.pipeline["validation"]["max_clamped_negative_share"])
+    a6_failures = []
+    if clamped_aoi > clamped_limit:
+        a6_failures.append(f"{clamped_aoi:.2%} > {clamped_limit:.1%}")
+    checks.append(
+        _check(
+            "V-A6",
+            "Clamped HAND",
+            f"clamped negative HAND cells inside AOI v2 ≤{clamped_limit:.1%}",
+            f"{clamped_aoi:.2%}",
+            "; ".join(a6_failures) if a6_failures else "clamped share inside the gate",
+            "fail" if a6_failures else "pass",
+        )
+    )
+
+    # V-A7 — hydrograph shape, exact.
+    a7_failures = []
+    if len(areas) != 12:
+        a7_failures.append(f"{len(areas)} steps")
+    else:
+        for index in range(7):
+            if areas[index + 1] < areas[index] - 1e-9:
+                a7_failures.append(
+                    f"S{index:02d}->S{index + 1:02d} decreases"
+                )
+        for index in range(7, 11):
+            if areas[index + 1] > areas[index] + 1e-9:
+                a7_failures.append(
+                    f"S{index:02d}->S{index + 1:02d} increases"
+                )
+        if areas.index(max(areas)) != 7:
+            a7_failures.append(f"peak at S{areas.index(max(areas)):02d}")
+        if int(summary.get("peak_step", -1)) != 7:
+            a7_failures.append(f"peak_step {summary.get('peak_step')} != 7")
+    checks.append(
+        _check(
+            "V-A7",
+            "Hydrograph shape",
+            "rising limb S00→S07 non-decreasing; recession S08→S11 non-increasing; "
+            "peak at S07",
+            " -> ".join(f"{value:,.1f}" for value in areas) if areas else "no summary",
+            "; ".join(a7_failures) if a7_failures else "hydrograph shape valid",
+            "fail" if a7_failures else "pass",
+        )
+    )
+
+    # V-A8 — stage-09 wall time and artifact size.
+    fragments = load_fragments()
+    stage09 = fragments.get("09", {})
+    stage09_wall = stage09.get("wall_seconds")
+    npz_path = work / "inundation-stack.npz"
+    npz_bytes = npz_path.stat().st_size if npz_path.exists() else 0
+    masks_bytes = path_size(work / "inundation-masks")
+    max_output_bytes = max(
+        (int(item.get("bytes", 0)) for item in stage09.get("outputs", [])),
+        default=0,
+    )
+    limit_bytes = 300 * 1024 * 1024
+    a8_failures = []
+    if stage09_wall is None:
+        a8_failures.append("stage 09 provenance fragment missing")
+    elif float(stage09_wall) > 600.0:
+        a8_failures.append(f"wall {float(stage09_wall):.1f} s > 600 s")
+    if npz_bytes > limit_bytes:
+        a8_failures.append(f"npz {npz_bytes} bytes > 300 MB")
+    if masks_bytes > limit_bytes:
+        a8_failures.append(f"mask cache {masks_bytes} bytes > 300 MB")
+    if max_output_bytes > limit_bytes:
+        a8_failures.append(f"largest stage-09 artifact {max_output_bytes} bytes > 300 MB")
+    checks.append(
+        _check(
+            "V-A8",
+            "Stage 09 performance",
+            "stage 09 wall time ≤10 min; no inundation-stack.npz above 300 MB; every "
+            "stage-09 working artifact ≤300 MB",
+            (
+                f"wall {float(stage09_wall):.1f} s, npz {npz_bytes / 1024 / 1024:.1f} MB, "
+                f"masks {masks_bytes / 1024 / 1024:.1f} MB, largest "
+                f"{max_output_bytes / 1024 / 1024:.1f} MB"
+                if stage09_wall is not None
+                else "stage 09 fragment missing"
+            ),
+            "; ".join(a8_failures) if a8_failures else "stage 09 within time and size limits",
+            "fail" if a8_failures else "pass",
+        )
+    )
+
+    present_ids = {check["id"] for check in checks}
+    missing_ids = [gate_id for gate_id in REQUIRED_GATE_IDS if gate_id not in present_ids]
+    if missing_ids:
+        raise RuntimeError(
+            "stage 14: validation did not evaluate every required gate; missing "
+            + ", ".join(missing_ids)
+        )
+
     report = _build_report(checks, docs, files, version)
     report_errors = [
         error.message
@@ -854,7 +1219,9 @@ def _build_report(checks: list[dict], docs: dict, files: list[Path], version: st
             feature_count += len(doc.get("features", []))
     failures = sum(1 for check in checks if check["status"] == "fail")
     warnings = sum(1 for check in checks if check["status"] == "warn")
-    status = "pass" if failures == 0 and len(checks) >= 20 else "fail"
+    present_ids = {check["id"] for check in checks}
+    all_gates_present = all(gate_id in present_ids for gate_id in REQUIRED_GATE_IDS)
+    status = "pass" if failures == 0 and all_gates_present else "fail"
     return {
         "schema_version": "1.0.0",
         "generated_at": utc_now(),
@@ -865,6 +1232,7 @@ def _build_report(checks: list[dict], docs: dict, files: list[Path], version: st
             "files": len(files),
             "steps": 12,
             "features": feature_count,
+            "gates": len(checks),
             "failures": failures,
             "warnings": warnings,
         },

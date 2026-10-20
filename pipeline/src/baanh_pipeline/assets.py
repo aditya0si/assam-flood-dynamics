@@ -35,14 +35,17 @@ def _exposure(peak: float | None) -> str:
 
 def run(
     cfg: Config,
-    stack_path: Path,
+    masks_dir: Path,
+    hand_path: Path,
     frames_path: Path,
     districts_path: Path,
     out_path: Path,
     refresh: bool = False,
 ) -> dict | None:
     ensure_dirs()
-    stage = StageRecord("12", "build-assets", inputs=[stack_path, frames_path, districts_path])
+    stage = StageRecord(
+        "12", "build-assets", inputs=[masks_dir, hand_path, frames_path, districts_path]
+    )
     cache = cfg.root / "pipeline" / "cache" / "assets"
     cache.mkdir(parents=True, exist_ok=True)
     raw_path = cache / "overpass-facilities.json"
@@ -83,10 +86,19 @@ def run(
     tree = STRtree(district_geoms)
     state = unary_union(district_geoms)
 
-    with rasterio.open(stack_path) as src:
+    with rasterio.open(hand_path) as src:
         transform = src.transform
         height, width = src.height, src.width
-        step_count = src.count
+        hand = src.read(1)
+        hand_nodata = float(src.nodata if src.nodata is not None else cfg.aoi.nodata)
+    step_count = int(cfg.scenario.step_count)
+    mask_paths = [masks_dir / f"step-{index:02d}-wet.tif" for index in range(step_count)]
+    missing_masks = [path for path in mask_paths if not path.exists()]
+    if missing_masks:
+        raise RuntimeError(
+            "stage 12: per-step wet masks are missing; re-run stage 09 "
+            f"({', '.join(path.name for path in missing_masks[:3])})"
+        )
 
     candidates = []
     for element in elements:
@@ -131,10 +143,13 @@ def run(
     rows = np.array([c["row"] for c in candidates])
     cols = np.array([c["col"] for c in candidates])
     series = np.zeros((step_count, len(candidates)), dtype=np.float32)
-    with rasterio.open(stack_path) as src:
-        for step in range(step_count):
-            band = src.read(step + 1)
-            series[step] = band[rows, cols]
+    hand_values = hand[rows, cols]
+    for step in range(step_count):
+        stage_m = float(cfg.scenario.steps[step]["stage_m"])
+        with rasterio.open(mask_paths[step]) as src:
+            wet = src.read(1)[rows, cols] > 0
+        series[step] = np.where(wet, stage_m - hand_values, 0.0)
+        series[step][hand_values == hand_nodata] = 0.0
 
     features = []
     for index, candidate in enumerate(candidates):
@@ -198,8 +213,9 @@ def run(
         "ODbL 1.0 (OpenStreetMap contributors)",
     )
     stage.finish(
-        "OSM points inside Assam; depth sampled from the scenario stack; completeness "
-        "unknown (incomplete-osm); no capacity, staff or operational status inferred."
+        "OSM points inside Assam; depth sampled from the stage-09 per-step uint8 wet "
+        "masks and HAND (no float stack); completeness unknown (incomplete-osm); no "
+        "capacity, staff or operational status inferred."
     )
     print(f"[12] ok: {len(features)} facilities, {out_path.stat().st_size / 1024:.0f} KB")
     return {"facility_count": len(features)}

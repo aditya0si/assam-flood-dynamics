@@ -17,7 +17,6 @@ def run(
     cfg: Config,
     scenario_path: Path,
     summary_path: Path,
-    stack_path: Path,
     dem_path: Path,
     channels_path: Path,
     transects_path: Path,
@@ -28,7 +27,7 @@ def run(
     stage = StageRecord(
         "11",
         "build-series",
-        inputs=[scenario_path, summary_path, stack_path, dem_path, channels_path, transects_path],
+        inputs=[scenario_path, summary_path, dem_path, channels_path, transects_path],
     )
     scenario = cfg.scenario
     version = cfg.pipeline["dataset_version"]

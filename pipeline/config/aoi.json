@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "name": "Assam plus regional buffer",
+  "name": "Assam valley floor (AOI v2) plus regional buffer",
   "bbox": [89.55, 23.95, 96.15, 28.15],
   "bbox_crs": "EPSG:4326",
   "analysis_crs": "EPSG:32646",
@@ -12,9 +12,17 @@
     "iso": "IN-AS",
     "name": "Assam"
   },
+  "analysis_domain": {
+    "definition": "(inside Assam) intersect (DEM <= max_dem_m)",
+    "max_dem_m": 120.0,
+    "edge_buffer_km": 2.0,
+    "channel_clip_buffer_km": 5.0
+  },
   "rivers_clip_buffer_km": 5.0,
   "channel_buffer_km": 2.0,
   "max_channel_distance_m": 12000.0,
   "coordinate_decimals": 5,
-  "coordinate_bounds_margin_deg": 0.01
+  "coordinate_bounds_margin_deg": 0.01,
+  "assam_area_km2_reference": 78523.0,
+  "flood_prone_area_km2": 31050.0
 }

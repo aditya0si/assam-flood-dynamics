@@ -1,7 +1,13 @@
-"""Stage 09 — HAND-threshold inundation sequence, depth bands and summary."""
+"""Stage 09 — AOI-v2 HAND inundation, written one step at a time.
+
+REVIEW-02 A5: build a per-step uint8 wet mask, never a float stack of all
+steps; threshold inside AOI v2 (inside Assam, DEM <= 120 m) before any
+polygonisation; write one GeoJSON per step and combine those into
+``flood-frames.geojson``; do not write ``inundation-stack.npz``.  Stage 10
+and stage 12 read the per-step masks instead.
+"""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import numpy as np
@@ -12,13 +18,12 @@ from scipy.ndimage import label
 from shapely.geometry import MultiPolygon, Polygon, shape
 from shapely.ops import unary_union
 
+from . import aoi_domain
 from .config import Config
 from .geo import (
-    drop_small_parts,
     feature,
     feature_collection,
     geodesic_area_km2,
-    geom_to_geojson,
     load_geojson,
     polygon_parts,
     project_geom,
@@ -27,10 +32,11 @@ from .geo import (
 )
 from .util import (
     StageRecord,
+    atomic_write_bytes,
     atomic_write_json,
     ensure_dirs,
     json_bytes,
-    utc_now,
+    path_size,
 )
 
 
@@ -91,8 +97,7 @@ def _polygonise_band(
     if not parts:
         return None, 0.0
     # The connected components of one band are disjoint.  Build a MultiPolygon
-    # directly instead of unioning thousands of parts per step (the union was
-    # the dominant runtime and is not needed for disjoint parts).
+    # directly instead of unioning thousands of parts per step.
     multi = MultiPolygon(parts)
     if not multi.is_valid:
         multi = valid(unary_union(parts))
@@ -104,8 +109,7 @@ def _polygonise_band(
         return None, 0.0
     # Simplifying one MultiPolygon with tens of thousands of parts is very
     # expensive.  Simplify each disjoint part in WGS84 with an equivalent
-    # ground tolerance (~75 m in latitude); this is the spec's latitude-safe
-    # fallback and keeps the runtime bounded.
+    # ground tolerance (~75 m in latitude).
     tolerance_deg = tolerance_m / 111320.0
     kept = []
     for part in polygon_parts(wgs):
@@ -139,6 +143,34 @@ def _polygonise_band(
     return result, area
 
 
+def _district_raster(cfg: Config, transform, height: int, width: int):
+    districts_path = cfg.root / "pipeline" / "work" / "districts-base.geojson"
+    if not districts_path.exists():
+        return None, [], None
+    data = load_geojson(districts_path)
+    ids: list[str] = []
+    shapes_list = []
+    for index, district_feature in enumerate(data.get("features", []), start=1):
+        ids.append(district_feature["properties"]["district_id"])
+        district_geom = project_geom(
+            shape(district_feature["geometry"]), cfg.aoi.output_crs, cfg.aoi.analysis_crs
+        )
+        shapes_list.append((district_geom, index))
+    if not shapes_list:
+        return None, [], None
+    from rasterio.features import rasterize
+
+    raster = rasterize(
+        shapes_list,
+        out_shape=(height, width),
+        transform=transform,
+        fill=0,
+        all_touched=False,
+        dtype="int32",
+    )
+    return raster, ids, districts_path
+
+
 def run(
     cfg: Config,
     dem_path: Path,
@@ -149,13 +181,23 @@ def run(
     scenario_path: Path,
     out_frames: Path,
     out_summary: Path,
-    out_stack: Path,
+    out_masks_dir: Path,
+    out_frames_dir: Path,
 ) -> dict:
     ensure_dirs()
     stage = StageRecord(
         "09",
         "build-inundation",
-        inputs=[dem_path, hand_path, distance_path, channels_path, state_path, scenario_path],
+        inputs=[
+            dem_path,
+            hand_path,
+            distance_path,
+            channels_path,
+            state_path,
+            scenario_path,
+            cfg.root / "pipeline" / "work" / aoi_domain.META_JSON,
+            cfg.root / "pipeline" / "work" / aoi_domain.CORE_TIF,
+        ],
     )
     scenario = cfg.scenario
     model = scenario.model
@@ -167,12 +209,15 @@ def run(
     min_band_area = float(model["min_polygon_area_km2"])
     version = cfg.pipeline["dataset_version"]
 
+    aoi = aoi_domain.load_saved(cfg)
     with rasterio.open(hand_path) as src:
         hand = src.read(1)
         transform = src.transform
         width = src.width
         height = src.height
         crs = src.crs
+    if hand.shape != aoi.core.shape:
+        raise RuntimeError("stage 09: HAND raster shape does not match AOI v2 mask")
     with rasterio.open(distance_path) as src:
         distance = src.read(1)
     with rasterio.open(channels_path) as src:
@@ -182,98 +227,64 @@ def run(
     if hand.shape != (height, width):
         raise RuntimeError("stage 09: HAND raster shape mismatch")
 
-    state_data = load_geojson(state_path)
-    state_geoms = [shape(f["geometry"]) for f in state_data.get("features", [])]
-    if not state_geoms:
-        raise RuntimeError("stage 09: state outline has no geometry")
-    from .geo import rasterize_geom
-
-    state_utm = project_geom(
-        unary_union(state_geoms), cfg.aoi.output_crs, cfg.aoi.analysis_crs
-    )
-    state_mask = rasterize_geom(
-        state_utm, transform, width, height, dtype="uint8"
-    ).astype(bool)
-    if not state_mask.any():
-        raise RuntimeError("stage 09: state mask is empty")
-
-    districts_path = cfg.root / "pipeline" / "work" / "districts-base.geojson"
-    district_ids = None
-    district_names: list[str] = []
-    if districts_path.exists():
-        stage.inputs.append(districts_path)
-        d_data = load_geojson(districts_path)
-        shapes_list = []
-        for index, district_feature in enumerate(d_data.get("features", []), start=1):
-            district_names.append(district_feature["properties"]["district_id"])
-            district_geom = project_geom(
-                shape(district_feature["geometry"]), cfg.aoi.output_crs, cfg.aoi.analysis_crs
-            )
-            shapes_list.append((district_geom, index))
-        if shapes_list:
-            from rasterio.features import rasterize
-
-            district_ids = rasterize(
-                shapes_list,
-                out_shape=(height, width),
-                transform=transform,
-                fill=0,
-                all_touched=False,
-                dtype="int32",
-            )
-
+    domain = aoi.core & (hand != nodata)
+    if not domain.any():
+        raise RuntimeError("stage 09: AOI v2 has no valid HAND cells")
+    core_cells = aoi.core_cells
+    core_area = aoi.core_area_km2
+    assam_area = aoi.assam_area_km2
+    flood_prone_area = float(cfg.aoi.raw["flood_prone_area_km2"])
+    valid_cell_share = float(domain.sum()) / core_cells if core_cells else 0.0
     areas = row_cell_areas_km2(transform, height, width, cfg.aoi.analysis_crs)
     area_2d = np.broadcast_to(areas, (height, width))
-    valid_hand = hand != nodata
-    valid_assam = valid_hand & state_mask
-    assam_cells = int(state_mask.sum())
-    valid_assam_cells = int(valid_assam.sum())
-    valid_cell_share = valid_assam_cells / assam_cells if assam_cells else 0.0
-    assam_area_km2 = _row_area(areas, state_mask)
-    print(
-        f"[09] Assam mask {assam_cells / 1e6:.2f}M cells, {assam_area_km2:,.0f} km²; "
-        f"valid HAND share {valid_cell_share:.1%}"
-    )
 
-    tmp_depth = out_stack.parent / "_stack-depth.npy"
-    tmp_wet = out_stack.parent / "_stack-wet.npy"
-    out_stack.parent.mkdir(parents=True, exist_ok=True)
-    depth_mm = np.lib.format.open_memmap(
-        tmp_depth, mode="w+", dtype=np.float32, shape=(scenario.step_count, height, width)
+    district_ids, district_names, districts_path = _district_raster(
+        cfg, transform, height, width
     )
-    wet_mm = np.lib.format.open_memmap(
-        tmp_wet, mode="w+", dtype=bool, shape=(scenario.step_count, height, width)
-    )
+    if districts_path is not None:
+        stage.inputs.append(districts_path)
+
+    out_masks_dir.mkdir(parents=True, exist_ok=True)
+    out_frames_dir.mkdir(parents=True, exist_ok=True)
+    for stale in out_masks_dir.glob("step-*-wet.tif"):
+        stale.unlink()
+    for stale in out_frames_dir.glob("step-*.geojson"):
+        stale.unlink()
 
     step_summaries: list[dict] = []
-    frame_features: list[dict] = []
     prev_wet = np.zeros((height, width), dtype=bool)
     district_ever_wet: set[int] = set()
     peak_area = 0.0
     peak_index = 0
+    peak_median_depth = None
+    peak_max_depth = None
+    total_features = 0
 
     for index, step in enumerate(scenario.steps):
         stage_m = float(step["stage_m"])
         step_label = str(step["label"])
         phase = str(step["phase"])
-        wet_raw = valid_assam & (hand <= stage_m)
-        depth_raw = np.where(wet_raw, stage_m - hand, np.float32(0.0)).astype(np.float32)
+        wet_raw = domain & (hand <= stage_m)
         wet, component_count, dropped = _component_filter(
             wet_raw, distance, min_component_cells, res
         )
-        depth = np.where(wet, depth_raw, np.float32(0.0)).astype(np.float32)
-        depth_mm[index] = depth
-        wet_mm[index] = wet
+        depth = np.where(wet, stage_m - hand, np.float32(0.0)).astype(np.float32)
+
+        mask_path = out_masks_dir / f"step-{index:02d}-wet.tif"
+        aoi_domain.write_mask(mask_path, wet, transform, str(crs))
 
         area_km2 = _row_area(areas, wet)
         new_km2 = _row_area(areas, wet & ~prev_wet)
         receded_km2 = _row_area(areas, ~wet & prev_wet)
         if wet.any():
-            max_depth = float(depth.max())
+            values = depth[wet]
+            max_depth = float(values.max())
             mean_depth = _row_area(areas, depth * wet) / area_km2 if area_km2 > 0 else None
+            median_depth = float(np.median(values))
         else:
             max_depth = None
             mean_depth = None
+            median_depth = None
 
         affected = 0
         if district_ids is not None and wet.any():
@@ -282,12 +293,10 @@ def run(
             district_area = np.bincount(
                 wet_ids, weights=wet_weights, minlength=len(district_names) + 1
             )
-            district_area[0] = 0.0  # outside the simplified district union
+            district_area[0] = 0.0
             affected_ids = np.flatnonzero(district_area > 1.0)
             affected = int(len(affected_ids))
             district_ever_wet.update(int(v) for v in affected_ids)
-        elif district_ids is not None:
-            affected = 0
 
         summary_step = {
             "step": index,
@@ -302,18 +311,28 @@ def run(
             "inundated_area_km2": round(area_km2, 4),
             "new_inundation_km2": round(new_km2, 4),
             "receded_area_km2": round(receded_km2, 4),
+            "median_depth_m": round(median_depth, 4) if median_depth is not None else None,
             "max_depth_m": round(max_depth, 4) if max_depth is not None else None,
             "mean_depth_m": round(mean_depth, 4) if mean_depth is not None else None,
             "affected_district_count": affected,
             "valid_cell_share": round(valid_cell_share, 6),
+            "share_of_aoi_v2": round(area_km2 / core_area, 6) if core_area else None,
+            "share_of_assam": round(area_km2 / assam_area, 6) if assam_area else None,
+            "share_of_flood_prone_area": (
+                round(area_km2 / flood_prone_area, 6) if flood_prone_area else None
+            ),
         }
         step_summaries.append(summary_step)
         if area_km2 > peak_area:
             peak_area = area_km2
             peak_index = index
+            peak_median_depth = median_depth
+            peak_max_depth = max_depth
         prev_wet = wet
 
-        # Polygonise bands within the wet bounding window only.
+        # Polygonise only the wet bounding window; every cell is already inside
+        # AOI v2, so no full-state grid is ever polygonised.
+        step_features: list[dict] = []
         if wet.any():
             rows = np.flatnonzero(wet.any(axis=1))
             cols = np.flatnonzero(wet.any(axis=0))
@@ -344,26 +363,43 @@ def run(
                 }
                 feat = feature(geom_wgs, props, cfg.aoi.decimals)
                 if feat is not None:
-                    frame_features.append(feat)
+                    step_features.append(feat)
+        step_features.sort(
+            key=lambda f: (
+                BAND_LABELS.index(
+                    next(b for b in BAND_LABELS if b[0] == f["properties"]["depth_band"])
+                ),
+                -f["properties"]["band_area_km2"],
+                json_bytes(f["geometry"]).decode("utf-8")[:120],
+            )
+        )
+        if not step_features:
+            raise RuntimeError(
+                f"stage 09: step {index} has no flood feature after AOI v2 clipping"
+            )
+        step_payload = feature_collection(
+            f"Scenario inundation depth bands · step {index:02d}",
+            "scenario",
+            step_features,
+            version,
+        )
+        atomic_write_json(out_frames_dir / f"step-{index:02d}.geojson", step_payload, indent=None)
+        total_features += len(step_features)
 
         print(
-            f"[09] S{index:02d} {step_label} {phase:8s} stage {stage_m:.1f} m: "
-            f"{area_km2:,.0f} km² wet ({area_km2 / assam_area_km2:.1%} of Assam), "
-            f"max depth {max_depth if max_depth is None else round(max_depth, 2)}, "
+            f"[09] S{index:02d} {step_label} {phase:8s} stage {stage_m:.2f} m: "
+            f"{area_km2:,.0f} km² ({area_km2 / core_area:.1%} of AOI v2, "
+            f"{area_km2 / assam_area:.1%} of Assam, "
+            f"{area_km2 / flood_prone_area:.1%} of flood-prone), "
+            f"median {median_depth if median_depth is None else round(median_depth, 2)}, "
+            f"max {max_depth if max_depth is None else round(max_depth, 2)}, "
             f"components {component_count} dropped {dropped}"
         )
 
-    depth_mm.flush()
-    wet_mm.flush()
-    np.savez(out_stack, depth=depth_mm, wet=wet_mm)
-    del depth_mm, wet_mm
-    tmp_depth.unlink(missing_ok=True)
-    tmp_wet.unlink(missing_ok=True)
-
-    # Validate the shape of the hydrograph before writing the public files.
+    # Hydrograph shape — exact, not a widened tolerance.
+    tolerance_area = float(cfg.pipeline["inundation"]["monotonic_tolerance"])
     rising = [s["inundated_area_km2"] for s in step_summaries[: scenario.peak_step + 1]]
     recession = [s["inundated_area_km2"] for s in step_summaries[scenario.peak_step :]]
-    tolerance_area = float(cfg.pipeline["inundation"]["monotonic_tolerance"])
     for i in range(len(rising) - 1):
         if rising[i + 1] < rising[i] * (1.0 - tolerance_area):
             raise RuntimeError(
@@ -383,13 +419,32 @@ def run(
         )
     if peak_area <= 0:
         raise RuntimeError("stage 09: peak inundation area is zero")
-    max_share = float(cfg.pipeline["inundation"]["max_peak_area_share_of_assam"])
-    if peak_area > assam_area_km2 * max_share:
+
+    inundation_cfg = cfg.pipeline["inundation"]
+    peak_min = float(inundation_cfg["peak_extent_min_km2"])
+    peak_max = float(inundation_cfg["peak_extent_max_km2"])
+    max_flood_prone_share = float(inundation_cfg["max_peak_area_share_of_flood_prone"])
+    if not (peak_min <= peak_area <= peak_max):
         raise RuntimeError(
-            f"stage 09: peak area {peak_area:,.0f} km² exceeds {max_share:.0%} of Assam "
-            f"({assam_area_km2 * max_share:,.0f} km²)"
+            f"stage 09: peak extent {peak_area:,.0f} km² is outside the V-A4 "
+            f"plausibility band {peak_min:,.0f}–{peak_max:,.0f} km²"
+        )
+    flood_prone_share = peak_area / flood_prone_area
+    if flood_prone_share > max_flood_prone_share:
+        raise RuntimeError(
+            f"stage 09: peak extent {peak_area:,.0f} km² is {flood_prone_share:.1%} of "
+            f"the {flood_prone_area:,.0f} km² flood-prone area, above "
+            f"{max_flood_prone_share:.0%}"
         )
 
+    # Combine the per-step files (A5.3).  The staging directory is removed after
+    # the combined file is written; the committed load contract stays one file.
+    frame_features: list[dict] = []
+    for index in range(scenario.step_count):
+        step_path = out_frames_dir / f"step-{index:02d}.geojson"
+        if not step_path.exists():
+            raise RuntimeError(f"stage 09: missing incremental frame {step_path.name}")
+        frame_features.extend(load_geojson(step_path)["features"])
     frame_features.sort(
         key=lambda f: (
             f["properties"]["step"],
@@ -397,7 +452,7 @@ def run(
                 next(b for b in BAND_LABELS if b[0] == f["properties"]["depth_band"])
             ),
             -f["properties"]["band_area_km2"],
-            json.dumps(f["geometry"])[:120],
+            json_bytes(f["geometry"]).decode("utf-8")[:120],
         )
     )
     frames = feature_collection(
@@ -405,19 +460,21 @@ def run(
     )
     out_frames.parent.mkdir(parents=True, exist_ok=True)
     frames_payload = json_bytes(frames, indent=None)
-    from .util import atomic_write_bytes
-
-    frame_cap = int(cfg.pipeline["validation"]["file_caps_bytes"]["data/flood/flood-frames.geojson"])
+    frame_cap = int(
+        cfg.pipeline["validation"]["file_caps_bytes"]["data/flood/flood-frames.geojson"]
+    )
     if len(frames_payload) > frame_cap:
         raise RuntimeError(
             f"stage 09: flood frames {len(frames_payload)} bytes exceed cap {frame_cap}; "
             "reduce bands only as a last resort and record the deviation"
         )
     atomic_write_bytes(out_frames, frames_payload)
-    total_features = len(frame_features)
-    for index, step in enumerate(scenario.steps):
-        if not any(f["properties"]["step"] == index for f in frame_features):
-            raise RuntimeError(f"stage 09: step {index} has no flood feature")
+    for step_path in out_frames_dir.glob("step-*.geojson"):
+        step_path.unlink()
+    try:
+        out_frames_dir.rmdir()
+    except OSError:
+        pass
 
     summary = {
         "schema_version": "1.0.0",
@@ -436,6 +493,27 @@ def run(
             "peak_stage_m": max(float(s["stage_m"]) for s in step_summaries),
             "scenario_days": int(scenario.raw["total_days"]),
             "districts_any_inundation": len(district_ever_wet),
+            "median_depth_at_peak_m": (
+                round(peak_median_depth, 4) if peak_median_depth is not None else None
+            ),
+            "max_depth_at_peak_m": (
+                round(peak_max_depth, 4) if peak_max_depth is not None else None
+            ),
+            "aoi_v2_area_km2": round(core_area, 4),
+            "assam_area_km2": round(assam_area, 4),
+            "flood_prone_area_km2": flood_prone_area,
+            "peak_extent_share_of_aoi_v2": round(peak_area / core_area, 6),
+            "peak_extent_share_of_assam": round(peak_area / assam_area, 6),
+            "peak_extent_share_of_flood_prone_area": round(flood_prone_share, 6),
+            "plausibility_band": {
+                "min_km2": peak_min,
+                "max_km2": peak_max,
+                "max_share_of_flood_prone_area": max_flood_prone_share,
+                "note": (
+                    "V-A4 band chosen by the reviewer from REVIEW-02; it is not a "
+                    "calibrated observation and not an event forecast."
+                ),
+            },
         },
     }
     out_summary.parent.mkdir(parents=True, exist_ok=True)
@@ -444,21 +522,33 @@ def run(
     public_scenario_path = cfg.root / "public" / "data" / "scenario.json"
     atomic_write_json(public_scenario_path, scenario.raw, indent=2, sort_keys=False)
 
-    stage.out(out_frames, out_summary, out_stack, public_scenario_path)
+    mask_bytes = path_size(out_masks_dir)
+    stage.out(out_frames, out_summary, out_masks_dir, public_scenario_path)
     stage.metric("frames_features", total_features)
     stage.metric("frames_bytes", len(frames_payload))
+    stage.metric("mask_cache_bytes", mask_bytes)
     stage.metric("peak_area_km2", round(peak_area, 4))
-    stage.metric("assam_area_km2", round(assam_area_km2, 4))
-    stage.metric("peak_area_share_of_assam", round(peak_area / assam_area_km2, 6))
-    stage.metric("valid_cell_share", round(valid_cell_share, 6))
-    stage.metric("stack_bytes", out_stack.stat().st_size)
+    stage.metric("aoi_v2_area_km2", round(core_area, 4))
+    stage.metric("assam_area_km2", round(assam_area, 4))
+    stage.metric("flood_prone_area_km2", flood_prone_area)
+    stage.metric("peak_area_share_of_aoi_v2", round(peak_area / core_area, 6))
+    stage.metric("peak_area_share_of_assam", round(peak_area / assam_area, 6))
+    stage.metric("peak_area_share_of_flood_prone_area", round(flood_prone_share, 6))
+    stage.metric("valid_cell_share_aoi_v2", round(valid_cell_share, 6))
+    stage.metric("median_depth_at_peak_m", summary["totals"]["median_depth_at_peak_m"])
+    stage.metric("max_depth_at_peak_m", summary["totals"]["max_depth_at_peak_m"])
     stage.finish(
-        f"Connectivity {model['connectivity']}; depth bands {edges}; bands polygonised "
-        f"separately, simplified at {tolerance:.0f} m in EPSG:32646, converted to WGS84; "
-        "only cells inside the dissolved Assam mask are counted."
+        f"Connectivity {model['connectivity']}; depth bands {edges}; AOI v2 core "
+        f"{core_area:,.1f} km²; per-step uint8 wet masks written to "
+        f"{out_masks_dir.name}/; one GeoJSON per step written then combined into "
+        f"{out_frames.name} and the staging files removed; no inundation-stack.npz. "
+        "Bands polygonised separately, simplified at "
+        f"{tolerance:.0f} m, converted to WGS84; only AOI v2 cells are counted."
     )
     print(
-        f"[09] ok: {total_features} band features, peak {peak_area:,.0f} km² at S{peak_index:02d}, "
-        f"frames {len(frames_payload) / 1024 / 1024:.2f} MB, stack {out_stack.stat().st_size / 1024 / 1024:.0f} MB"
+        f"[09] ok: {total_features} band features, peak {peak_area:,.0f} km² at "
+        f"S{peak_index:02d} ({peak_area / core_area:.1%} of AOI v2, "
+        f"{peak_area / flood_prone_area:.1%} of flood-prone), frames "
+        f"{len(frames_payload) / 1024 / 1024:.2f} MB, masks {mask_bytes / 1024 / 1024:.1f} MB"
     )
     return summary

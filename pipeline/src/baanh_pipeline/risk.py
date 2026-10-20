@@ -90,7 +90,7 @@ def _simplify_wgs(geom, tolerance_m: float, cfg: Config):
 
 def run(
     cfg: Config,
-    stack_path: Path,
+    masks_dir: Path,
     hand_path: Path,
     distance_path: Path,
     channels_path: Path,
@@ -105,7 +105,7 @@ def run(
     stage = StageRecord(
         "10",
         "build-risk",
-        inputs=[stack_path, hand_path, distance_path, channels_path, districts_path, scenario_path],
+        inputs=[masks_dir, hand_path, distance_path, channels_path, districts_path, scenario_path],
     )
     scenario = cfg.scenario
     risk_cfg = cfg.pipeline["risk"]
@@ -124,13 +124,23 @@ def run(
     with rasterio.open(channels_path) as src:
         channel = src.read(1) > 0
 
-    stack = np.load(stack_path, mmap_mode="r")
-    depth = stack["depth"]
-    wet = stack["wet"]
-    if depth.shape != (scenario.step_count, height, width):
+    mask_paths = [masks_dir / f"step-{index:02d}-wet.tif" for index in range(scenario.step_count)]
+    missing_masks = [path for path in mask_paths if not path.exists()]
+    if missing_masks:
         raise RuntimeError(
-            f"stage 10: stack shape {depth.shape} does not match scenario 12 x {height} x {width}"
+            "stage 10: per-step wet masks are missing; re-run stage 09 "
+            f"({', '.join(path.name for path in missing_masks[:3])})"
         )
+
+    def read_wet(index: int) -> np.ndarray:
+        with rasterio.open(mask_paths[index]) as src:
+            wet = src.read(1) > 0
+        if wet.shape != (height, width):
+            raise RuntimeError(
+                f"stage 10: wet mask {mask_paths[index].name} shape {wet.shape} "
+                f"does not match HAND {(height, width)}"
+            )
+        return wet
 
     days = scenario.days
     weights = _duration_weights(days)
@@ -144,8 +154,9 @@ def run(
     first_wet = np.full((height, width), -1, dtype=np.int8)
     wet_any = np.zeros((height, width), dtype=bool)
     for index in range(scenario.step_count):
-        d = np.asarray(depth[index])
-        w = np.asarray(wet[index])
+        stage_m = float(scenario.steps[index]["stage_m"])
+        w = read_wet(index)
+        d = np.where(w, stage_m - hand, np.float32(0.0)).astype(np.float32)
         duration += np.where(d > 0.1, weights[index], np.float32(0.0))
         np.maximum(peak_depth, d, out=peak_depth)
         first_wet = np.where((first_wet < 0) & w, index, first_wet).astype(np.int8)
@@ -327,7 +338,7 @@ def run(
     )
     peak_flooded = np.zeros(n_districts, dtype=np.float64)
     for index in range(scenario.step_count):
-        w = np.asarray(wet[index])
+        w = read_wet(index)
         if not w.any():
             continue
         d_area = np.bincount(
@@ -347,8 +358,11 @@ def run(
     mean_duration = np.divide(
         duration_sum, ever_wet_area, out=np.zeros(n_districts), where=ever_wet_area > 0
     )
-    peak_step_depth = np.asarray(depth[scenario.peak_step])
-    peak_step_wet = np.asarray(wet[scenario.peak_step])
+    peak_stage = float(scenario.steps[scenario.peak_step]["stage_m"])
+    peak_step_wet = read_wet(scenario.peak_step)
+    peak_step_depth = np.where(
+        peak_step_wet, peak_stage - hand, np.float32(0.0)
+    ).astype(np.float32)
     p90_depth = np.zeros(n_districts, dtype=np.float64)
     for index in range(n_districts):
         mask = (district_raster == index + 1) & peak_step_wet
@@ -500,7 +514,7 @@ def run(
 
     # Hotspots.
     hotspot_cfg = risk_cfg["hotspots"]
-    peak_wet = np.asarray(wet[scenario.peak_step])
+    peak_wet = peak_step_wet
     eligible = (
         peak_wet
         & (hand <= float(hotspot_cfg["max_hand_m"]))
@@ -605,7 +619,8 @@ def run(
     stage.finish(
         "Cell risk = 100 x (0.60 x (1 - HAND/6) + 0.40 x duration/136), only cells wet "
         "in >=1 step; district score = 0.45 area share + 0.35 duration + 0.20 p90 peak "
-        "depth; hotspots are low-HAND distant pockets, not breaches. No demographics."
+        "depth; hotspots are low-HAND distant pockets, not breaches. Wet masks and depth "
+        "are read from the stage-09 uint8 per-step cache, not a float stack. No demographics."
     )
     print(
         f"[10] ok: {len(zone_features)} zones ({len(payload) / 1024:.0f} KB), "

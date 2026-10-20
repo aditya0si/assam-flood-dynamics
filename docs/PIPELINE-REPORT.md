@@ -1,114 +1,120 @@
-# Baanh M0 phase A — pipeline report
+# Baanh M0 phase A2 — pipeline report
 
-**Status: BLOCKED at stage 09 (`build-inundation`).** Stages 01–08 are green.
-Stages 09–15 were not completed and no flood/risk/series data was published.
-The stage refused to continue because the specified scenario produced a peak
-inundation area larger than the specification's own 30%-of-Assam sanity bound.
-No data was edited, no stage value was changed, and no gate was lowered to
-make the run pass.
+**Status: BLOCKED at stage 09 (`build-inundation`).** Stages 06–08 are green and
+committed. Stage 09 computed a complete sequence and then refused to write the
+committed frames because the combined file is 25,885,838 bytes against the
+6,815,744-byte cap. Two A4 gates already fail on the same run: **V-A5**
+(peak median depth 2.50 m vs ≤1.5 m) and **V-A6** (clamped HAND inside AOI v2
+5.32 % vs ≤3.0 %). No gate was widened, no data was hand-edited, and no
+flood/risk/series layer was published.
 
 - Run date: 2026-10-21 (local), Windows 11, Python 3.11.16 (64-bit).
 - Repository: `C:\Users\oliad\Desktop\baanh`.
-- Working tree at the time of this report: pipeline code and the committed
-  source/geometry outputs; `pipeline/cache/` and `pipeline/work/` are gitignored.
-- The stage-09 failure is reproducible with the exact command in
-  [Stage 09](#stage-09--failure) below.
+- Interpreter invocation: `$env:PYTHONPATH='pipeline/src'; python -m baanh_pipeline.cli <stage>`.
+  An editable install remains blocked by the sandbox ACL; this is the same
+  workaround as phase A and is recorded in each provenance fragment.
+- Working tree at the time of this report: A1/A2/A3/A5 code and config, the A4
+  validator gates, the amended docs, and the committed river/state/hillshade
+  outputs. `pipeline/cache/` and `pipeline/work/` are gitignored.
 
 ## Result at a glance
 
 | Item | Result |
 |---|---|
-| Stages 01–08 | exit 0 |
-| Stage 09 | **exit 1** — peak 30,330 km² (38.8% of Assam) vs expected <23,466 km² (<30%) |
-| Stages 10–15 | not run |
-| `public/data/` | only `admin/assam-state.geojson`, `hydro/assam-rivers.geojson`, `basemap/assam-hillshade.webp` |
-| `validation-report.json` | not produced (stage 14 not run; stage 09 has no passing output) |
-| `provenance.json` | not produced (stage 15 not run; per-stage fragments 01–08 exist) |
-| `manifest.json` | not produced |
-| Committed data tags | critical 0.91 MB, animation 0.00 MB, fallback 0.58 MB, total 1.49 MB |
+| Stages 06–08 | exit 0; stage 06 and 07 gates green, stage 08 completes with the V-A6 warning below |
+| Stage 09 | **exit 1** — frames 25,885,838 B vs 6,815,744 B cap; V-A5 and V-A6 also fail |
+| Stages 10–15 | not run (stage 09 has no passing accepted output) |
+| `public/data/` | `admin/assam-state.geojson`, `hydro/assam-rivers.geojson`, `basemap/assam-hillshade.webp` only |
+| `validation-report.json` | not produced; stage 14 was not run because stage 09 is blocked |
+| `provenance.json` / `manifest.json` | not produced; per-stage fragments 06–08 exist |
+| Committed data | critical 1,009,380 B (0.96 MB), animation 0 B, fallback 609,072 B (0.58 MB), total 1,618,452 B (1.54 MB) |
 
 `scenario.json`, `flood/flood-frames.geojson`, `flood/flood-summary.json`,
 `risk/*`, `series/*`, `assets/*`, `gauges/*`, `validation-report.json`,
-`provenance.json` and `manifest.json` are **absent** by design: publishing
-them would either fabricate a passing run or hand-author data, both forbidden
-by the brief.
+`provenance.json` and `manifest.json` are absent by design. Publishing them
+would either fabricate a passing run or hand-author data.
 
-## AOI, grid and sources
+## AOI v2, grid and denominators
 
-| Parameter | Value |
+| Parameter | Measured value |
 |---|---|
-| AOI bbox (WGS84) | `[89.55, 23.95, 96.15, 28.15]` |
+| AOI v2 definition | `(inside Assam) ∩ (DEM ≤ 120 m)` |
+| AOI v2 core area | **52,240.7 km²** (6,463,969 cells) |
+| AOI v2 2 km edge buffer | 61,655.7 km² (7,628,917 cells) — continuity only, not counted |
+| AOI v2 + 5 km channel clip | 70,086.0 km² (8,672,040 cells) |
+| Assam raster area | 78,220.6 km² (reference 78,523 km²) |
+| Flood-prone denominator | 31,050 km² (Government of Assam, Water Resources Department; 39.6 % of 78,523 km²) |
 | Analysis CRS / resolution | EPSG:32646 / 90 m |
 | Analysis grid | 7,466 × 5,223 = 39.0 M cells |
 | Grid bounds (EPSG:32646) | `[148770, 2648610, 820710, 3118680]` |
-| Terrarium tiles | z11, 1,064 tiles, 0 missing, 55.3 MB cached |
-| geoBoundaries ADM2 | 735 India features → 33 Assam districts (3.2 MB filtered) |
-| OSM rivers | 17,870 ways, 79,023 km, 43.06 MB raw (whole-AOI Overpass query succeeded) |
-| Assam state mask | 9.68 M cells, 78,221 km² |
-| HAND valid share inside Assam | 99.89% |
-| Clamped negative HAND cells | 5.29% (warning, recorded in `hand-meta.json`) |
 
-## Per-stage record
+The flood-prone figure is a published **flood-prone-area statistic, not a
+single event’s observed extent**. It is recorded in `sources.json` and will be
+an explicit reference entry in `provenance.json`; V-A4 uses it only as a
+plausibility denominator.
 
-Wall time and byte counts are the values written by each stage to
-`pipeline/work/provenance/<stage>.json`. `bytes out` includes intermediate
-rasters where the stage writes them; committed files are called out
-separately. Stage 09 failed before it could write a fragment, so its time is
-the observed console interval and its output is the intermediate stack only.
+The 2 km edge buffer is 61,655.7 km², which is above V-A1’s 56,000 km² ceiling.
+That is intentional and documented: V-A1 and all flood metrics use the **core**
+mask; the buffer exists only so edge channels/terrain are continuous.
 
-| Stage | Command (abbreviated) | Wall | Bytes in | Bytes out | Exit | Committed output |
-|---|---|---:|---:|---:|---:|---|
-| 01 | `fetch-terrain --zoom 11` | 299.7 s | 0 | 87,653 (index) + 55.3 MB cache | 0 | none |
-| 02 | `fetch-boundaries` | 50.9 s | 0 | 3,350,320 | 0 | none |
-| 03 | `fetch-rivers --overpass-timeout 180` | 133.4 s | 0 | 45,155,091 | 0 | none |
-| 04 | `build-dem --hillshade-width 2000` | 96.2 s | 58,092,279 | 109,479,931 | 0 | `basemap/assam-hillshade.webp` 609,072 B |
-| 05 | `build-admin` | 0.5 s | 3,348,595 | 206,330 | 0 | `admin/assam-state.geojson` 35,963 B |
-| 06 | `build-rivers` | 19.4 s | 45,155,091 | 7,350,544 | 0 | `hydro/assam-rivers.geojson` 921,411 B |
-| 07 | `burn-rivers --burn-depth-m 3.0` | 13.9 s | 115,298,986 | 110,138,611 | 0 | none |
-| 08 | `compute-hand --max-channel-distance-m 12000` | 65.3 s | 110,138,134 | 191,564,364 | 0 | none |
-| 09 | `build-inundation …` | ≈ 30 min (observed) | 277,951,707 B (265 MB) | 2,339,695,658 B stack (intermediate) | **1** | **none** |
-| 10–15 | not run | — | — | — | — | — |
+## Channel policy v2 (stage 06)
 
-### Stage 04 details
+| Item | Measured value |
+|---|---:|
+| Raw OSM ways | 17,870 |
+| `waterway=river` candidates after policy | 860 |
+| Excluded: not `river` | 13,025 |
+| Excluded: midpoint outside AOI v2 + 5 km | 3,517 |
+| Excluded: clipped length <2 km | 468 |
+| Kept ways | **860** |
+| Total kept length | **14,096.7 km** |
+| Order-1 Brahmaputra ways | 11 |
+| Pruned shortest ways for the 4.0 % gate | **0** |
+| Channel cells inside AOI v2 (stage 06 rasterisation) | 184,988 = **2.86 %** |
+| Channel cells inside AOI v2 (stage 07, 45 m-simplified lines) | 181,114 = **2.80 %** |
+| Display layer | 973,417 B (951 KB), 860 features, 50 m simplification |
+| Channel layer | 958,087 B (936 KB) |
 
-- Mosaic decode + bilinear warp to EPSG:32646 at 90 m.
-- DEM min −49.0 m, max 7,461.8 m; 357,572 void cells before fill, 10,844 after
-  `fillnodata(max_search_distance=100)`; 0.00% exactly-zero cells.
-- Hillshade: 2,000 × 1,417 px, 315°/45°, WebP quality 82, 609,072 B.
-- The Terrarium release contains a small cluster of void pixels that decode to
-  about −5,456 m; values below the configured −50 m valid floor are treated as
-  nodata before the warp so bilinear interpolation cannot smear them.
+The small stage-06/stage-07 cell difference (184,988 vs 181,114) is the 45 m
+channel-line simplification used for burn rasterisation. Both are under the
+4.0 % gate; V-A2 reads the stage-07 mask, which is the model input.
 
-### Stage 06 details
+Stage 06 wall time was 14.2 s; stage 07 was 16.4 s.
 
-- 12,787 lines retained after clipping to AOI + 5 km and dropping lines
-  <500 m; 78,137 km total; 15 order-1 Brahmaputra ways.
-- Display layer: 1,476 named rivers, simplified at 200 m, 921,411 B. The 1.0 MB
-  cap forced the display layer to named rivers only; streams/canals/drains
-  remain in `channel-lines.geojson` (6.3 MB) and are used for burn/HAND.
-- Channel layer: all waterways, simplified at 45 m, used for rasterisation.
+## Stage 07 — burn
 
-### Stage 07 details
+| Item | Measured value |
+|---|---:|
+| Channel cells (all, including clip buffer) | 206,235 |
+| Channel cells inside AOI v2 | 181,114 |
+| Mean centre-cell lowering | 4.33 m |
+| Max lowering | 6.00 m |
+| Capped cells | 103,280 |
+| Burned DEM | 103.9 MB |
 
-- 1,068,977 channel cells; mean centre-cell lowering 2.35 m; max 6.00 m;
-  35,410 cells capped.
-- The uncapped 5×5-minimum process lowered some steep reaches by up to
-  hundreds of metres (mean centre-cell lowering 16.5 m, p95 6.0 m after the
-  cap). The cap at 6 m below the pre-burn cell and the adjacent 5×5 mean is
-  recorded in `burn-meta.json`; without it the stage's own 1–6 m check fails.
-- The cap is a declared modelling guard, not a surveyed incision depth.
+Only the 11 order-1 Brahmaputra ways receive 2-cell dilation; every other river
+is one cell. The 1–6 m mean-lowering check passes at 4.33 m. The cap is the
+phase-A guard, now applied to the narrower river-only set.
 
-### Stage 08 details
+## Stage 08 — HAND
 
-- Exact Euclidean distance transform on the 1,068,977-cell channel mask;
-  38,879,489 valid HAND cells; p50 40.12 m, p95 752.24 m.
-- 99.89% of Assam-masked cells have valid HAND (≥80% floor, ≥85% target).
-- 5.29% of valid cells have negative raw HAND and were clamped to 0; this is
-  above the 2% warning threshold and is recorded in `hand-meta.json`. It does
-  not fail V17 (which fails below 80% coverage); the validation report, had it
-  run, would carry this as a warning.
+| Item | Measured value |
+|---|---:|
+| Valid HAND cells inside AOI v2 | 6,454,354 |
+| Valid AOI v2 share | **99.85 %** |
+| Clamped negative cells inside AOI v2 | 343,165 = **5.32 %** (V-A6 fails) |
+| Clamped negative cells globally | 504,455 = 4.48 % |
+| HAND p10 / p50 / p90 / p95 inside AOI v2 | **0.80 / 5.74 / 14.75 / 23.03 m** |
+| HAND p50 globally | 8.85 m |
+| Stage 08 wall time | 17.7 s |
 
-## Stage 09 — failure
+The AOI v2 HAND percentiles are close to the review’s p10 0.69 / p50 5.59 /
+p90 13.86 m. The clamped share is not: the review expected the river-only
+policy to bring 5.29 % below 3.0 %, and the measured value is **5.32 %** of
+AOI v2 (4.48 % if the global valid-cell denominator is used). Neither
+denominator passes V-A6.
+
+## Stage 09 — computed sequence and the three failures
 
 Command:
 
@@ -122,178 +128,166 @@ python -m baanh_pipeline.cli build-inundation `
   --scenario pipeline/config/scenario.json `
   --out-frames public/data/flood/flood-frames.geojson `
   --out-summary public/data/flood/flood-summary.json `
-  --out-stack pipeline/work/inundation-stack.npz
+  --out-masks pipeline/work/inundation-masks `
+  --out-frames-dir pipeline/work/flood-frames
 ```
 
-Observed:
+The stage built 12 per-step uint8 wet masks and 12 per-step frame files, then
+failed at the combined-frame cap. Observed wall time was **221.2 s** (3.7 min),
+measured with a stopwatch around the exact command; it did not write a
+provenance fragment because it failed before `StageRecord.finish`. The wall
+time alone would pass V-A8’s 10-minute limit, but V-A8 cannot be evaluated from
+a missing fragment.
 
-```text
-stage 09: peak area 30,330 km² exceeds 30% of Assam (23,466 km²)
-```
+### Full S00–S11 sequence (measured from the per-step masks)
 
-Expected by `DATA-PIPELINE.md` §10 (`build-inundation` assertions):
+| Step | Label | Stage (m) | Wet area (km²) | % AOI v2 | % Assam | % flood-prone | Median depth (m) | Max depth (m) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| S00 | 01 Jun | 0.20 | 1,821.8 | 3.5 % | 2.3 % | 5.9 % | 0.20 | 0.20 |
+| S01 | 15 Jun | 0.40 | 1,857.0 | 3.6 % | 2.4 % | 6.0 % | 0.40 | 0.40 |
+| S02 | 01 Jul | 0.70 | 1,959.7 | 3.8 % | 2.5 % | 6.3 % | 0.70 | 0.70 |
+| S03 | 15 Jul | 1.05 | 2,153.6 | 4.1 % | 2.8 % | 6.9 % | 1.05 | 1.05 |
+| S04 | 25 Jul | 1.45 | 2,416.7 | 4.6 % | 3.1 % | 7.8 % | 1.45 | 1.45 |
+| S05 | 05 Aug | 1.80 | 2,774.1 | 5.3 % | 3.5 % | 8.9 % | 1.80 | 1.80 |
+| S06 | 15 Aug | 2.20 | 3,447.5 | 6.6 % | 4.4 % | 11.1 % | 2.20 | 2.20 |
+| **S07** | **25 Aug** | **2.50** | **4,007.5** | **7.7 %** | **5.1 %** | **12.9 %** | **2.50** | **2.50** |
+| S08 | 05 Sep | 2.20 | 3,447.5 | 6.6 % | 4.4 % | 11.1 % | 2.20 | 2.20 |
+| S09 | 15 Sep | 1.70 | 2,685.9 | 5.1 % | 3.4 % | 8.7 % | 1.70 | 1.70 |
+| S10 | 30 Sep | 1.20 | 2,221.4 | 4.3 % | 2.8 % | 7.2 % | 1.20 | 1.20 |
+| S11 | 15 Oct | 0.70 | 1,959.7 | 3.8 % | 2.5 % | 6.3 % | 0.70 | 0.70 |
 
-```text
-peak area > 0
-peak area < 30% of Assam
-```
+Peak: **4,007.5 km² = 7.7 % of AOI v2, 5.1 % of Assam, 12.9 % of the
+31,050 km² flood-prone area.** The rising limb is strictly non-decreasing, the
+recession strictly non-increasing, and the peak is at S07, so V-A7 passes and
+V-A4 passes by a 7.5 km² margin above its 4,000 km² floor.
 
-Observed peak: **30,330 km² = 38.8% of the 78,221 km² Assam mask**, at S07
-(25 Aug, stage 6.0 m).
+### V-A5 — peak depth fails
 
-The full sequence from the same run:
+The peak-step median depth over wet cells is **2.50 m**, expected ≤1.5 m; the
+max is 2.50 m, expected ≤2.60 m (that half passes). This is not a summary bug:
+the depth is computed exactly as `stage - HAND`. The cause is visible in the
+HAND distribution conditional on being wet. At stage 2.50 m the raw
+`HAND ≤ 2.50` band inside AOI v2 is 8,861.0 km², with median raw HAND 0.18 m;
+37.1 % of that raw band has **negative** raw HAND (it is clamped to 0 by the
+HAND step). The connected wet mask keeps 4,007.5 km², and more than half of
+those cells have HAND near 0, so their depth is near the full stage.
 
-| Step | Stage (m) | Wet area (km²) | % of Assam | Max depth (m) | Components | Dropped |
-|---|---:|---:|---:|---:|---:|---:|
-| S00 | 0.5 | 3,067 | 3.9% | 0.5 | 20,778 | 20,290 |
-| S01 | 1.0 | 3,340 | 4.3% | 1.0 | 24,305 | 23,818 |
-| S02 | 1.7 | 3,957 | 5.1% | 1.7 | 30,178 | 29,698 |
-| S03 | 2.5 | 5,612 | 7.2% | 2.5 | 39,200 | 38,734 |
-| S04 | 3.4 | 9,558 | 12.2% | 3.4 | 45,816 | 45,377 |
-| S05 | 4.3 | 17,279 | 22.1% | 4.3 | 36,270 | 35,945 |
-| S06 | 5.2 | 24,630 | 31.5% | 5.2 | 27,147 | 26,879 |
-| **S07** | **6.0** | **30,330** | **38.8%** | **6.0** | 20,833 | 20,599 |
-| S08 | 5.2 | 24,630 | 31.5% | 5.2 | 27,147 | 26,879 |
-| S09 | 4.1 | 15,661 | 20.0% | 4.1 | 38,322 | 37,973 |
-| S10 | 2.9 | 6,610 | 8.5% | 2.9 | 43,206 | 42,743 |
-| S11 | 1.6 | 3,802 | 4.9% | 1.6 | 29,268 | 28,786 |
+The review’s 9,016 km² estimate at 2.5 m was computed from the **old,
+all-waterway HAND** (phase A, 1,068,977 channel cells). This run has 206,235
+channel cells (river-only) and a different nearest-drainage set; its raw
+`HAND ≤ 2.5` area is 8,861.0 km², and the connectivity filter reduces it to
+4,007.5 km². The V-A5 median expectation does not hold for this conditional
+HAND distribution.
 
-The other stage-09 assertions **do** hold on this run:
+### V-A6 — clamped HAND fails
 
-- Rising limb S00–S07 is non-decreasing.
-- Recession S08–S11 is non-increasing.
-- The peak is at step 7, as required.
-- Peak area > 0.
-- New/receded areas are non-negative (computed from the same masks).
+Clamped negatives are **343,165 cells = 5.32 %** of AOI v2 valid cells
+(4.48 % globally), expected ≤3.0 %. The river-only policy did **not** reduce
+clamping. It removed the small streams that previously supplied a nearby,
+lower nearest-drainage elevation, so many valley cells now select a larger
+river whose bed is higher than the local ground. 37.1 % of the raw
+`HAND ≤ 2.50` band at the peak is in this state. Narrowing the channel mask
+from 1,068,977 to 206,235 cells therefore made V-A6 harder, not easier.
 
-Only the peak-area sanity bound fails.
+### V09 — flood-frame cap fails
 
-### Why this is not a coding bug
+The combined `flood-frames.geojson` is **25,885,838 bytes** against the
+**6,815,744-byte** cap (3.8×). It contains only 27 features (one per non-empty
+depth band per step) but **10,820 polygon parts at the peak step**; at 5-decimal
+coordinates and 75 m simplification the peak step alone is 3,289,475 bytes.
+This is fragmented river-following geometry, not duplicated data.
 
-The computation follows `DATA-PIPELINE.md` §7.5–§7.7:
+Measured probes on the peak step (not committed):
 
-```text
-wet_raw = valid_hand AND inside_assam AND (hand <= stage_s)
-depth_raw = max(0, stage_s - hand)
-connectivity: 8-connected, component must touch a channel cell or a cell
-              with distance <= 90 m; components < 3 cells dropped
-```
+| Generalisation | Peak-step bytes | Result |
+|---|---:|---|
+| 75 m, parts ≥0.02 km² (spec) | 3,289,475 | 25.9 MB over 12 steps |
+| 75 m, parts ≥0.20 km² | 2,124,990 | still ~20 MB over 12 steps |
+| ~167 m (0.0015°), parts ≥0.02 km² | ~1.83 MB | still over the 6.5 MB cap |
+| ~334 m (0.003°), parts ≥0.02 km² | ~1.44 MB | still over the 6.5 MB cap |
 
-The state mask is the dissolved Assam outline (78,221 km²), not the full AOI.
-The stage counts only cells inside that mask. The peak is a genuine model
-result for the committed 90 m DEM and the OSM channel network.
+Fitting 6.5 MB would require generalising well beyond 75 m, dropping genuine
+parts, or changing the frame contract. None was done, because the brief forbids
+pruning data until the number looks nice.
 
-### Diagnostic: the uncapped burn also exceeds the bound
+## A4 gate status from this run
 
-A non-committed diagnostic re-ran the nearest-drainage/HAND step with the
-**uncapped** 5×5-minimum burn (the literal §7.3 process) and counted the same
-connected wet cells. Estimated peak at stage 6.0 m: **25,808 km² (33.0%)**,
-still above the 23,466 km² bound. The capped burn raises channel elevations
-relative to the uncapped process (mean centre lowering 2.35 m instead of
-16.5 m), which lowers HAND and increases the area to 30,330 km²; the cap is
-therefore a contributing factor but not the sole cause. Both the literal and
-the capped process violate the 30% bound on this terrain/channel set.
-
-The two stage assertions therefore conflict for this DEM/channel network:
-
-- The literal 5×5-minimum burn violates stage 07's 1–6 m mean-lowering check
-  (observed 16.5 m).
-- The capped burn passes stage 07's check but violates stage 09's 30% bound
-  (observed 38.8%; the uncapped estimate is 33.0%).
+| Gate | Rule | Observed | Status |
+|---|---|---|---|
+| V-A1 | AOI v2 45,000–56,000 km² | 52,240.7 km² | pass |
+| V-A2 | channel cells ≤4.0 %; 0 midpoints outside AOI v2 + 5 km | 2.80 %; 0; all `river` | pass |
+| V-A3 | strict rise/fall; peak 2.50 m | 0.20→2.50→0.70; peak S07 | pass |
+| V-A4 | peak 4,000–12,000 km²; ≤40 % flood-prone | 4,007.5 km²; 12.9 % | pass (7.5 km² margin) |
+| V-A5 | peak median ≤1.5 m; max ≤2.60 m | **2.50 m**; 2.50 m | **fail** |
+| V-A6 | clamped AOI v2 ≤3.0 % | **5.32 %** (4.48 % global) | **fail** |
+| V-A7 | rising non-decreasing; recession non-increasing; peak S07 | exact; peak S07 | pass |
+| V-A8 | wall ≤10 min; no artifact >300 MB | 221.2 s; masks 2.97 MB; no `.npz` | pass on observation, no fragment |
+| V09 | `flood-frames.geojson` ≤6.5 MB | **25,885,838 B** | **fail** |
 
 ## Deviations from the written specification
 
-1. **ADM2 Assam filter.** The current geoBoundaries `IND/ADM2` release has an
-   empty `shapeISO` for all 735 features and no parent-state field. The stage
-   downloads the same source's ADM1 Assam polygon and selects ADM2 features by
-   >50% overlap or representative-point containment. Recorded in
-   `pipeline/cache/boundaries/source-meta.json`; the committed layer is still
-   ADM2. The API-reported licences are ODbL 1.0 (ADM2) and CC BY 2.5 IN
-   (ADM1 filter geometry), not the CC BY 4.0 stated in the data spec.
-2. **Overpass query shape.** The whole-AOI query is frequently rejected with
-   HTTP 502 while the public endpoint is at capacity. The stage tries the exact
-   query once, then the same query in a 1.0° × 0.6° grid with per-cell caching
-   and bounded retries. Partial OSM results are never mixed with the Natural
-   Earth fallback. The final run's whole-AOI query succeeded on its first
-   attempt (1 attempt, 17,870 ways), so the split path was not used for the
-   committed river layer. The split code remains for reproducibility.
-3. **Burn cap.** The 5×5 minimum minus 3 m can be hundreds of metres below the
-   channel centre in steep Himalayan/Barail reaches. The burn is capped at 6 m
-   below the pre-burn cell and the adjacent 5×5 mean; `burn-meta.json` records
-   `capped_cells = 35,410`, centre-cell and adjacent-mean deltas. The cap was
-   required to satisfy the stage's 1–6 m check; its interaction with the peak
-   area is described above.
-4. **Display river layer.** The 1.0 MB cap could not be met with all 12,787
-   rivers/streams/canals/drains even at 300 m (4.4 MB). The display layer keeps
-   named rivers only, simplified at 200 m (1,476 features, 921 KB); the channel
-   layer keeps every way for burn/HAND. This is a cap-driven display
-   simplification, not a change to the model input.
-5. **Inundation polygonisation.** The spec prefers simplification in
-   EPSG:32646. Unioning/simplifying one MultiPolygon with tens of thousands of
-   disjoint parts was intractable, so band parts are projected to WGS84 once
-   and simplified part-by-part with a 75 m latitude-equivalent tolerance
-   (75/111320°). Areas and band membership are computed on the raster; the
-   output geometry is still WGS84, 5 dp, RFC 7946 winding.
-6. **Hillshade decode mode.** Pillow encodes the 8-bit grayscale hillshade as
-   WebP and decodes it as near-grayscale RGB (max channel difference 2). The
-   validation code accepts this and checks width 2000 and the 1.5 MB cap; the
-   stage did not run here.
-7. **Python version.** The build machine has Python 3.11.16, not the 3.14.7
-   claimed in the standing brief. All listed packages are importable; no venv.
-8. **Editable install.** `pip install -e pipeline` is blocked by the Windows
-   sandbox ACL on this machine (pip cannot write its build-tracker temp file).
-   Commands use `PYTHONPATH=pipeline/src`; this is functionally equivalent.
-9. **P1 layers.** Stages 12 (facilities) and 13 (gauges) were not reached.
-   Stage 12 is optional and would have been omitted with a warning if Overpass
-   had been unavailable; it never substitutes a hand-built list.
-
-## Committed data size by tag (partial run)
-
-These are the only committed data files after stages 04–07. The tags are the
-ones `pipeline/config/pipeline.json` assigns; the critical tier is incomplete
-because `scenario.json`, `provenance.json`, `validation-report.json`,
-`district-risk.json` and `monsoon-series.json` were not produced.
-
-| Tag | Files committed | Bytes |
-|---|---|---:|
-| critical | `admin/assam-state.geojson`, `hydro/assam-rivers.geojson` | 957,374 (0.91 MB) |
-| animation | none | 0 |
-| optional | none | 0 |
-| fallback | `basemap/assam-hillshade.webp` | 609,072 (0.58 MB) |
-| **total** | | **1,566,446 (1.49 MB)** |
-
-The intended critical/animation budget (≤3.5 MB / ≤7.6 MB) was not reached
-because the flood, risk and series layers are absent.
+1. **AOI v2 edge buffer.** The 2 km buffer is 61,655.7 km², above V-A1’s
+   56,000 km² ceiling. V-A1 and all flood metrics use the core mask
+   (52,240.7 km²); the buffer is continuity only. This is stated in
+   `aoi-v2.json`, the docs and this report, not silently counted.
+2. **Channel cell counts differ by 3,874 between stage 06 and stage 07.**
+   Stage 06 rasterises the unsimplified clipped lines; stage 07 rasterises the
+   45 m-simplified channel layer. Both are under 4.0 %; V-A2 reads the stage-07
+   mask.
+3. **Flood polygonisation.** Inherited from phase A: band parts are projected
+   to WGS84 and simplified part-by-part at a 75 m latitude-equivalent tolerance
+   rather than unioning one huge MultiPolygon in EPSG:32646. Areas and band
+   membership are computed on the raster.
+4. **Per-step frames are staging.** Stage 09 writes
+   `pipeline/work/flood-frames/step-XX.geojson`, combines them into the one
+   committed `flood-frames.geojson`, and removes the staging files. The app’s
+   load contract remains one file; `ARCHITECTURE.md` §6.7 now says so.
+5. **No `inundation-stack.npz`.** Stage 09 writes uint8 per-step wet masks
+   (`pipeline/work/inundation-masks/`, 2.97 MB) instead. Stages 10/12 read those
+   masks and reconstruct depth from `stage - HAND`. The old 2.34 GB `.npz` was
+   deleted from the working tree.
+6. **Flood-prone source.** The 31,050 km² figure is a published
+   flood-prone-area statistic, not an event extent; `sources.json` records the
+   URL, retrieval date and caveat, and `publish` emits it as a `reference`
+   entry.
+7. **P1 layers.** Stages 12–13 were not reached because stage 09 is blocked.
+8. **Python/editable install.** Python 3.11.16 with `PYTHONPATH=pipeline/src`;
+   the editable install is still blocked by the sandbox ACL.
 
 ## What is reproducible now
 
-- `pipeline/` is committed; the stage CLI, config, tests and README are in
-  place.
-- `pipeline/cache/` contains the raw terrain, ADM2, OSM rivers and fallback
-  data; `pipeline/work/` contains the DEM, burned DEM, channel mask, distance,
-  HAND, the 2.34 GB inundation depth/wet stack and per-stage fragments 01–08.
-- Re-running stages 01–08 from the cache produces the same raster statistics;
-  re-running stage 09 reproduces the same peak-area failure.
-- The exact commands are in `pipeline/README.md`.
+- Stage 06 reproduces AOI v2 52,240.7 km², 860 rivers, 14,096.7 km, 0 pruned,
+  2.86 % channel share, 951 KB display.
+- Stage 07 reproduces 206,235 channel cells, 4.33 m mean lowering, 103,280
+  capped cells.
+- Stage 08 reproduces 99.85 % valid AOI v2 HAND, 5.32 % clamped, p50 5.74 m.
+- Stage 09 reproduces the full S00–S11 table, peak 4,007.5 km², and the same
+  frame-cap failure in 221 s.
+- The exact commands are in `pipeline/README.md`; the gate logic is in
+  `pipeline/src/baanh_pipeline/validate.py` and was not run because publishing
+  a partial data set would misstate the run.
 
 ## Recommendation
 
-Do not publish a flood layer from this run. A reviewer must choose one of:
+Do not publish this run. The reviewer must resolve the **policy conflict**
+rather than lower a gate:
 
-1. **Revise the 30% sanity bound** (with evidence) to a value consistent with
-   this DEM/channel network, or state that the bound is a warning rather than
-   a hard stop. The uncapped literal process estimates 33.0%; the capped
-   process gives 38.8%.
-2. **Revise the scenario/model** (for example, a lower peak stage, a different
-   channel class policy, or a verified channel network) and re-run stages
-   07–15. Any such change must update the scenario table, config, summary,
-   series and validation expectations together; it must not be a silent gate
-   relaxation.
-3. **Validate the channel policy**: restrict HAND's nearest-drainage channels
-   to a documented subset (for example, rivers and named tributaries rather
-   than every OSM drain/canal) if that is the intended model. That is a
-   specification change, not a bug fix, and would need a fresh review.
+1. **V-A5/V-A6 versus A2.** River-only channels leave too many valley cells
+   below their nearest mapped river (37.1 % of the raw peak band) and
+   concentrate the retained wet cells at HAND ≈0. Either the model needs a
+   documented drainage/burn policy that supplies a lower nearest elevation
+   (e.g. a routed or depression-aware HAND, or a reviewed burn rule), or the
+   A4 depth/clamp thresholds need a new evidence basis. Widening V-A5 or V-A6
+   in place would not fix the underlying geometry.
+2. **Frame contract versus geometry.** The 6.5 MB cap is incompatible with
+   10,820 river-following parts at 5-decimal/75 m. A reviewer decision is
+   needed on: a larger animation budget, a different frame format/contract, or
+   an explicit, recorded generalisation policy (tolerance and minimum part
+   area) that is applied before the cap and reported — not a quiet prune.
+3. **V-A4 margin.** Peak 4,007.5 km² passes by 7.5 km². Any change to the
+   channel or burn policy will move it; keep the gate and re-measure rather than
+   tuning the peak.
 
-No further stages were run because doing so would either hand-author flood
-data or lower a gate. The failing command and the observed/expected values are
-recorded above.
+The failing command and the observed/expected values are recorded above. No
+further stage was run because doing so would either hand-author flood data or
+publish a data set that fails its own gates.

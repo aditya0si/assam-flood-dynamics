@@ -495,12 +495,12 @@ VALIDATION_SCHEMA = {
         "status": {"enum": ["pass", "fail"]},
         "checks": {
             "type": "array",
-            "minItems": 20,
+            "minItems": 28,
             "items": {
                 "type": "object",
                 "required": ["id", "name", "status", "expected", "actual", "detail"],
                 "properties": {
-                    "id": {"type": "string", "pattern": r"^V\d{2}$"},
+                    "id": {"type": "string", "pattern": r"^(V\d{2}|V-A[1-8])$"},
                     "name": {"type": "string"},
                     "status": {"enum": ["pass", "warn", "fail"]},
                     "expected": {"type": "string"},

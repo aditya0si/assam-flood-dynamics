@@ -94,21 +94,34 @@ quoted, it must be cited in this file and labelled `reference` in the UI.
 
 ## 3. AOI, CRS, and resolution
 
+<!-- amended: REVIEW-02 -->
+
 ### 3.1 Definition
+
+`AOI_v2 = (inside Assam) ∩ (DEM ≤ 120 m)`. The 2 km edge buffer is kept for raster continuity
+only; it is **not** part of the reported AOI v2 area and does not count as flood extent.
 
 | Parameter | Value | Notes |
 |---|---|---|
+| AOI v2 core | `(inside Assam) ∩ (DEM ≤ 120 m)` | The valley-floor analysis domain. The review measured 52,358 km² at this grid; the committed mask measures 52,240.7 km² |
+| AOI v2 edge buffer | `2 km` | Used so edge cells can see terrain/channels just outside the core; never added to area or flood metrics |
+| Channel clip | `AOI v2 + 5 km` | Channel ways are clipped to this buffer; a way whose midpoint is outside it is excluded from both model and display |
 | AOI bbox (WGS84) | `[89.55, 23.95, 96.15, 28.15]` | Assam plus a ~15–20 km regional buffer; includes edge terrain in Bhutan/Meghalaya/Arunachal/Bangladesh for continuity |
 | Analysis CRS | `EPSG:32646` (WGS 84 / UTM zone 46N) | Metres; correct for distance transforms and raster algebra |
 | Analysis resolution | `90 m × 90 m` | 1.3× the ~69 m native ground resolution of z11 Terrarium at 26°N |
 | Output CRS | `EPSG:4326` | MapLibre/GeoJSON; areas computed geodesically |
-| Assam mask | Dissolved union of filtered ADM2 polygons | Applied to flood/risk outputs and district metrics |
-| Output clip | Assam union (strict) for flood/risk metrics; channel raster includes a 2 km buffer | Keeps river-mouth geometry continuous without counting foreign cells |
+| Assam mask | Dissolved union of filtered ADM2 polygons | Used for the Assam denominator and containment, not as the flood mask |
+| Metric denominators | AOI v2, Assam `78,523 km²`, flood-prone area `31,050 km²` | Every peak-extent claim is reported against all three |
 | No-data | `-9999` in GeoTIFF; `null`/absent in JSON | Never `0`, which is a valid elevation |
 
-At 90 m the AOI is roughly 42 million cells (≈168 MB per float32 raster). The distance transform
-needs a few full-size arrays; the budget is ≤3 GB peak RSS and ≤1.5 GB disk for intermediates.
-A 30 m grid would be ~9× the cells and is explicitly P2.
+The flood-prone denominator is the Government of Assam, Water Resources Department statistic:
+31.05 lakh hectares against a state area of 78.523 lakh hectares (39.6 %). It is a
+**flood-prone-area statistic, not a single event’s observed extent**, and it is not ingested as a
+layer; `provenance.json` records the source, retrieval date and that caveat.
+
+At 90 m the AOI rectangle is roughly 42 million cells (≈168 MB per float32 raster). The distance
+transform needs a few full-size arrays; the budget is ≤3 GB peak RSS and ≤1.5 GB disk for
+intermediates. A 30 m grid would be ~9× the cells and is explicitly P2.
 
 EPSG:32646 is chosen over Web Mercator because nearest-drainage distance and polygon area should
 be in metres; the AOI’s western edge is ~0.45° outside the zone’s nominal 90°E boundary, where
@@ -117,17 +130,22 @@ Albers projection to avoid an extra CRS definition that a reviewer cannot check 
 
 ### 3.2 Why this AOI
 
-- It contains the whole Assam plain and the Brahmaputra main stem, so the causal story is not
-  clipped at a district line.
-- The buffer matters: a cell near the state edge must be able to see a channel just outside it.
-- The mask matters: cells in Meghalaya or Bhutan are used for terrain/channel continuity but do
-  not appear in district rankings or "Assam inundated area".
+- The hill districts carry about 33 % of Assam; a uniform stage over the full state is not a
+  meaningful floodplain model. AOI v2 keeps the valley floor and reports that limitation.
+- The 2 km buffer matters: a valley-edge cell must be able to see a channel just outside the
+  valley floor. The buffer is continuity, not counted area.
+- The 5 km channel clip matters: it keeps river-mouth and edge geometry continuous without
+  importing upstream foreign reaches (Bhutan, Tibet, Meghalaya).
 - The bbox is deliberately rectangular. A river-corridor polygon would save cells but would make
   the AOI definition harder to audit and would clip tributaries.
+- If AOI v2 excludes a district that is genuinely flood-prone, that must be stated in the run
+  report; the 120 m threshold must not be stretched to manufacture coverage.
 
 ---
 
 ## 4. Environment and conventions
+
+<!-- amended: REVIEW-02 -->
 
 Python 3.11+ (64-bit). Commands are run from the repository root. The examples use PowerShell;
 the POSIX equivalent differs only in activation. A virtual environment is recommended for a
@@ -169,11 +187,11 @@ Conventions for every stage:
 | 03 | `fetch-rivers` | AOI, sources config | raw river GeoJSON + source record | No (cache) |
 | 04 | `build-dem` | tiles | `dem-90m.tif`, `assam-hillshade.webp` | DEM no; hillshade yes |
 | 05 | `build-admin` | ADM2 raw | districts base, state GeoJSON, centroids | State yes; base intermediate |
-| 06 | `build-rivers` | river raw | simplified rivers, channel lines | Rivers yes; channels intermediate |
+| 06 | `build-rivers` | raw river + DEM + state | AOI v2 masks, simplified rivers, channel lines | Rivers yes; masks/channels intermediate |
 | 07 | `burn-rivers` | DEM, channels | burned DEM, channel mask | No |
 | 08 | `compute-hand` | burned DEM, mask | HAND, distance, metadata | No |
-| 09 | `build-inundation` | HAND, mask, scenario | flood frames, summary, depth stack | Frames/summary yes; stack no |
-| 10 | `build-risk` | stack, HAND, districts | risk zones, ranking, hotspots, districts GeoJSON | Yes |
+| 09 | `build-inundation` | HAND, mask, scenario | per-step wet masks, flood frames, summary | Frames/summary yes; masks no |
+| 10 | `build-risk` | masks, HAND, districts | risk zones, ranking, hotspots, districts GeoJSON | Yes |
 | 11 | `build-series` | scenario, summary, transects | monsoon series, cross-sections | Yes |
 | 12 | `build-assets` (P1) | OSM, stack, frames, districts | critical facilities | Yes |
 | 13 | `build-gauges` (P1) | rivers, summary | virtual gauges | Yes |
@@ -300,28 +318,41 @@ python -m baanh_pipeline.cli build-admin `
 - **Validation:** every polygon valid; every centroid inside its polygon; no duplicate
   `district_id`; state union area within 1% of the sum of district areas (before simplification).
 
-### Stage 06 — build river display layer and channel lines
+### Stage 06 — AOI v2, channel policy v2, display rivers
+
+<!-- amended: REVIEW-02 -->
 
 ```powershell
 python -m baanh_pipeline.cli build-rivers `
   --raw pipeline/cache/rivers/rivers-raw.geojson `
+  --dem pipeline/work/dem-90m.tif `
+  --state public/data/admin/assam-state.geojson `
   --aoi pipeline/config/aoi.json `
   --out public/data/hydro/assam-rivers.geojson `
   --out-channels pipeline/work/channel-lines.geojson
 ```
 
-- **Input:** raw rivers.
-- **Process:** clip to AOI + 5 km; drop lines shorter than 500 m; assign `order` (1 = Brahmaputra
-  main stem by name/length heuristic, 2 = named tributaries, 3 = other rivers, 4 = streams,
-  5 = canals/drains); simplify display geometries at 50 m; keep a denser channel version for
-  rasterisation (no simplification below 90 m).
-- **Output:** `public/data/hydro/assam-rivers.geojson` (display), ≤1.0 MB;
-  `pipeline/work/channel-lines.geojson` (burn input).
-- **Validation:** at least one `order: 1` line; total channel length > 500 km; every geometry
-  valid. If OSM returns only unnamed fragments, the fallback flag is recorded and shown in
-  provenance.
+- **Input:** raw rivers; the 90 m DEM and dissolved state outline (to build AOI v2).
+- **Process:** build `AOI_v2 = inside Assam ∩ DEM ≤ 120 m`, a 2 km edge mask and an AOI v2 + 5 km
+  channel clip, and write them to `pipeline/work/`. Keep only `waterway=river`; drop `stream`,
+  `canal`, `drain`, `ditch`. Clip to the 5 km buffer and require the way’s midpoint to be inside
+  it. Drop clipped ways shorter than 2 km. The Brahmaputra main stem is `order 1`; all other
+  rivers are `order 2`. Rasterise the candidate set with `all_touched=True` and 2-cell dilation
+  for `order 1` only. If channel cells inside AOI v2 exceed 4.0 %, prune the shortest non-main
+  ways until the share passes; record the pruned count and threshold. Display geometries simplify
+  at 50 m and may be simplified further to meet the 1.0 MB cap, but the display set must never
+  lose a way the model uses.
+- **Output:** `public/data/hydro/assam-rivers.geojson` (display, ≤1.0 MB);
+  `pipeline/work/channel-lines.geojson` (burn input); `pipeline/work/aoi-v2-*.tif` and
+  `aoi-v2.json` (domain, buffer, clip and measured areas).
+- **Validation:** at least one `order: 1` line; total channel length >500 km; every geometry
+  valid; channel cells ≤4.0 % of AOI v2; zero model ways with midpoint outside AOI v2 + 5 km;
+  every model way is `waterway=river`. If OSM returns only unnamed fragments, the fallback flag
+  is recorded and shown in provenance.
 
 ### Stage 07 — burn channels into the DEM
+
+<!-- amended: REVIEW-02 -->
 
 ```powershell
 python -m baanh_pipeline.cli burn-rivers `
@@ -332,17 +363,18 @@ python -m baanh_pipeline.cli burn-rivers `
   --burn-depth-m 3.0
 ```
 
-- **Input:** 90 m DEM; channel lines.
-- **Process:** rasterise channels at 90 m with `all_touched=True` (main stem width 2 cells,
-  others 1 cell); for each channel cell sample the minimum DEM in a 5×5 window and subtract
-  `burn_depth_m = 3.0`; write that value into `dem-burned.tif`; all other cells keep DEM.
-  The burn is a **modelling device** to make the channel the local low point, not a surveyed
-  incision depth. No monotonic downstream enforcement is attempted because OSM way direction is
-  unreliable; this is a stated limitation.
+- **Input:** 90 m DEM; the pruned river-only channel set.
+- **Process:** rasterise channels at 90 m with `all_touched=True`; only the order-1 Brahmaputra
+  main stem is dilated to 2 cells, every other river is 1 cell. For each channel cell sample the
+  minimum DEM in a 5×5 window and subtract `burn_depth_m = 3.0`; write that value into
+  `dem-burned.tif`; all other cells keep DEM. The burn is a **modelling device** to make the
+  channel the local low point, not a surveyed incision depth. No monotonic downstream
+  enforcement is attempted because OSM way direction is unreliable; this is a stated limitation.
 - **Output:** `pipeline/work/dem-burned.tif`, `pipeline/work/channels-90m.tif` (uint8 0/1),
-  `pipeline/work/burn-meta.json` (`channel_cells`, `burn_depth_m`, `dem_delta_min/max`).
-- **Validation:** channel cells >0; mean burned elevation < mean adjacent DEM by 1–6 m; no
-  channel cell ends up above its pre-burn value.
+  `pipeline/work/burn-meta.json` (`channel_cells`, `channel_cells_aoi_v2`,
+  `channel_cell_share_aoi_v2`, `burn_depth_m`, `dem_delta_min/max`).
+- **Validation:** channel cells >0; channel cells inside AOI v2 ≤4.0 %; mean burned elevation <
+  mean adjacent DEM by 1–6 m; no channel cell ends up above its pre-burn value.
 
 ### Stage 08 — nearest drainage, distance, HAND
 
@@ -364,10 +396,13 @@ python -m baanh_pipeline.cli compute-hand `
 - **Output:** `hand-90m.tif` (m; `-9999` = no channel within 12 km), `channel-distance-90m.tif`
   (m), `hand-meta.json` (`valid_cells`, `nodata_cells`, `clamped_negative_cells`,
   `max_distance_m`, `p50_hand_m`, `p95_hand_m`, `channel_elevation_min/max`).
-- **Validation:** HAND ≥0 everywhere valid; distance monotonic with mask distance; at least 85%
-  of Assam-masked cells valid; no NaN/Inf.
+- **Validation:** HAND ≥0 everywhere valid; distance monotonic with mask distance; at least 80%
+  of AOI v2 core cells valid HAND (warn below 85%); clamped negatives inside AOI v2 ≤3.0 %
+  (V-A6); no NaN/Inf.
 
 ### Stage 09 — build the inundation sequence
+
+<!-- amended: REVIEW-02 -->
 
 ```powershell
 python -m baanh_pipeline.cli build-inundation `
@@ -379,22 +414,31 @@ python -m baanh_pipeline.cli build-inundation `
   --scenario pipeline/config/scenario.json `
   --out-frames public/data/flood/flood-frames.geojson `
   --out-summary public/data/flood/flood-summary.json `
-  --out-stack pipeline/work/inundation-stack.npz
+  --out-masks pipeline/work/inundation-masks `
+  --out-frames-dir pipeline/work/flood-frames
 ```
 
-- **Input:** DEM/HAND/distance/channel mask; state mask; scenario steps.
-- **Process:** for each step, threshold HAND by `stage_m`, apply Assam mask and connectivity,
-  derive depth bands, polygonise, validate/simplify, compute summary. Full algorithm in §7.
-- **Output:** `flood-frames.geojson` (≤6.5 MB), `flood-summary.json`, and the intermediate
-  `inundation-stack.npz` with `depth[step, y, x]` float32 and `wet[step, y, x]` bool.
-- **Validation:** area non-decreasing on the rising limb (S00–S07, 0.5% tolerance), decreasing on
-  recession (S08–S11), peak at S07; every polygon valid; no feature outside the AOI.
+- **Input:** DEM/HAND/distance/channel mask; state outline; scenario steps; AOI v2 masks.
+- **Process:** for each step, threshold HAND by `stage_m` inside AOI v2, apply connectivity,
+  derive depth bands from a per-step float depth array, polygonise only the wet bounding window,
+  validate/simplify, and write `pipeline/work/flood-frames/step-XX.geojson` immediately. Build
+  `flood-frames.geojson` by combining those per-step files, then remove the staging files. Write
+  each step’s wet mask as uint8 to `pipeline/work/inundation-masks/step-XX-wet.tif`. Do **not**
+  build a float stack of all steps and do **not** write `inundation-stack.npz`. Full algorithm in
+  §7.
+- **Output:** `flood-frames.geojson` (≤6.5 MB), `flood-summary.json` (with AOI v2, Assam and
+  flood-prone denominators), `scenario.json` copy, and the uint8 mask cache (≤300 MB).
+- **Validation:** area non-decreasing on the rising limb (S00–S07), decreasing on recession
+  (S08–S11), peak at S07; every polygon valid; every feature inside AOI v2; peak extent inside
+  V-A4; peak depth inside V-A5; wall time and artifacts inside V-A8.
 
 ### Stage 10 — risk zones, district ranking, hotspots
 
+<!-- amended: REVIEW-02 -->
+
 ```powershell
 python -m baanh_pipeline.cli build-risk `
-  --stack pipeline/work/inundation-stack.npz `
+  --masks pipeline/work/inundation-masks `
   --hand pipeline/work/hand-90m.tif `
   --distance pipeline/work/channel-distance-90m.tif `
   --channels pipeline/work/channels-90m.tif `
@@ -406,10 +450,11 @@ python -m baanh_pipeline.cli build-risk `
   --out-hotspots public/data/risk/hotspots.geojson
 ```
 
-- **Input:** per-step depth stack; HAND/distance/channel mask; district polygons; scenario.
-- **Process:** compute per-cell duration and peak depth; classify risk zones; aggregate district
-  metrics and score; join risk fields into the district GeoJSON; extract low-HAND distant
-  pockets for hotspots. Full formulas in §9.
+- **Input:** per-step uint8 wet masks; HAND/distance/channel mask; district polygons; scenario.
+- **Process:** read each step’s mask, reconstruct depth as `stage_m - HAND` only where wet,
+  accumulate duration and peak depth, classify risk zones, aggregate district metrics and score,
+  join risk fields into the district GeoJSON, extract low-HAND distant pockets for hotspots. Full
+  formulas in §9. No float stack is read.
 - **Output:** `risk-zones.geojson` (≤0.9 MB), `district-risk.json` (≤0.15 MB),
   `assam-districts.geojson` (≤1.2 MB), `hotspots.geojson` (≤0.10 MB).
 - **Validation:** all scores 0–100; every district appears once in the ranking; `rank` is a
@@ -418,11 +463,12 @@ python -m baanh_pipeline.cli build-risk `
 
 ### Stage 11 — monsoon series and cross-sections
 
+<!-- amended: REVIEW-02 -->
+
 ```powershell
 python -m baanh_pipeline.cli build-series `
   --scenario pipeline/config/scenario.json `
   --summary public/data/flood/flood-summary.json `
-  --stack pipeline/work/inundation-stack.npz `
   --dem pipeline/work/dem-90m.tif `
   --channels pipeline/work/channels-90m.tif `
   --transects pipeline/config/transects.json `
@@ -430,7 +476,8 @@ python -m baanh_pipeline.cli build-series `
   --out-profiles public/data/series/cross-sections.json
 ```
 
-- **Input:** scenario config; flood summary; depth stack; DEM/channel mask; transect endpoints.
+- **Input:** scenario config; flood summary; DEM/channel mask; transect endpoints. (No depth
+  stack: stage 11 recomputes water surface from nearest-channel elevation and stage.)
 - **Process:** emit the chart-ready synthetic rainfall/stage series and the scenario threshold
   (cross-checked against `flood-summary.json`); sample each transect at 2 km spacing, record
   ground elevation, HAND, and water surface/depth for all 12 steps. Water surface at a sample =
@@ -442,21 +489,25 @@ python -m baanh_pipeline.cli build-series `
 
 ### Stage 12 — critical-facility exposure (P1)
 
+<!-- amended: REVIEW-02 -->
+
 ```powershell
 python -m baanh_pipeline.cli build-assets `
   --aoi pipeline/config/aoi.json `
   --sources pipeline/config/sources.json `
-  --stack pipeline/work/inundation-stack.npz `
+  --masks pipeline/work/inundation-masks `
+  --hand pipeline/work/hand-90m.tif `
   --frames public/data/flood/flood-frames.geojson `
   --districts public/data/admin/assam-districts.geojson `
   --out public/data/assets/critical-facilities.geojson
 ```
 
-- **Input:** OSM Overpass; flood frames; districts.
+- **Input:** OSM Overpass; per-step uint8 wet masks; HAND; flood frames; districts.
 - **Query:** `(node["amenity"~"^(hospital|clinic|school)$"](bbox);); out body;` with a 180 s
   timeout. Names are taken from OSM `name`; missing names stay `null` (never invented).
-- **Process:** keep points inside Assam; spatial-join to district; sample the depth stack at the
-  point location for each step; record peak depth, first wet step, and an exposure band.
+- **Process:** keep points inside Assam; spatial-join to district; sample each step’s wet mask
+  and compute depth as `stage_m - HAND` where wet; record peak depth, first wet step, and an
+  exposure band. No float stack is read.
   **Completeness is unknown**; the output says so and the UI must show it. No capacity, staff,
   or operational status is inferred. Names are organisational labels only; if an OSM name looks
   like a personal name, write `null` rather than publishing it.
@@ -492,7 +543,7 @@ python -m baanh_pipeline.cli validate `
   --version 2026.10.0
 ```
 
-Runs V01–V20 (§10), writes the report atomically, prints a one-line summary, and exits non-zero
+Runs V01–V20 and V-A1–V-A8 (§10), writes the report atomically, prints a one-line summary, and exits non-zero
 if any `fail` check exists. Warnings are allowed only where §10 says so.
 
 ### Stage 15 — publish manifest and provenance
@@ -608,7 +659,7 @@ Required entries: terrain, boundaries, rivers, flood frames, risk, series, hills
   "step_count": 12,
   "total_days": 136,
   "peak_step": 7,
-  "threshold_stage_m": 4.0,
+  "threshold_stage_m": 1.5,
   "grid": {
     "crs": "EPSG:32646",
     "resolution_m": 90,
@@ -620,7 +671,7 @@ Required entries: terrain, boundaries, rivers, flood frames, risk, series, hills
   ],
   "model": {
     "name": "HAND-threshold scenario",
-    "version": "hand-v1",
+    "version": "hand-v2",
     "burn_depth_m": 3.0,
     "max_channel_distance_m": 12000,
     "connectivity": "8-connected; component must touch a channel cell",
@@ -637,7 +688,8 @@ Required entries: terrain, boundaries, rivers, flood frames, risk, series, hills
 0–136; `phase` enum `onset|rising|peak|receding`. `depth_bands_m` has five edges; the last band is
 open-ended (`null`).
 
-`assumptions` must include: uniform stage over mapped channels; flat water surface per step;
+`assumptions` must include: AOI v2 (inside Assam, DEM ≤120 m) and its 2 km edge buffer;
+`waterway=river` only; uniform stage over mapped channels; flat water surface per step;
 HAND threshold with connectivity; no calibration; synthetic hydrograph. `limitations` must
 include: no hydrodynamic routing; no levee failure; mapped channels incomplete; 90 m grid; no
 population/asset-loss estimate.
@@ -681,8 +733,8 @@ Geometry: `Polygon` or `MultiPolygon`, simplified at 200 m.
 |---|---|---|---|
 | `river_id` | string | — | `osm:way/123` or `ne:<id>` |
 | `name` | string \| null | — | OSM/NE name; null allowed |
-| `waterway` | enum | — | `river\|stream\|canal\|drain` |
-| `order` | integer | 1–5 | 1 = main stem, 5 = drain |
+| `waterway` | enum | — | `river` only in the model; the enum keeps legacy values for display compatibility |
+| `order` | integer | 1–2 | 1 = Brahmaputra main stem (2-cell dilation), 2 = other river (1 cell) |
 | `source` | enum | — | `osm\|natural-earth` |
 | `source_id` | string | — | Native id |
 | `class` | string | — | `source` |
@@ -705,13 +757,15 @@ features overlap (each step is a full snapshot); the app filters by `step`.
 | `band_area_km2` | number | km² | Area of this polygon |
 | `step_area_km2` | number | km² | Total inundated area at this step (repeated) |
 | `class` | string | — | `scenario` |
-| `model_version` | string | — | `hand-v1` |
+| `model_version` | string | — | `hand-v2` |
 | `label` | string | — | e.g. “Scenario inundation · 25 Aug · 1.5–3.0 m” |
 
 Geometry: `Polygon`/`MultiPolygon`, EPSG:4326, simplified 75 m, min ring 0.02 km², 5 decimals.
 No feature may straddle two `step` values.
 
 ### 6.8 `flood/flood-summary.json`
+
+<!-- amended: REVIEW-02 -->
 
 ```json
 {
@@ -732,13 +786,14 @@ No feature may straddle two `step` values.
       "day_offset": 85,
       "phase": "peak",
       "rainfall_mm_day": 10,
-      "mainstem_stage_m": 3.4,
-      "backwater_m": 2.6,
-      "stage_m": 6.0,
+      "mainstem_stage_m": 1.428,
+      "backwater_m": 1.072,
+      "stage_m": 2.50,
       "above_threshold": true,
       "inundated_area_km2": 0.0,
       "new_inundation_km2": 0.0,
       "receded_area_km2": 0.0,
+      "median_depth_m": 0.0,
       "max_depth_m": 0.0,
       "mean_depth_m": 0.0,
       "affected_district_count": 0,
@@ -747,9 +802,23 @@ No feature may straddle two `step` values.
   ],
   "totals": {
     "max_area_km2": 0.0,
-    "peak_stage_m": 6.0,
+    "peak_stage_m": 2.50,
     "scenario_days": 136,
-    "districts_any_inundation": 0
+    "districts_any_inundation": 0,
+    "median_depth_at_peak_m": 0.0,
+    "max_depth_at_peak_m": 0.0,
+    "aoi_v2_area_km2": 52240.7,
+    "assam_area_km2": 78220.6,
+    "flood_prone_area_km2": 31050.0,
+    "peak_extent_share_of_aoi_v2": 0.0,
+    "peak_extent_share_of_assam": 0.0,
+    "peak_extent_share_of_flood_prone_area": 0.0,
+    "plausibility_band": {
+      "min_km2": 4000.0,
+      "max_km2": 12000.0,
+      "max_share_of_flood_prone_area": 0.40,
+      "note": "V-A4 band chosen by the reviewer from REVIEW-02; not a calibrated observation."
+    }
   }
 }
 ```
@@ -763,13 +832,16 @@ Field semantics:
 - `stage_m`: scenario water level above local drainage, metres; the value applied to HAND.
   It is defined exactly as `stage_m = mainstem_stage_m + backwater_m` (validated by V11); the
   additive form is a declared simplification, not a hydrodynamic backwater solution.
-- `above_threshold`: `stage_m >= scenario.threshold_stage_m` (4.0). A model flag, not an official warning.
-- `inundated_area_km2`: union of wet cells inside Assam at the step.
+- `above_threshold`: `stage_m >= scenario.threshold_stage_m` (1.5). A model flag, not an official warning.
+- `inundated_area_km2`: union of wet cells inside AOI v2 at the step.
 - `new_inundation_km2`: cells wet at `t` and dry at `t−1` (0 at t=0).
 - `receded_area_km2`: cells dry at `t` and wet at `t−1` (0 at t=0).
-- `max_depth_m`, `mean_depth_m`: over wet cells at the step; mean is area-weighted.
+- `median_depth_m`, `max_depth_m`, `mean_depth_m`: over wet cells at the step; mean is
+  area-weighted. The median is the V-A5 statistic (including channel cells).
 - `affected_district_count`: districts with >1 km² wet.
-- `valid_cell_share`: share of Assam-masked cells with valid HAND. A global coverage caveat.
+- `valid_cell_share`: share of AOI v2 core cells with valid HAND. A coverage caveat.
+- `share_of_aoi_v2`, `share_of_assam`, `share_of_flood_prone_area`: the same step area against
+  the three denominators; the peak shares are repeated in `totals`.
 - All numbers are `null` if undefined for a step, never `NaN`.
 
 ### 6.9 `risk/risk-zones.geojson`
@@ -784,7 +856,7 @@ Field semantics:
 | `peak_depth_m` | number | m | Maximum depth in the polygon over all steps |
 | `area_km2` | number | km² | Geodesic |
 | `class` | string | — | `derived` |
-| `model_version` | string | — | `hand-v1` |
+| `model_version` | string | — | `hand-v2` |
 | `label` | string | — | e.g. “Derived risk zone · high” |
 
 Geometry: `Polygon`/`MultiPolygon`, simplified 100 m, min 0.05 km². Only cells wet in at least
@@ -876,7 +948,7 @@ Point features:
   "threshold": {
     "id": "scenario_threshold",
     "label": "Scenario threshold",
-    "value": 4.0,
+    "value": 1.5,
     "unit": "m",
     "class": "scenario",
     "note": "Model parameter, not an official danger level."
@@ -957,6 +1029,8 @@ valid samples. No NaN; invalid samples are omitted and counted in provenance.
 
 ### 6.16 `validation-report.json`
 
+<!-- amended: REVIEW-02 -->
+
 ```json
 {
   "schema_version": "1.0.0",
@@ -968,17 +1042,26 @@ valid samples. No NaN; invalid samples are omitted and counted in provenance.
       "id": "V05",
       "name": "Rising-limb area monotonicity",
       "status": "pass",
-      "expected": "non-decreasing, tolerance 0.5%",
+      "expected": "non-decreasing S00–S07",
       "actual": "…",
       "detail": "steps 0–7"
+    },
+    {
+      "id": "V-A5",
+      "name": "Peak depth",
+      "status": "pass",
+      "expected": "peak-step median ≤1.5 m and max ≤2.60 m",
+      "actual": "…",
+      "detail": "…"
     }
   ],
-  "counts": { "files": 16, "steps": 12, "features": 0, "failures": 0, "warnings": 0 }
+  "counts": { "files": 16, "steps": 12, "features": 0, "gates": 28, "failures": 0, "warnings": 0 }
 }
 ```
 
-`status` is `pass` only if every check is `pass` or an allowed `warn`. A `fail` makes `publish`
-refuse.
+`checks` must contain every ID in `V01–V20` and `V-A1–V-A8` (28 gates); a missing ID is a
+failure, not a skip. `status` is `pass` only if every check is `pass` or an allowed `warn`. A
+`fail` makes `publish` refuse.
 
 ### 6.17 `basemap/assam-hillshade.webp`
 
@@ -997,6 +1080,8 @@ physics.
 
 ### 7.1 Constants
 
+<!-- amended: REVIEW-02 -->
+
 | Constant | Value | Meaning |
 |---|---|---|
 | `RES_M` | 90 | Analysis cell size, metres |
@@ -1009,7 +1094,7 @@ physics.
 | `DEPTH_BANDS_M` | `[0, 0.5, 1.5, 3.0, null]` | Four classes |
 | `CONNECTIVITY` | 8-connected | Component must touch a channel cell |
 | `PEAK_STEP` | 7 | 25 Aug |
-| `ALERT_STAGE_M` | 4.0 | Scenario flag threshold |
+| `ALERT_STAGE_M` | 1.5 | Scenario flag threshold |
 
 ### 7.2 Step A — DEM mosaic
 
@@ -1020,10 +1105,29 @@ physics.
 4. Clip to the AOI rectangle. Keep a boolean `inside_assam` mask from the dissolved state
    polygon; it is used at output time, not to alter the DEM.
 
-### 7.3 Step B — channel burn-in
+### 7.3 Step B — channel policy and burn-in
 
-1. Rasterise `channel-lines.geojson` at 90 m, `all_touched=True`, with the main stem (`order 1`)
-   dilated to 2 cells and all other channels 1 cell. This is `channel_mask`.
+<!-- amended: REVIEW-02 -->
+
+**Channel policy v2 (A2), applied in stage 06 before any burn:**
+
+1. Keep only `waterway=river`. Drop `stream`, `canal`, `drain`, `ditch`.
+2. Clip to `AOI_v2` buffered by 5 km. A way whose midpoint is outside that buffer is excluded
+   from both the burn and the display layer — no upstream foreign reaches.
+3. Drop ways shorter than 2 km after clipping.
+4. Keep the Brahmaputra main stem as `order 1`; 2-cell dilation applies to it only. All other
+   channels are 1 cell, no dilation.
+5. **Hard gate:** channel cells inside AOI v2 ≤4.0 %. If exceeded, prune the shortest non-main
+   ways until it passes; record how many were pruned and the length threshold in
+   `pipeline/work/aoi-v2.json` and `provenance.json`.
+6. The display layer (`hydro/assam-rivers.geojson`) shows the same kept set as the model. It may
+   be simplified further to meet the 1.0 MB cap; it must never show a river the model does not
+   use or omit one it does.
+
+**Burn-in (stage 07):**
+
+1. Rasterise the pruned `channel-lines.geojson` at 90 m, `all_touched=True`, with the main stem
+   (`order 1`) dilated to 2 cells and all other channels 1 cell. This is `channel_mask`.
 2. For each channel cell, `z_burn = min(DEM[5×5 neighbourhood]) - 3.0`.
 3. Write `z_burn` only at channel cells into `dem-burned.tif`; all other cells keep DEM.
 4. Do **not** enforce a downstream monotonic elevation. OSM way direction is not reliable, and a
@@ -1033,14 +1137,16 @@ physics.
 Why burn at all: a DEM at 90 m often puts the photographed ground surface above the water
 surface in a narrow channel; without lowering, the nearest “drainage” would be higher than the
 floodplain and HAND would be systematically negative. A 3 m burn is a declared modelling device,
-not a surveyed channel depth.
+not a surveyed channel depth. The river-only policy makes HAND coarser between major channels;
+that is a stated limitation, not a reason to keep streams in the model.
 
 ### 7.4 Step C — nearest-drainage assignment
 
 The question is: for every land cell, which channel cell is nearest, and how far is it?
 
-1. Build the boolean mask `channel_mask` over the full AOI. Include channels in the 2 km buffer
-   outside Assam so edge cells are not artificially cut off.
+1. Build the boolean mask `channel_mask` over the full AOI. Channels may lie in the AOI v2 + 5 km
+   clip so valley-edge cells are not artificially cut off; flood counts remain restricted to the
+   AOI v2 core.
 2. Compute the exact Euclidean distance transform with nearest indices:
 
    ```text
@@ -1079,12 +1185,17 @@ model.
 
 ### 7.6 Step E — scenario water level and mask
 
+<!-- amended: REVIEW-02 -->
+
 For each step `s` with stage `stage_s` (metres above local drainage):
 
 ```text
-wet_raw = valid_hand AND inside_assam AND (hand <= stage_s)
+wet_raw = valid_hand AND inside_AOI_v2 AND (hand <= stage_s)
 depth_raw = max(0, stage_s - hand)
 ```
+
+`inside_AOI_v2` is the core mask (inside Assam, DEM ≤120 m), not the 2 km edge buffer and not the
+full Assam polygon. The 2 km buffer is used only so edge channels/terrain remain continuous.
 
 - The stage is applied uniformly to every channel cell. This is the key simplification: a real
   river has a water-surface slope and tributary backwater is unsteady. The model represents
@@ -1114,12 +1225,15 @@ reported, and the limitation is stated.
 
 ### 7.8 Step G — depth bands and polygonisation
 
+<!-- amended: REVIEW-02 -->
+
 For each step:
 
 1. Convert `depth` to a uint8 band raster: 1 = `0.0–0.5 m`, 2 = `0.5–1.5 m`, 3 = `1.5–3.0 m`,
    4 = `3.0+ m`; 0 = dry.
 2. Polygonise each band separately with `rasterio.features.shapes(band, mask=band>0,
-   transform=transform)`. This guarantees bands do not overlap within a step.
+   transform=transform)`. This guarantees bands do not overlap within a step. Polygonise only
+   the wet bounding window inside AOI v2; never polygonise the full state grid.
 3. Transform coordinates to EPSG:4326. `shapely.make_valid`; if still invalid, fail that feature
    (do not silently drop it) and report.
 4. Simplify with `shapely.simplify(tolerance=75 / 111320 degrees, preserve_topology=True)`
@@ -1131,7 +1245,10 @@ For each step:
 6. Quantise coordinates to 5 decimals; remove consecutive duplicates; enforce RFC 7946 exterior
    counter-clockwise / interior clockwise winding.
 7. Compute `band_area_km2` geodesically; `step_area_km2` is the sum of bands.
-8. Emit one feature per band per step with the properties in §6.7.
+8. Emit one feature per band per step with the properties in §6.7. Write each step’s feature
+   collection to `pipeline/work/flood-frames/step-XX.geojson` immediately, then combine those
+   files into the committed `flood-frames.geojson` (A5.3). The staging files are removed after
+   the combined file is written, so the app’s one-file load contract is unchanged.
 
 ### 7.9 Step H — no reachable channel, edge cases
 
@@ -1142,7 +1259,7 @@ For each step:
 | Cell below nearest channel | HAND clamped to 0; counted; warning if >2% | Cell floods at the first stage ≥0 |
 | Channel elevation above cell but distance valid | Same clamp; local depression | Stated limitation |
 | Isolated wet component | Dropped by connectivity; count reported | Avoids speckle |
-| Cell outside Assam | Computed for continuity but excluded from output and metrics | No foreign districts in ranking |
+| Cell outside AOI v2 | Computed for continuity but excluded from output and metrics | No hill-district flood area; stated caveat |
 | Stage above maximum HAND | Depth clipped at stage; no extrapolation | Max depth reported honestly |
 | Recession step leaves a disconnected puddle | Connectivity applies per step; puddle may drop | Area can fall faster than a hydrodynamic model |
 
@@ -1154,25 +1271,30 @@ and is stated in-app. A flow-accumulation/routing refinement is P2.
 
 ## 8. Scenario table and synthetic anchoring
 
+<!-- amended: REVIEW-02 -->
+
 ### 8.1 The 12 steps
 
 `N = 12`; peak at S07; total 136 days. Dates are **composite labels without a year** to avoid
-implying a specific observed event.
+implying a specific observed event. Stages are the phase-A curve rescaled by ×0.42 (A3). The
+main-stem and backwater columns are rescaled with the same factor and the backwater value absorbs
+the 3-decimal reconciliation so `stage_m = mainstem_stage_m + backwater_m` still holds exactly.
+All three columns remain **synthetic scenario parameters**.
 
-| Step | Label | Day | Phase | Rainfall (mm/day, synthetic) | Main-stem anomaly (m, synthetic) | Backwater allowance (m, synthetic) | Stage above drainage (m, scenario) | Above threshold |
+| Step | Label | Day | Phase | Rainfall (mm/day, synthetic) | Main-stem anomaly (m, synthetic) | Backwater allowance (m, synthetic) | Stage above drainage (m, scenario) | Above 1.5 m |
 |---:|---|---:|---|---:|---:|---:|---:|---|
-| S00 | 01 Jun | 0 | onset | 6 | 0.3 | 0.2 | 0.5 | no |
-| S01 | 15 Jun | 14 | rising | 12 | 0.7 | 0.3 | 1.0 | no |
-| S02 | 01 Jul | 30 | rising | 17 | 1.2 | 0.5 | 1.7 | no |
-| S03 | 15 Jul | 44 | rising | 21 | 1.8 | 0.7 | 2.5 | no |
-| S04 | 25 Jul | 54 | rising | 24 | 2.4 | 1.0 | 3.4 | no |
-| S05 | 05 Aug | 65 | rising | 20 | 2.9 | 1.4 | 4.3 | yes |
-| S06 | 15 Aug | 75 | rising | 14 | 3.2 | 2.0 | 5.2 | yes |
-| S07 | 25 Aug | 85 | peak | 10 | 3.4 | 2.6 | 6.0 | yes |
-| S08 | 05 Sep | 96 | receding | 7 | 3.2 | 2.0 | 5.2 | yes |
-| S09 | 15 Sep | 106 | receding | 5 | 2.7 | 1.4 | 4.1 | yes |
-| S10 | 30 Sep | 121 | receding | 3 | 1.9 | 1.0 | 2.9 | no |
-| S11 | 15 Oct | 136 | receding | 2 | 1.0 | 0.6 | 1.6 | no |
+| S00 | 01 Jun | 0 | onset | 6 | 0.126 | 0.074 | 0.20 | no |
+| S01 | 15 Jun | 14 | rising | 12 | 0.294 | 0.106 | 0.40 | no |
+| S02 | 01 Jul | 30 | rising | 17 | 0.504 | 0.196 | 0.70 | no |
+| S03 | 15 Jul | 44 | rising | 21 | 0.756 | 0.294 | 1.05 | no |
+| S04 | 25 Jul | 54 | rising | 24 | 1.008 | 0.442 | 1.45 | no |
+| S05 | 05 Aug | 65 | rising | 20 | 1.218 | 0.582 | 1.80 | yes |
+| S06 | 15 Aug | 75 | rising | 14 | 1.344 | 0.856 | 2.20 | yes |
+| S07 | 25 Aug | 85 | peak | 10 | 1.428 | 1.072 | **2.50** | yes |
+| S08 | 05 Sep | 96 | receding | 7 | 1.344 | 0.856 | 2.20 | yes |
+| S09 | 15 Sep | 106 | receding | 5 | 1.134 | 0.566 | 1.70 | yes |
+| S10 | 30 Sep | 121 | receding | 3 | 0.798 | 0.402 | 1.20 | no |
+| S11 | 15 Oct | 136 | receding | 2 | 0.420 | 0.280 | 0.70 | no |
 
 ### 8.2 What is anchored, what is invented
 
@@ -1190,7 +1312,7 @@ discharge, gauge level, return period, or event statistic is quoted from a sourc
 - Every rainfall value in the table.
 - Every main-stem anomaly value.
 - Every backwater-allowance value.
-- Every stage-above-drainage value and the 4.0 m scenario threshold.
+- Every stage-above-drainage value and the 1.5 m scenario threshold.
 - The step dates (composite month/day labels, no year).
 
 **Derived (computed, not observed):**
@@ -1205,12 +1327,13 @@ forecast, not a gauge record, not an evacuation instruction.”
 
 ### 8.3 Why these values
 
-The stage rises from 0.5 m to 6.0 m, a plausible order of magnitude for a large floodplain
-screening exercise, but **the number is a model parameter, not a measured flood level**. It was
-chosen to produce a legible sequence from first inundation to a broad peak without flooding the
-entire AOI. The rainfall peak at S04 and stage peak at S07 create a visible lag. The recession is
-slower than the rise (51 days from peak to S11 vs 85 days from S00 to peak), matching the
-qualitative behaviour of a large valley draining after the monsoon.
+The stage rises from 0.20 m to **2.50 m**, the phase-A curve rescaled by ×0.42 so the peak sits
+inside the valley HAND distribution rather than above its 60th percentile. The number is a **model
+parameter, not a measured flood level**: it was chosen to produce a legible sequence from first
+inundation to a broad peak without turning most of Assam into water. The rainfall peak at S04 and
+stage peak at S07 preserve the visible lag. The recession is slower than the rise (51 days from
+peak to S11 vs 85 days from S00 to peak), matching the qualitative behaviour of a large valley
+draining after the monsoon.
 
 The stage is the exact sum of the two synthetic columns:
 `stage_m = mainstem_stage_m + backwater_m`. The split is a narrative device for the causal chain
@@ -1218,8 +1341,12 @@ The stage is the exact sum of the two synthetic columns:
 applies the summed stage uniformly to every mapped channel. A reviewer must not read the split as
 two independent physical estimates.
 
+The 2.50 m peak is the **V-A4/V-A5 plausibility band subject**, not a calibrated observation. The
+band (4,000–12,000 km²) and the ≤40 %-of-flood-prone ceiling were chosen by the REVIEW-02 reviewer;
+they are recorded in `provenance.json` and the run report as a plausibility choice.
+
 If the builder changes any value, they must update the scenario table, the config, the summary,
-the series, and the validation expectations together. No component may hard-code 6.0 or step 7;
+the series, and the validation expectations together. No component may hard-code 2.50 or step 7;
 they come from `scenario.json`/`flood-summary.json`.
 
 ### 8.4 Duration weights
@@ -1348,8 +1475,11 @@ This is a **scenario depth exposure**, not damage, loss, or operational status.
 
 ## 10. Validation — checks that must pass before data ships
 
+<!-- amended: REVIEW-02 -->
+
 `validate` runs every check, records expected/actual, and exits non-zero on `fail`. `publish`
-refuses if `status != "pass"`.
+refuses if `status != "pass"`. The report lists every gate by ID in
+`REQUIRED_GATE_IDS`; a missing ID is itself a failure.
 
 | ID | Check | Pass condition | Fail / warn |
 |---|---|---|---|
@@ -1363,24 +1493,34 @@ refuses if `status != "pass"`.
 | V08 | Classes and labels | Every feature `class` in the five-value enum; badges/labels present; no layer missing a class | fail |
 | V09 | File caps | Every file ≤ its §11 cap; total ≤14 MB | fail |
 | V10 | Manifest integrity | Every file except `manifest.json` is listed once; SHA-256 and byte size match; no orphan data file | fail |
-| V11 | Series and stage consistency | `monsoon-series` points equal `flood-summary` at every step (1e−6); threshold = 4.0; `stage_m = mainstem_stage_m + backwater_m` at every step | fail |
+| V11 | Series and stage consistency | `monsoon-series` points equal `flood-summary` at every step (1e−6); threshold = 1.5; `stage_m = mainstem_stage_m + backwater_m` at every step | fail |
 | V12 | District join | Every ranking district exists in districts GeoJSON exactly once; `rank` dense; score 0–100 | fail |
 | V13 | Forbidden fields/claims | No `casualties`, `deaths`, `displaced`, `affected_persons`, `incident_id`, `agency_id`, `relief_camp`, `eta`, `warning_issued`; no positive `operational forecast`/`official forecast`/`flood forecast`. A bare `forecast` passes only inside the required negation `not a forecast` / `never a forecast` or the boolean key `not_a_forecast`. | fail |
 | V14 | Step count | Exactly 12 steps; labels/days/phases match `scenario.json`; every step has at least one feature | fail |
 | V15 | Coordinate hygiene | 5 decimals; no consecutive duplicates; RFC 7946 winding; no ring <0.02 km² (flood) | fail |
 | V16 | Risk range | All scores 0–100; zone classes match thresholds; ranking classes match thresholds | fail |
-| V17 | Channel coverage | ≥85% of Assam-masked cells valid HAND; no-channel cells reported; clamped negatives ≤2% | warn if 80–85%; fail <80% |
+| V17 | Channel coverage | ≥85% of AOI v2 core cells valid HAND; no-channel cells reported; clamped negatives ≤3.0% | warn if 80–85% valid or clamped 2–3%; fail <80% valid |
 | V18 | Fallback asset | `assam-hillshade.webp` exists, ≤1.5 MB, decodes, width 2000 | fail |
 | V19 | First-paint budget | Critical-tier bytes ≤3.5 MB raw; total animation tier ≤7.6 MB raw | fail |
-| V20 | Provenance completeness | Every committed dataset has a provenance entry with source/licence/stage/output; UNOSAT absence noted | fail |
+| V20 | Provenance completeness | Every committed dataset has a provenance entry with source/licence/stage/output; UNOSAT absence noted; flood-prone source recorded | fail |
+| V-A1 | AOI v2 area | AOI v2 core area between 45,000 and 56,000 km²; mask area agrees with metadata | fail |
+| V-A2 | Channel policy | Channel cells ≤4.0% of AOI v2; zero model ways with midpoint outside AOI v2 + 5 km; every model way is `waterway=river` | fail |
+| V-A3 | Stage series v2 | Strictly increases S00→S07, strictly decreases S08→S11, peak = 2.50 m at S07 | fail |
+| V-A4 | Peak extent plausibility | Peak extent between 4,000 and 12,000 km² and ≤40% of the 31,050 km² flood-prone area (reviewer-selected band, not a calibrated observation) | fail |
+| V-A5 | Peak depth | Peak-step median depth ≤1.5 m and max depth ≤2.60 m (`stage − HAND`) | fail |
+| V-A6 | Clamped HAND | Clamped negative HAND cells inside AOI v2 ≤3.0% | fail |
+| V-A7 | Hydrograph shape | Every rising-limb step non-decreasing; recession non-increasing; peak at S07 | fail |
+| V-A8 | Stage 09 performance | Stage 09 wall time ≤10 min; no `inundation-stack.npz` above 300 MB; every stage-09 artifact ≤300 MB | fail |
 
 Additional assertions inside stages:
 
 - `build-dem`: elevation range sanity (−50 to 8,000 m); no ocean zeros inside Assam.
 - `build-admin`: centroid inside polygon; state area within 1% of the district sum.
-- `build-rivers`: at least one main-stem line; channel length >500 km.
-- `build-inundation`: peak area >0; peak area <30% of Assam (sanity bound, not a scientific
-  claim); `new_inundation` and `receded` non-negative.
+- `build-rivers`: at least one main-stem line; channel length >500 km; channel cells ≤4.0% of
+  AOI v2; no model way with midpoint outside AOI v2 + 5 km.
+- `build-inundation`: rising-limb and recession areas exact non-decreasing/non-increasing; peak
+  at S07; peak extent inside V-A4; peak depth inside V-A5; per-step masks written; no float stack
+  and no `inundation-stack.npz`.
 - `build-risk`: districts with zero valid cells do not receive a score; hotspot count ≤20.
 - `publish`: refuses on a dirty/partial data directory or missing report.
 
@@ -1404,6 +1544,8 @@ produced locally and committed with a fresh manifest.
 ---
 
 ## 11. Size caps, runtime, and reproducibility
+
+<!-- amended: REVIEW-02 -->
 
 ### 11.1 Caps
 
@@ -1429,7 +1571,10 @@ monsoon-series, validation) ≤3.5 MB raw; animation (flood frames, summary, ris
 raw; optional/fallback (hillshade, cross-sections, hotspots, assets, gauges) ≤3.0 MB raw.
 
 If the flood cap is exceeded, reduce depth bands (four → three) before coarsening the grid or
-simplifying below 75 m. The model resolution is the last thing to degrade.
+simplifying below 75 m. The model resolution is the last thing to degrade. Do not hand-edit the
+committed JSON, and do not drop genuine flood polygons merely to make the byte count look good.
+The stage-09 per-step uint8 mask cache is capped at 300 MB; the old float `.npz` stack is not part
+of the accepted path.
 
 ### 11.2 Expected runtime
 
@@ -1439,7 +1584,7 @@ simplifying below 75 m. The model resolution is the last thing to degrade.
 | fetch boundaries/rivers | 1–3 min (Overpass can be 30 s+) | <300 MB |
 | DEM/hillshade | 1–2 min | 1.5 GB |
 | HAND | 2–4 min | 3 GB |
-| Inundation (12 steps) | 4–8 min | 3 GB |
+| Inundation (12 steps) | ≤10 min (V-A8) | 3 GB |
 | Risk/series | 2–4 min | 2 GB |
 | Validate/publish | <1 min | <300 MB |
 
@@ -1471,21 +1616,30 @@ fetching; clarity over speed.
 
 ## 12. Limitations (must be repeated in-app)
 
+<!-- amended: REVIEW-02 -->
+
 1. **Not a forecast.** The scenario is synthetic; the model is a terrain screening tool.
 2. **No hydrodynamic routing.** Uniform stage over mapped channels; no unsteady flow, no
    backwater solver, no sediment.
 3. **No defences.** Levees, embankments, roads, and flood walls are absent; the model may
    overstate inundation behind protection.
-4. **Incomplete channels.** HAND uses mapped rivers; first-order streams are missing, so HAND is
-   conservative on hills and coarse near small tributaries.
+4. **Incomplete channels.** HAND uses `waterway=river` only; streams and drains are deliberately
+   excluded, so HAND is coarser between major rivers and the flood band can be narrower than a
+   full-channel model would suggest. This is a stated policy, not a hidden smoothing.
 5. **90 m grid.** Smaller channels, culverts, and local depressions are not resolved.
 6. **Euclidean nearest drainage.** A channel across a ridge can be selected; no flow-path
-   distance.
-7. **No calibration.** Stage values are not fitted to a gauge or a satellite extent.
-8. **Scenario-conditional risk.** Risk zones and district scores describe this scenario, not
+   distance. Negative HAND (cell below its nearest channel) is clamped and counted; V-A6 caps it
+   at 3.0% of AOI v2.
+7. **No calibration.** Stage values are not fitted to a gauge or a satellite extent. The
+   4,000–12,000 km² peak band and 31,050 km² flood-prone denominator are plausibility references,
+   not observations of this scenario.
+8. **Valley-floor AOI.** AOI v2 excludes hill districts above 120 m; flood metrics do not cover
+   them. If a genuinely flood-prone district is excluded, that is a coverage caveat, not a reason
+   to raise the threshold.
+9. **Scenario-conditional risk.** Risk zones and district scores describe this scenario, not
    all-time flood risk or expected loss.
-9. **No demographics or assets in the score.** P1 facility exposure is a depth join, not damage.
-10. **OSM completeness.** Facility and river completeness is uneven; the UI says so.
+10. **No demographics or assets in the score.** P1 facility exposure is a depth join, not damage.
+11. **OSM completeness.** Facility and river completeness is uneven; the UI says so.
 
 If a reviewer asks for an operational forecast, the answer is that this product is not one and
 the data to make one is not among the probed sources. Do not add a plausible-looking feed.

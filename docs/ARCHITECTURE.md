@@ -339,7 +339,8 @@ pipeline/work/channels-90m.tif           # rasterized channel mask
 pipeline/work/channel-distance-90m.tif   # metres to nearest channel
 pipeline/work/hand-90m.tif               # HAND raster; -9999 = no channel within limit
 pipeline/work/hand-meta.json             # counts, clamp/no-data statistics
-pipeline/work/inundation-stack.npz       # depth[step, y, x] float32 for risk/series
+pipeline/work/aoi-v2-*.tif               # AOI v2 core/edge/clip masks (REVIEW-02 A1)
+pipeline/work/inundation-masks/step-XX-wet.tif  # per-step uint8 wet masks (REVIEW-02 A5)
 pipeline/work/provenance/*.json          # per-stage provenance fragments
 ```
 
@@ -511,6 +512,8 @@ interface CameraStatus {
 
 ### 6.7 Data load contract
 
+<!-- amended: REVIEW-02 -->
+
 `loadData.ts` exposes `loadDataset(): Promise<Dataset>` and a small state machine:
 `idle → manifest → critical → frames → ready | error`. It reads `manifest.json` first, validates
 `schema_version` and `dataset_version`, then fetches in tiers:
@@ -519,6 +522,9 @@ interface CameraStatus {
    monsoon series.
 2. **animation** (`≤7.6 MB` raw): flood-frames, flood-summary, risk-zones. Frames must be parsed
    and added to the map as one source before `framesReady = true`; Play is disabled until then.
+   The committed load contract remains one `flood-frames.geojson`; the pipeline’s per-step
+   `flood/frames/step-XX.geojson` files are internal staging and are removed after the combined
+   file is written (REVIEW-02 A5.3).
 3. **optional** (P1): cross-sections, hotspots, assets, gauges.
 4. **failure only**: `assam-hillshade.webp` if terrain/imagery tiles fail.
 

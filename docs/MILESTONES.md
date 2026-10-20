@@ -195,6 +195,8 @@ inside `devDependencies` and starts the Vite dev server via `playwright.config.t
 
 ### M0 acceptance criteria (executable)
 
+<!-- amended: REVIEW-02 -->
+
 | ID | Criterion | Where it is checked |
 |---|---|---|
 | M0-A1 | The app loads with no uncaught exception and no console error other than expected tile-network failures. | `m0.spec.ts` page-error/console listeners |
@@ -207,7 +209,7 @@ inside `devDependencies` and starts the Vite dev server via `playwright.config.t
 | M0-A8 | Every visible layer/panel has a class badge (`SOURCE`, `DERIVED`, `SCENARIO`, `SYNTHETIC`); Provenance shows source → stage → file for terrain, districts, rivers, flood, and risk; “NOT A FORECAST” is visible. | `m0.spec.ts`, `check-honesty.mjs` |
 | M0-A9 | With both DEM and imagery tile hosts aborted, the app still renders the committed relief and all vector overlays, reports the offline status, and the timeline still steps. | `fallback.spec.ts` |
 | M0-A10 | Keyboard-only: Tab reaches the timeline, Space toggles play, ArrowRight steps, Enter opens the first risk row, ESC returns focus to the panel trigger. | `m0.spec.ts` |
-| M0-A11 | `flood-frames.geojson` has ≥1 feature for every step, all classes are valid, no coordinate outside AOI, no `NaN`, and rising-limb area is non-decreasing within the 0.5% tolerance. | `check-data.mjs` + committed `validation-report.json` |
+| M0-A11 | `flood-frames.geojson` has ≥1 feature for every step, all classes are valid, no coordinate outside AOI v2, no `NaN`; rising-limb area is non-decreasing and recession non-increasing (V-A7); peak extent is 4,000–12,000 km² and ≤40% of the 31,050 km² flood-prone area (V-A4); peak depth and clamped HAND pass V-A5/V-A6. | `check-data.mjs` + committed `validation-report.json` (V-A1…V-A8) |
 | M0-A12 | Committed data sizes are within the caps in `DATA-PIPELINE.md` §11; critical tier ≤3.5 MB; animation tier ≤7.6 MB. | `check-budget.mjs` |
 | M0-A13 | No banned claim or field appears in data or built strings (`casualties`, `deaths`, `displaced`, `affected_persons`, `incident_id`, `agency_id`, `relief_camp`, positive “forecast”, `warning issued`); the required “NOT A FORECAST” disclaimer is explicitly allowed. | `check-honesty.mjs` |
 | M0-A14 | The map is meaningful **without reading the docs**: the reviewer can point to rainfall, stage, extent, and district risk in the UI. | Manual 60-second check below |

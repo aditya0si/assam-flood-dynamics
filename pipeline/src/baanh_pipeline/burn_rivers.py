@@ -5,10 +5,11 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
-from rasterio.features import rasterize
-from scipy.ndimage import binary_dilation, minimum_filter, uniform_filter
+from scipy.ndimage import minimum_filter, uniform_filter
 from shapely.geometry import shape
 
+from . import aoi_domain
+from .channels import rasterize_channels
 from .config import Config
 from .geo import load_geojson, project_geom
 from .util import StageRecord, atomic_write_json, ensure_dirs, utc_now
@@ -52,32 +53,20 @@ def run(
         geom = project_geom(geom, cfg.aoi.output_crs, cfg.aoi.analysis_crs)
         if geom.is_empty:
             continue
-        all_shapes.append((geom, 1))
+        all_shapes.append(geom)
         if int(feature["properties"].get("order", 0)) == 1:
-            main_shapes.append((geom, 1))
+            main_shapes.append(geom)
     if not all_shapes:
         raise RuntimeError("stage 07: no channel geometries to rasterise")
 
-    channel_mask = rasterize(
+    channel_mask, main_mask = rasterize_channels(
         all_shapes,
-        out_shape=(height, width),
-        transform=transform,
-        fill=0,
-        all_touched=True,
-        dtype="uint8",
-    )
-    main_mask = rasterize(
         main_shapes,
-        out_shape=(height, width),
-        transform=transform,
-        fill=0,
-        all_touched=True,
-        dtype="uint8",
+        transform,
+        height,
+        width,
+        int(burn_cfg["main_stem_width_cells"]),
     )
-    widen = int(burn_cfg["main_stem_width_cells"]) - 1
-    if widen > 0 and main_mask.any():
-        main_mask = binary_dilation(main_mask, iterations=widen).astype(np.uint8)
-    channel_mask = np.maximum(channel_mask, main_mask)
 
     valid_dem = dem != nodata
     dem_for_min = np.where(valid_dem, dem, np.float32(np.inf)).astype(np.float32)
@@ -117,6 +106,16 @@ def run(
         raise RuntimeError("stage 07: zero channel cells after rasterisation")
     if burnable_cells <= 0:
         raise RuntimeError("stage 07: no channel cell overlaps valid DEM")
+    aoi = aoi_domain.load_saved(cfg)
+    channel_cells_aoi = int(channel_mask[aoi.core].sum())
+    channel_share_aoi = channel_cells_aoi / aoi.core_cells if aoi.core_cells else 1.0
+    limit_share = float(cfg.pipeline["rivers"]["max_channel_cell_share_of_aoi_v2"])
+    if channel_share_aoi > limit_share:
+        raise RuntimeError(
+            f"stage 07: channel cells inside AOI v2 {channel_cells_aoi:,} "
+            f"({channel_share_aoi:.2%}) exceed the {limit_share:.1%} gate; "
+            "stage 06 pruning did not reach the configured limit"
+        )
     mean_delta = float(delta.mean())
     mean_adjacent_delta = float(adjacent_delta.mean())
     if not (1.0 <= mean_delta <= 6.0):
@@ -130,6 +129,10 @@ def run(
     meta = {
         "schema_version": "1.0.0",
         "channel_cells": channel_cells,
+        "channel_cells_aoi_v2": channel_cells_aoi,
+        "channel_cell_share_aoi_v2": round(channel_share_aoi, 9),
+        "channel_cell_limit_share": limit_share,
+        "aoi_v2_core_area_km2": round(aoi.core_area_km2, 4),
         "main_stem_channel_cells": int(main_mask.sum()),
         "burnable_cells": burnable_cells,
         "burn_depth_m": depth,
@@ -174,18 +177,21 @@ def run(
 
     stage.out(out_dem, out_channels, meta_path)
     stage.metric("channel_cells", channel_cells)
+    stage.metric("channel_cells_aoi_v2", channel_cells_aoi)
+    stage.metric("channel_cell_share_aoi_v2", round(channel_share_aoi, 9))
     stage.metric("burnable_cells", burnable_cells)
     stage.metric("dem_delta_mean_m", mean_delta)
     stage.metric("adjacent_delta_mean_m", mean_adjacent_delta)
     stage.metric("dem_delta_min_m", float(delta.min()))
     stage.metric("dem_delta_max_m", float(delta.max()))
     stage.finish(
-        "Channels rasterised all_touched; main stem dilated to 2 cells; each channel "
-        "cell set to the 5x5 minimum DEM minus the burn depth, capped at 6 m below "
-        "the adjacent 5x5 mean to prevent unrealistic incision in steep terrain "
-        f"({int(capped.sum())} cells capped). No downstream monotonic enforcement "
-        "(OSM way direction is unreliable). The 1–6 m check is against the mean "
-        "adjacent 5x5 DEM."
+        "Channels rasterised all_touched; only the order-1 Brahmaputra main stem is "
+        "dilated to 2 cells; each channel cell set to the 5x5 minimum DEM minus the "
+        "burn depth, capped at 6 m below the adjacent 5x5 mean to prevent unrealistic "
+        f"incision in steep terrain ({int(capped.sum())} cells capped). Channel cells "
+        f"inside AOI v2: {channel_cells_aoi:,} ({channel_share_aoi:.2%}, limit "
+        f"{limit_share:.1%}). No downstream monotonic enforcement (OSM way direction "
+        "is unreliable). The 1–6 m check is against the mean adjacent 5x5 DEM."
     )
     print(
         f"[07] ok: {channel_cells} channel cells ({burnable_cells} burned), "

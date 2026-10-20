@@ -79,6 +79,13 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
     )
 
     public_root = data_path.parent
+    aoi_meta_path = cfg.root / "pipeline" / "work" / "aoi-v2.json"
+    aoi_meta = (
+        json.loads(aoi_meta_path.read_text(encoding="utf-8"))
+        if aoi_meta_path.exists()
+        else {}
+    )
+    flood_prone = sources.get("flood_prone_area", {})
     committed = {
         path.relative_to(public_root).as_posix()
         for path in data_path.rglob("*")
@@ -125,7 +132,7 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
             "fetched_at": _fetched_at(fragments, "03"),
             "pipeline": _stage_pipeline(fragments, ["03", "06", "07", "08"]),
             "output_paths": present("data/hydro/assam-rivers.geojson"),
-            "notes": f"Clipped to AOI + 5 km; lines below 500 m dropped; order by name/waterway heuristic; display simplification 50 m.{fallback_note}",
+            "notes": f"REVIEW-02 A2: waterway=river only, clipped to AOI v2 + 5 km, midpoint inside that clip, clipped length >= 2 km, {aoi_meta.get('channel_pruned_way_count', 0)} shortest ways pruned to keep channel cells <= 4.0% of AOI v2. Display shows the same kept set; only simplification changes.{fallback_note}",
         },
         {
             "id": "flood",
@@ -139,7 +146,7 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
             "output_paths": present(
                 "data/flood/flood-frames.geojson", "data/flood/flood-summary.json"
             ),
-            "notes": "HAND threshold with 8-connected connectivity; uniform stage per step; synthetic stage is not a gauge reading. Polygonised per depth band, simplified in EPSG:32646, clipped to Assam.",
+            "notes": "REVIEW-02 A1/A3/A5: HAND threshold inside AOI v2 (Assam and DEM <= 120 m); uniform synthetic stage per step; 8-connected connectivity; per-step uint8 wet masks, frames written one step at a time and combined; no inundation-stack.npz. The peak-extent plausibility band is reviewer-selected, not calibrated.",
         },
         {
             "id": "risk",
@@ -231,6 +238,38 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
 
     entries.append(
         {
+            "id": "flood_prone_area",
+            "dataset": "Assam flood-prone area reference value",
+            "class": "reference",
+            "source_name": flood_prone.get(
+                "name", "Government of Assam, Water Resources Department"
+            ),
+            "source_url": flood_prone.get(
+                "url", "https://waterresources.assam.gov.in/portlets/flood-erosion-problems"
+            ),
+            "licence": "Government of Assam published statistic; cited as a reference denominator, not ingested as a layer",
+            "fetched_at": None,
+            "pipeline": [
+                {
+                    "stage": "00",
+                    "command": "reference value used as a V-A4 plausibility denominator; not ingested",
+                    "version": "1.0.0",
+                }
+            ],
+            "output_paths": present("data/flood/flood-summary.json"),
+            "notes": (
+                f"{flood_prone.get('value_km2', 31050):,.0f} km² flood-prone area "
+                f"against a {flood_prone.get('state_area_km2', 78523):,.0f} km² state "
+                f"area ({float(flood_prone.get('share_of_state', 0.396)):.1%}); "
+                f"retrieved {flood_prone.get('retrieved_at', '2026-10-21')}. This is a "
+                "published flood-prone-area statistic, not a single event's observed "
+                "extent and not a forecast. V-A4's peak-extent band is a reviewer "
+                "choice, not a calibrated observation."
+            ),
+        }
+    )
+    entries.append(
+        {
             "id": "unosat",
             "dataset": "UNOSAT flood products",
             "class": "reference",
@@ -307,6 +346,17 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
         "crs": "EPSG:4326",
         "analysis_crs": "EPSG:32646",
         "bbox": list(cfg.aoi.bbox),
+        "aoi_v2": {
+            "definition": aoi_meta.get("definition", "(inside Assam) intersect (DEM <= 120 m)"),
+            "area_km2": aoi_meta.get("core_area_km2"),
+            "max_dem_m": aoi_meta.get("max_dem_m"),
+            "edge_buffer_km": aoi_meta.get("edge_buffer_km"),
+            "assam_area_km2": aoi_meta.get("assam_area_km2"),
+            "assam_area_km2_reference": aoi_meta.get("assam_area_km2_reference"),
+            "flood_prone_area_km2": aoi_meta.get("flood_prone_area_km2"),
+            "channel_cell_share_of_aoi_v2": aoi_meta.get("channel_cell_share_of_aoi_v2"),
+            "note": aoi_meta.get("note"),
+        },
         "step_count": int(scenario["step_count"]),
         "load_tiers": {
             "critical": sorted(tiers["critical"]),

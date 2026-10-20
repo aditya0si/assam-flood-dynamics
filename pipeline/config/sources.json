@@ -39,7 +39,7 @@
   "rivers": {
     "name": "OSM Overpass river centrelines with Natural Earth 10m fallback",
     "overpass_url": "https://overpass-api.de/api/interpreter",
-    "overpass_query": "[out:json][timeout:180];way[\"waterway\"~\"^(river|stream|canal|drain)$\"](23.95,89.55,28.15,96.15);out geom;",
+    "overpass_query": "[out:json][timeout:180];way[\"waterway\"=\"river\"](23.95,89.55,28.15,96.15);out geom;",
     "licence_osm": "OpenStreetMap contributors, ODbL 1.0",
     "attribution_osm": "Rivers: © OpenStreetMap contributors (ODbL)",
     "fallback_name": "Natural Earth 10m rivers and lake centerlines",
@@ -54,6 +54,15 @@
     "url": "https://unosat.org/products/",
     "used_by_pipeline": false,
     "note": "Not ingested in M0. Reserved for a future event-context cross-check; absence is recorded in provenance."
+  },
+  "flood_prone_area": {
+    "name": "Government of Assam, Water Resources Department — flood-prone area",
+    "url": "https://waterresources.assam.gov.in/portlets/flood-erosion-problems",
+    "value_km2": 31050.0,
+    "state_area_km2": 78523.0,
+    "share_of_state": 0.396,
+    "retrieved_at": "2026-10-21",
+    "note": "31.05 lakh hectares of flood-prone area against a 78.523 lakh hectare state area (39.6%). This is a published flood-prone-area statistic, not a single event's observed extent; it is used only as a plausibility denominator and is not ingested as a layer."
   },
   "attribution": [
     { "name": "AWS Terrarium / Mapzen", "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png", "licence": "Mapzen/Amazon elevation tiles; verify terms" },

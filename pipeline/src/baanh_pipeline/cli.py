@@ -59,8 +59,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out-state", required=True)
     p.add_argument("--out-centroids", required=True)
 
-    p = add("build-rivers", "Stage 06: build display rivers and channel lines")
+    p = add("build-rivers", "Stage 06: AOI v2, channel policy v2 and display rivers")
     p.add_argument("--raw", required=True)
+    p.add_argument("--dem", required=True)
+    p.add_argument("--state", required=True)
     p.add_argument("--aoi", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--out-channels", required=True)
@@ -89,10 +91,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--scenario", required=True)
     p.add_argument("--out-frames", required=True)
     p.add_argument("--out-summary", required=True)
-    p.add_argument("--out-stack", required=True)
+    p.add_argument("--out-masks", required=True)
+    p.add_argument("--out-frames-dir", required=True)
 
     p = add("build-risk", "Stage 10: risk zones, district ranking and hotspots")
-    p.add_argument("--stack", required=True)
+    p.add_argument("--masks", required=True)
     p.add_argument("--hand", required=True)
     p.add_argument("--distance", required=True)
     p.add_argument("--channels", required=True)
@@ -106,7 +109,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p = add("build-series", "Stage 11: monsoon series and cross-sections")
     p.add_argument("--scenario", required=True)
     p.add_argument("--summary", required=True)
-    p.add_argument("--stack", required=True)
     p.add_argument("--dem", required=True)
     p.add_argument("--channels", required=True)
     p.add_argument("--transects", required=True)
@@ -116,7 +118,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p = add("build-assets", "Stage 12 (P1): OSM facility exposure")
     p.add_argument("--aoi", required=True)
     p.add_argument("--sources", required=True)
-    p.add_argument("--stack", required=True)
+    p.add_argument("--masks", required=True)
+    p.add_argument("--hand", required=True)
     p.add_argument("--frames", required=True)
     p.add_argument("--districts", required=True)
     p.add_argument("--out", required=True)
@@ -127,7 +130,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--summary", required=True)
     p.add_argument("--out", required=True)
 
-    p = add("validate", "Stage 14: run V01–V20 and write the validation report")
+    p = add("validate", "Stage 14: run V01–V20 and V-A1–V-A8, write the validation report")
     p.add_argument("--data", required=True)
     p.add_argument("--config", required=True)
     p.add_argument("--report", required=True)
@@ -180,7 +183,9 @@ def _dispatch(args) -> None:
     elif args.command == "build-rivers":
         from . import build_rivers
 
-        build_rivers.run(cfg, rel(args.raw), rel(args.out), rel(args.out_channels))
+        build_rivers.run(
+            cfg, rel(args.raw), rel(args.dem), rel(args.state), rel(args.out), rel(args.out_channels)
+        )
     elif args.command == "burn-rivers":
         from . import burn_rivers
 
@@ -210,14 +215,15 @@ def _dispatch(args) -> None:
             rel(args.scenario),
             rel(args.out_frames),
             rel(args.out_summary),
-            rel(args.out_stack),
+            rel(args.out_masks),
+            rel(args.out_frames_dir),
         )
     elif args.command == "build-risk":
         from . import risk
 
         risk.run(
             cfg,
-            rel(args.stack),
+            rel(args.masks),
             rel(args.hand),
             rel(args.distance),
             rel(args.channels),
@@ -235,7 +241,6 @@ def _dispatch(args) -> None:
             cfg,
             rel(args.scenario),
             rel(args.summary),
-            rel(args.stack),
             rel(args.dem),
             rel(args.channels),
             rel(args.transects),
@@ -247,7 +252,8 @@ def _dispatch(args) -> None:
 
         assets.run(
             cfg,
-            rel(args.stack),
+            rel(args.masks),
+            rel(args.hand),
             rel(args.frames),
             rel(args.districts),
             rel(args.out),
