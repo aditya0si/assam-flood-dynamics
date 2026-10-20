@@ -167,8 +167,8 @@ npm ci
 npm run dev
 ```
 
-One-line form: `npm ci && npm run dev`. Open the printed local URL (Vite default
-`http://localhost:5173/`). Node 24 is required; `.nvmrc` pins it.
+One-line form: `npm ci && npm run dev`. Open the printed local URL; with the fixed Pages base
+path it is normally `http://localhost:5173/baanh/`. Node 24 is required; `.nvmrc` pins it.
 
 **Acceptance:**
 
@@ -179,12 +179,16 @@ npm run verify:m0
 `verify:m0` must be defined in `package.json` as the sequence:
 
 ```text
+npm run build
 node scripts/check-data.mjs
 node scripts/check-budget.mjs
 node scripts/check-honesty.mjs
 vitest run tests/unit/timelineStore.test.ts tests/unit/schema.test.ts
 playwright test tests/e2e/m0.spec.ts tests/e2e/fallback.spec.ts
 ```
+
+The build step is required because `check-budget.mjs` and `check-honesty.mjs` inspect `dist/`
+for the JS/CSS caps and the built-string denylist.
 
 The reviewer does not need Python, network, or a paid account for acceptance. Playwright lies
 inside `devDependencies` and starts the Vite dev server via `playwright.config.ts`.
@@ -194,7 +198,7 @@ inside `devDependencies` and starts the Vite dev server via `playwright.config.t
 | ID | Criterion | Where it is checked |
 |---|---|---|
 | M0-A1 | The app loads with no uncaught exception and no console error other than expected tile-network failures. | `m0.spec.ts` page-error/console listeners |
-| M0-A2 | A WebGL canvas mounts; terrain status is `ok` when the network allows tile fetches; the map is interactive (pan/orbit does not throw). | `m0.spec.ts` |
+| M0-A2 | A WebGL canvas mounts and the map is interactive (pan/orbit does not throw); the status bar reports `ok` when tile fetches succeed or the committed fallback when they do not. | `m0.spec.ts` |
 | M0-A3 | The timeline exposes exactly 12 steps, starts at step 0/phase `onset`, and displays the step label and scenario stage. | `m0.spec.ts`, DOM readouts |
 | M0-A4 | Play advances the step automatically; pause holds it; next/prev move exactly one step; Home/End jump to the first/last step. | `m0.spec.ts`, `timelineStore.test.ts` |
 | M0-A5 | Scrubbing to S07 (`25 Aug`, `peak`) updates the map readout, all three chart cursors, and the area value without a page reload or a console error. | `m0.spec.ts` |
@@ -254,7 +258,8 @@ the manifest hashes must match.
 
 All M0 files exist; `npm ci && npm run dev` works on Node 24; `npm run verify:m0` exits 0; the
 manual check passes; `validation-report.json` is `pass`; no P1/P2 UI is present; no P2 data is
-committed. The M0 app must not be described as a forecast anywhere.
+committed. The M0 app must never be positively described as a forecast; the required
+“NOT A FORECAST” disclaimer must remain visible.
 
 ---
 

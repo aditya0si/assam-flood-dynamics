@@ -77,6 +77,26 @@ explicitly outside the first build with a reason. There are no unaddressed requi
 
 ---
 
+## Deferred by design (P2)
+
+These are not gaps in the spec; they are explicitly outside the first build, usually because the
+data does not exist in the probed sources. Each could be revisited only with a sourced dataset.
+
+| Item | Where | Status | Reason |
+|---|---|---|---|
+| Evacuation corridors / relief camps | `ARCHITECTURE.md` P2-01 | deferred (P2) | No verified corridor or camp dataset; synthetic camps would imply operational guidance. |
+| Resources table (boats, teams, ETA) | `ARCHITECTURE.md` P2-02 | deferred (P2) | No deployment, fleet, or ETA data; inventing it violates the honesty rules. |
+| Drone/aircraft HUD and flight paths | `ARCHITECTURE.md` P2-03 | deferred (P2) | No flight or telemetry data; only camera behaviour survives at P1. |
+| Multi-event historical comparison | `ARCHITECTURE.md` P2-04 | deferred (P2) | A second event needs verified extents/levels not in the probed sources. |
+| 30 m analysis, exports, live adapter | `ARCHITECTURE.md` P2-05 | deferred (P2) | 30 m is ~9× the memory and not needed for the story; exports/live feeds add scope without evidence. |
+
+**M0 scope note:** P0-07 (the full layer-control rail) is a P0 feature but deliberately ships in
+M1. M0 has fixed layer visibility and a working fallback; it still tells the causal story. If the
+review bar requires all nine P0 features in the first demo, move P0-07 into M0 and re-run the M0
+checks; nothing else in the spec blocks that.
+
+---
+
 ## Honest caveats (not unaddressed requirements)
 
 1. **This is a specification, not a running product.** The M0 command cannot execute until the

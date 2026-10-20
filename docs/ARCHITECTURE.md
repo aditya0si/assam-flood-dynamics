@@ -756,8 +756,9 @@ breakpoint.
 - **Workflow:** `.github/workflows/pages.yml` on push to `main` (and manual dispatch):
   `actions/checkout` → `actions/setup-node` with Node 24 → `npm ci` → `npm run build` →
   `actions/upload-pages-artifact` with `dist/` → `actions/deploy-pages`.
-- **Base path:** `vite.config.ts` sets `base: '/baanh/'` for the Pages build. All data fetches
-  use `import.meta.env.BASE_URL + 'data/...'`, never a root-absolute `/data/...`.
+- **Base path:** `vite.config.ts` sets `base: '/baanh/'` for both dev and the Pages build, so
+  routes and data URLs are identical locally and in production. All data fetches use
+  `import.meta.env.BASE_URL + 'data/...'`, never a root-absolute `/data/...`.
 - **No secrets, no environment variables at runtime.** The only remote requests are the two
   probed tile hosts (AWS Terrarium, Esri World Imagery). No fonts, analytics, or APIs.
 - **Caching:** Vite hashed JS/CSS are immutable. Data is versioned by `dataset_version`; the
@@ -839,9 +840,10 @@ These are product requirements, not documentation decoration.
    strings/fields (`casualties`, `deaths`, `displaced`, `affected_persons`, `incident_id`,
    `agency_id`, `relief_camp`, `warning issued`, a positive `operational/official/flood
    forecast`, or a positive claim that a CWC/NDRF feed was used) or a data feature lacks a valid
-   `class`. A bare `forecast` is accepted only inside `not a forecast` / `never a forecast`;
-   negative disclaimers such as “no CWC gauge record” are allowed. All other false positives are
-   handled by an explicit allowlist, not by weakening the check.
+   `class`. A bare `forecast` is accepted only inside `not a forecast` / `never a forecast` or
+   the boolean key `not_a_forecast`; negative disclaimers such as “no CWC gauge record” are
+   allowed. All other false positives are handled by an explicit allowlist, not by weakening the
+   check.
 6. **Synthetic series are labelled at the point of use**, not only in a footnote: chart titles
    include “(synthetic)”, the stage readout says “scenario stage”, and the Overview panel states
    that no gauge record was used.

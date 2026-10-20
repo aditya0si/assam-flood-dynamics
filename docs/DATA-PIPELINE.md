@@ -60,8 +60,12 @@ public/data/
 | Esri World Imagery | `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}` | Satellite drape only; no analysis | Esri, Maxar, Earthstar Geographics and contributors; attribution required in the map | Yes (imagery), not pipeline |
 | geoBoundaries | `https://www.geoboundaries.org/api/current/gbOpen/IND/ADM2/` | Assam ADM2 districts, dissolved state outline | CC BY 4.0 (geoBoundaries gbOpen); attribution shown | No; committed output |
 | OSM Overpass | `https://overpass-api.de/api/interpreter` | River centrelines; P1 hospitals/clinics/schools | ODbL; “© OpenStreetMap contributors” shown | No; committed output |
-| Natural Earth 10m rivers | Natural Earth 10m rivers GeoJSON (fallback copy) | River fallback if Overpass fails | Public domain | No; committed output |
+| Natural Earth 10m rivers | Local/committed fallback copy of the Natural Earth 10m rivers GeoJSON (exact URL/path in `sources.json`) | River fallback if Overpass fails | Public domain | No; committed output |
 | UNOSAT flood products | Portal reachable (per reference analysis) | **Not ingested in P0/P1.** Reserved for a future event-context cross-check. | UNOSAT terms; would be cited | No |
+
+Natural Earth is the documented fallback for the **rivers** source, not an additional layer or a
+sixth dataset. The five probed layers remain terrain, satellite basemap, districts, rivers, and
+event context; the first four are used, and UNOSAT is explicitly not used in the first build.
 
 **Source discipline.** Only the five probed sources above, or committed pipeline output, feed the
 app. No rainfall API, discharge API, gauge API, population layer, building footprint, or
@@ -126,10 +130,12 @@ Albers projection to avoid an extra CRS definition that a reviewer cannot check 
 ## 4. Environment and conventions
 
 Python 3.11+ (64-bit). Commands are run from the repository root. The examples use PowerShell;
-the POSIX equivalent differs only in activation.
+the POSIX equivalent differs only in activation. A virtual environment is recommended for a
+clean machine but is **not required**; if the listed packages are already importable, skip the
+venv steps. Do not treat 3.11 as a hard pin—any 3.11+ interpreter with the packages works.
 
 ```powershell
-py -3.11 -m venv .venv
+python -m venv .venv          # optional; skip if the environment already has the packages
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r pipeline/requirements.txt
@@ -143,6 +149,8 @@ binary wheels resolve; record the resolved versions in `provenance.json`.
 
 Conventions for every stage:
 
+- The fenced commands use PowerShell continuation (backtick). In bash/git-bash, remove the
+  backticks and either keep each command on one line or replace them with `\`.
 - The command exits `0` only on success and non-zero on any unhandled error.
 - Writes are atomic (temp file + `os.replace`) so a failed stage cannot leave a half file.
 - Each stage appends a fragment to `pipeline/work/provenance/<stage>.json` with source URLs,
@@ -155,7 +163,7 @@ Conventions for every stage:
 
 | Stage | Command subcommand | Input | Output | Committed? |
 |---|---|---|---|---|
-| 00 | environment | — | virtualenv, package | No |
+| 00 | environment | — | optional virtualenv, installed package | No |
 | 01 | `fetch-terrain` | AOI, sources config | raw Terrarium tiles, tile index | No (cache) |
 | 02 | `fetch-boundaries` | AOI, sources config | raw geoBoundaries ADM2 | No (cache) |
 | 03 | `fetch-rivers` | AOI, sources config | raw river GeoJSON + source record | No (cache) |
@@ -167,10 +175,14 @@ Conventions for every stage:
 | 09 | `build-inundation` | HAND, mask, scenario | flood frames, summary, depth stack | Frames/summary yes; stack no |
 | 10 | `build-risk` | stack, HAND, districts | risk zones, ranking, hotspots, districts GeoJSON | Yes |
 | 11 | `build-series` | scenario, summary, transects | monsoon series, cross-sections | Yes |
-| 12 | `build-assets` (P1) | OSM, frames, districts | critical facilities | Yes |
+| 12 | `build-assets` (P1) | OSM, stack, frames, districts | critical facilities | Yes |
 | 13 | `build-gauges` (P1) | rivers, summary | virtual gauges | Yes |
 | 14 | `validate` | all public data | validation report + exit code | Yes |
 | 15 | `publish` | validated data | manifest, provenance | Yes |
+
+M0 runs stages **01–11, 14, 15**. Stages 12–13 are optional P1 outputs; when omitted, the
+manifest simply has no entry for them and the app hides those panels. Stages 04–11 are the
+minimum to produce the M0 data; stages 01–03 fetch its sources.
 
 ---
 
@@ -446,7 +458,8 @@ python -m baanh_pipeline.cli build-assets `
 - **Process:** keep points inside Assam; spatial-join to district; sample the depth stack at the
   point location for each step; record peak depth, first wet step, and an exposure band.
   **Completeness is unknown**; the output says so and the UI must show it. No capacity, staff,
-  or operational status is inferred.
+  or operational status is inferred. Names are organisational labels only; if an OSM name looks
+  like a personal name, write `null` rather than publishing it.
 - **Output:** `critical-facilities.geojson` (≤1.0 MB).
 - **Failure:** Overpass unavailable → omit this optional layer and record a warning; M0/M1 still
   pass without assets. Do not fall back to a hand-built facility list.
@@ -1264,7 +1277,7 @@ would cross a class boundary, keep the classes separate (do not merge across cla
 For district `d`:
 
 ```text
-area_share = peak_flooded_area_km2 / district_area_km2
+area_share = min(peak_flooded_area_km2 / district_area_km2, 1.0)
 A = min(area_share / 0.60, 1)
 D = min(mean_duration_days / 90, 1)
 H = min(p90_peak_depth_m / 4.0, 1)
@@ -1352,7 +1365,7 @@ refuses if `status != "pass"`.
 | V10 | Manifest integrity | Every file except `manifest.json` is listed once; SHA-256 and byte size match; no orphan data file | fail |
 | V11 | Series and stage consistency | `monsoon-series` points equal `flood-summary` at every step (1e−6); threshold = 4.0; `stage_m = mainstem_stage_m + backwater_m` at every step | fail |
 | V12 | District join | Every ranking district exists in districts GeoJSON exactly once; `rank` dense; score 0–100 | fail |
-| V13 | Forbidden fields/claims | No `casualties`, `deaths`, `displaced`, `affected_persons`, `incident_id`, `agency_id`, `relief_camp`, `eta`, `warning_issued`; no positive `operational forecast`/`official forecast`/`flood forecast`. A bare `forecast` passes only inside the required negation `not a forecast` / `never a forecast`. | fail |
+| V13 | Forbidden fields/claims | No `casualties`, `deaths`, `displaced`, `affected_persons`, `incident_id`, `agency_id`, `relief_camp`, `eta`, `warning_issued`; no positive `operational forecast`/`official forecast`/`flood forecast`. A bare `forecast` passes only inside the required negation `not a forecast` / `never a forecast` or the boolean key `not_a_forecast`. | fail |
 | V14 | Step count | Exactly 12 steps; labels/days/phases match `scenario.json`; every step has at least one feature | fail |
 | V15 | Coordinate hygiene | 5 decimals; no consecutive duplicates; RFC 7946 winding; no ring <0.02 km² (flood) | fail |
 | V16 | Risk range | All scores 0–100; zone classes match thresholds; ranking classes match thresholds | fail |
