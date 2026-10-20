@@ -9,7 +9,7 @@ import rasterio
 from rasterio.features import shapes as raster_shapes
 from rasterio.transform import Affine
 from scipy.ndimage import label
-from shapely.geometry import shape
+from shapely.geometry import MultiPolygon, Polygon, shape
 from shapely.ops import unary_union
 
 from .config import Config
@@ -80,31 +80,63 @@ def _polygonise_band(
     mask = band == value
     if not mask.any():
         return None, 0.0
-    geoms = []
+    parts = []
     for geom_mapping, _ in raster_shapes(
         band, mask=mask, connectivity=8, transform=step_transform
     ):
         geom = shape(geom_mapping)
-        if not geom.is_empty:
-            geoms.append(geom)
-    if not geoms:
+        if geom.is_empty:
+            continue
+        parts.extend(polygon_parts(geom))
+    if not parts:
         return None, 0.0
-    merged = unary_union(geoms)
-    simplified = merged.simplify(tolerance_m, preserve_topology=True)
-    simplified = valid(simplified)
-    if simplified is None or simplified.is_empty:
+    # The connected components of one band are disjoint.  Build a MultiPolygon
+    # directly instead of unioning thousands of parts per step (the union was
+    # the dominant runtime and is not needed for disjoint parts).
+    multi = MultiPolygon(parts)
+    if not multi.is_valid:
+        multi = valid(unary_union(parts))
+    if multi is None or multi.is_empty:
         return None, 0.0
-    wgs = project_geom(simplified, cfg.aoi.analysis_crs, cfg.aoi.output_crs)
+    wgs = project_geom(multi, cfg.aoi.analysis_crs, cfg.aoi.output_crs)
     wgs = valid(wgs)
     if wgs is None or wgs.is_empty:
         return None, 0.0
-    wgs = drop_small_parts(wgs, min_area_km2, fill_small_holes=True)
-    if wgs.is_empty:
+    # Simplifying one MultiPolygon with tens of thousands of parts is very
+    # expensive.  Simplify each disjoint part in WGS84 with an equivalent
+    # ground tolerance (~75 m in latitude); this is the spec's latitude-safe
+    # fallback and keeps the runtime bounded.
+    tolerance_deg = tolerance_m / 111320.0
+    kept = []
+    for part in polygon_parts(wgs):
+        if geodesic_area_km2(part) < min_area_km2:
+            continue
+        simplified_part = part.simplify(tolerance_deg, preserve_topology=True)
+        simplified_part = valid(simplified_part)
+        if simplified_part is None or simplified_part.is_empty:
+            continue
+        for clean_part in polygon_parts(simplified_part):
+            if geodesic_area_km2(clean_part) < min_area_km2:
+                continue
+            if clean_part.interiors:
+                holes = [
+                    interior
+                    for interior in clean_part.interiors
+                    if geodesic_area_km2(Polygon(interior)) >= min_area_km2
+                ]
+                clean_part = Polygon(clean_part.exterior, holes)
+            kept.append(clean_part)
+    if not kept:
         return None, 0.0
-    area = geodesic_area_km2(wgs)
+    result = MultiPolygon(kept)
+    if not result.is_valid:
+        result = valid(unary_union(kept))
+    if result is None or result.is_empty:
+        return None, 0.0
+    area = sum(geodesic_area_km2(part) for part in polygon_parts(result))
     if area <= 0:
         return None, 0.0
-    return wgs, area
+    return result, area
 
 
 def run(
@@ -172,10 +204,10 @@ def run(
         stage.inputs.append(districts_path)
         d_data = load_geojson(districts_path)
         shapes_list = []
-        for index, feature in enumerate(d_data.get("features", []), start=1):
-            district_names.append(feature["properties"]["district_id"])
+        for index, district_feature in enumerate(d_data.get("features", []), start=1):
+            district_names.append(district_feature["properties"]["district_id"])
             district_geom = project_geom(
-                shape(feature["geometry"]), cfg.aoi.output_crs, cfg.aoi.analysis_crs
+                shape(district_feature["geometry"]), cfg.aoi.output_crs, cfg.aoi.analysis_crs
             )
             shapes_list.append((district_geom, index))
         if shapes_list:
