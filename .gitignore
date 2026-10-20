@@ -1,0 +1,16 @@
+# Python / pipeline intermediates (never committed)
+pipeline/cache/
+pipeline/work/
+pipeline/.tmp/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+pytest-cache-files-*/
+.venv/
+
+# Node / app build (phase B; kept here so the repo ignores them from the start)
+node_modules/
+dist/
+test-results/
+playwright-report/

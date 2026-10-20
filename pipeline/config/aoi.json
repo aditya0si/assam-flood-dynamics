@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "name": "Assam plus regional buffer",
+  "bbox": [89.55, 23.95, 96.15, 28.15],
+  "bbox_crs": "EPSG:4326",
+  "analysis_crs": "EPSG:32646",
+  "output_crs": "EPSG:4326",
+  "resolution_m": 90,
+  "nodata": -9999.0,
+  "terrain_zoom": 11,
+  "state_filter": {
+    "iso": "IN-AS",
+    "name": "Assam"
+  },
+  "rivers_clip_buffer_km": 5.0,
+  "channel_buffer_km": 2.0,
+  "max_channel_distance_m": 12000.0,
+  "coordinate_decimals": 5,
+  "coordinate_bounds_margin_deg": 0.01
+}

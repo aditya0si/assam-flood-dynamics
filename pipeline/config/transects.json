@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "note": "Three derived valley profiles. Endpoints are configuration, not surveyed transects; the profile is sampled from the 90 m DEM and HAND rasters.",
+  "transects": [
+    {
+      "transect_id": "T1",
+      "label": "Valley transect T1 (west)",
+      "start": [89.75, 26.05],
+      "end": [91.35, 26.25]
+    },
+    {
+      "transect_id": "T2",
+      "label": "Valley transect T2 (central)",
+      "start": [91.60, 26.10],
+      "end": [93.20, 26.35]
+    },
+    {
+      "transect_id": "T3",
+      "label": "Valley transect T3 (east)",
+      "start": [93.60, 26.55],
+      "end": [95.40, 26.75]
+    }
+  ]
+}

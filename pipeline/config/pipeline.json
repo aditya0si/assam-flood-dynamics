@@ -1,0 +1,127 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_version": "2026.10.0",
+  "app_min_version": "0.1.0",
+  "admin": {
+    "min_district_area_km2": 0.05,
+    "simplify_district_m": 150,
+    "simplify_state_m": 200,
+    "state_area_tolerance": 0.01
+  },
+  "dem": {
+    "resampling": "bilinear",
+    "fill_max_search_cells": 100,
+    "decode_min_valid_m": -50,
+    "decode_max_valid_m": 9000,
+    "hillshade_azimuth_deg": 315,
+    "hillshade_altitude_deg": 45,
+    "hillshade_width_px": 2000,
+    "hillshade_webp_quality": 82,
+    "elevation_min_plausible_m": -50,
+    "elevation_min_upper_m": 100,
+    "elevation_max_upper_m": 8000
+  },
+  "rivers": {
+    "min_length_m": 500,
+    "display_simplify_m": 50,
+    "channel_simplify_m": 45,
+    "order1_min_length_m": 100000,
+    "total_channel_min_km": 500,
+    "overpass_grid_lon_deg": 1.0,
+    "overpass_grid_lat_deg": 0.6,
+    "overpass_cell_attempts": 4,
+    "overpass_passes": 3
+  },
+  "burn": {
+    "window_cells": 5,
+    "main_stem_width_cells": 2,
+    "max_lowering_below_adjacent_mean_m": 6.0
+  },
+  "inundation": {
+    "rising_end_step": 7,
+    "recession_start_step": 8,
+    "monotonic_tolerance": 0.005,
+    "max_peak_area_share_of_assam": 0.30,
+    "assam_area_km2_reference": 78438.0,
+    "min_band_area_km2": 0.02
+  },
+  "risk": {
+    "cell": {
+      "hand_reference_m": 6.0,
+      "duration_reference_days": 136.0,
+      "hand_weight": 0.60,
+      "duration_weight": 0.40,
+      "duration_depth_threshold_m": 0.1,
+      "thresholds": { "very_high": 70, "high": 55, "moderate": 40 }
+    },
+    "zone": {
+      "simplify_tolerance_m": 100,
+      "min_area_km2": 0.05
+    },
+    "district": {
+      "area_share_saturation": 0.60,
+      "duration_saturation_days": 90,
+      "depth_reference_m": 4.0,
+      "weights": { "area_share": 0.45, "duration": 0.35, "depth": 0.20 },
+      "thresholds": { "very_high": 60, "high": 45, "moderate": 30 }
+    },
+    "hotspots": {
+      "max_hand_m": 2.0,
+      "min_distance_m": 1500,
+      "min_area_km2": 2.0,
+      "latest_first_wet_step": 6,
+      "max_count": 20
+    }
+  },
+  "series": {
+    "transect_spacing_km": 2.0,
+    "min_valid_samples": 30
+  },
+  "validation": {
+    "total_cap_bytes": 14680064,
+    "tier_caps_bytes": {
+      "critical": 3670016,
+      "animation": 7969177,
+      "optional": 3145728
+    },
+    "file_caps_bytes": {
+      "data/flood/flood-frames.geojson": 6815744,
+      "data/admin/assam-districts.geojson": 1258291,
+      "data/admin/assam-state.geojson": 157286,
+      "data/hydro/assam-rivers.geojson": 1048576,
+      "data/risk/risk-zones.geojson": 943718,
+      "data/risk/district-risk.json": 157286,
+      "data/risk/hotspots.geojson": 104857,
+      "data/series/monsoon-series.json": 52428,
+      "data/series/cross-sections.json": 209715,
+      "data/basemap/assam-hillshade.webp": 1572864,
+      "data/assets/critical-facilities.geojson": 1048576,
+      "data/gauges/virtual-gauges.geojson": 104857,
+      "meta_combined_cap_bytes": 262144
+    },
+    "min_valid_hand_share": 0.80,
+    "warn_valid_hand_share": 0.85,
+    "max_clamped_negative_share": 0.02,
+    "series_tolerance": 0.000001,
+    "min_hotspot_ring_area_km2": 0.02
+  },
+  "files": {
+    "data/manifest.json": { "class": "derived", "tier": "critical", "description": "Dataset manifest: versions, tiers, sizes, SHA-256, attribution." },
+    "data/provenance.json": { "class": "derived", "tier": "critical", "description": "Source → stage → file provenance for every dataset." },
+    "data/scenario.json": { "class": "synthetic", "tier": "critical", "description": "Synthetic 12-step monsoon scenario and HAND model parameters." },
+    "data/validation-report.json": { "class": "derived", "tier": "critical", "description": "V01–V20 validation report for the committed data." },
+    "data/admin/assam-districts.geojson": { "class": "source", "tier": "critical", "description": "Assam ADM2 district boundaries (source) with derived scenario risk attributes." },
+    "data/admin/assam-state.geojson": { "class": "source", "tier": "critical", "description": "Assam state outline dissolved from geoBoundaries ADM2." },
+    "data/hydro/assam-rivers.geojson": { "class": "source", "tier": "critical", "description": "Mapped river centrelines (OSM Overpass or documented Natural Earth fallback)." },
+    "data/risk/district-risk.json": { "class": "derived", "tier": "critical", "description": "Scenario-conditional district exposure ranking (no demographics)." },
+    "data/series/monsoon-series.json": { "class": "synthetic", "tier": "critical", "description": "Chart-ready synthetic rainfall and scenario stage series." },
+    "data/flood/flood-frames.geojson": { "class": "scenario", "tier": "animation", "description": "Scenario inundation depth-band polygons for all 12 steps." },
+    "data/flood/flood-summary.json": { "class": "scenario", "tier": "animation", "description": "Per-step inundation area, depth, stage and district-count summary." },
+    "data/risk/risk-zones.geojson": { "class": "derived", "tier": "animation", "description": "Scenario-conditional terrain risk zones classified from HAND and duration." },
+    "data/basemap/assam-hillshade.webp": { "class": "source", "tier": "fallback", "description": "8-bit hillshade relief fallback derived from the AWS Terrarium DEM." },
+    "data/series/cross-sections.json": { "class": "derived", "tier": "optional", "description": "DEM + HAND valley profiles with scenario water surface by step." },
+    "data/risk/hotspots.geojson": { "class": "derived", "tier": "optional", "description": "Derived low-HAND backwater pockets (not breaches)." },
+    "data/assets/critical-facilities.geojson": { "class": "source", "tier": "optional", "description": "OSM hospitals/clinics/schools with scenario depth exposure; completeness incomplete-osm." },
+    "data/gauges/virtual-gauges.geojson": { "class": "synthetic", "tier": "optional", "description": "Virtual stations on mapped rivers with the synthetic scenario stage; no agency or datum." }
+  }
+}

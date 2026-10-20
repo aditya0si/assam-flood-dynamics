@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0.0",
+  "http": {
+    "user_agent": "baanh-pipeline/1.0 (offline terrain/administrative/river data build; contact: repo owner)",
+    "timeout_s": 60,
+    "overpass_timeout_s": 180,
+    "retries": 3,
+    "overpass_attempts": 2,
+    "backoff_s": [1, 2, 4],
+    "terrain_concurrency": 6
+  },
+  "terrain": {
+    "name": "AWS Terrarium elevation tiles",
+    "url_template": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+    "licence": "Mapzen/Amazon elevation tiles; attribution required; verify terms before public launch",
+    "attribution": "Elevation: AWS Terrarium / Mapzen",
+    "zoom": 11,
+    "tile_size": 256,
+    "missing_fraction_fail": 0.005
+  },
+  "imagery": {
+    "name": "Esri World Imagery",
+    "url_template": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    "licence": "Esri, Maxar, Earthstar Geographics and contributors",
+    "attribution": "Imagery © Esri, Maxar, Earthstar Geographics",
+    "used_by_pipeline": false,
+    "note": "Basemap only, loaded by the app; not used for analysis and not downloaded by the pipeline."
+  },
+  "boundaries": {
+    "name": "geoBoundaries gbOpen India ADM2 (with ADM1 Assam filter geometry)",
+    "api_url": "https://www.geoboundaries.org/api/current/gbOpen/IND/ADM2/",
+    "adm1_api_url": "https://www.geoboundaries.org/api/current/gbOpen/IND/ADM1/",
+    "expected_licence": "Verified at fetch time from the API response",
+    "attribution": "Boundaries: geoBoundaries (gbOpen); licence recorded from source metadata",
+    "state_iso": "IN-AS",
+    "state_name": "Assam",
+    "overlap_threshold": 0.5
+  },
+  "rivers": {
+    "name": "OSM Overpass river centrelines with Natural Earth 10m fallback",
+    "overpass_url": "https://overpass-api.de/api/interpreter",
+    "overpass_query": "[out:json][timeout:180];way[\"waterway\"~\"^(river|stream|canal|drain)$\"](23.95,89.55,28.15,96.15);out geom;",
+    "licence_osm": "OpenStreetMap contributors, ODbL 1.0",
+    "attribution_osm": "Rivers: © OpenStreetMap contributors (ODbL)",
+    "fallback_name": "Natural Earth 10m rivers and lake centerlines",
+    "fallback_path": "pipeline/cache/rivers/ne_10m_rivers_lake_centerlines.geojson",
+    "fallback_url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_rivers_lake_centerlines.geojson",
+    "licence_fallback": "Public domain (Natural Earth)",
+    "attribution_fallback": "Rivers: Natural Earth (public domain)",
+    "main_stem_name_match": "brahmaputra"
+  },
+  "unosat": {
+    "name": "UNOSAT flood products",
+    "url": "https://unosat.org/products/",
+    "used_by_pipeline": false,
+    "note": "Not ingested in M0. Reserved for a future event-context cross-check; absence is recorded in provenance."
+  },
+  "attribution": [
+    { "name": "AWS Terrarium / Mapzen", "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png", "licence": "Mapzen/Amazon elevation tiles; verify terms" },
+    { "name": "geoBoundaries gbOpen", "url": "https://www.geoboundaries.org/", "licence": "Licence recorded from API metadata (ADM2 ODbL 1.0; ADM1 CC BY 2.5 IN)" },
+    { "name": "OpenStreetMap contributors", "url": "https://www.openstreetmap.org/copyright", "licence": "ODbL 1.0" },
+    { "name": "Natural Earth", "url": "https://www.naturalearthdata.com/", "licence": "Public domain" },
+    { "name": "Esri, Maxar, Earthstar Geographics", "url": "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9", "licence": "Esri basemap terms; basemap only" }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "assam-monsoon-composite-v1",
+  "name": "Composite monsoon scenario (synthetic)",
+  "class": "synthetic",
+  "not_a_forecast": true,
+  "year_label": null,
+  "step_count": 12,
+  "total_days": 136,
+  "peak_step": 7,
+  "threshold_stage_m": 4.0,
+  "grid": {
+    "crs": "EPSG:32646",
+    "resolution_m": 90,
+    "bbox": [89.55, 23.95, 96.15, 28.15],
+    "nodata": -9999
+  },
+  "steps": [
+    { "step": 0,  "label": "01 Jun", "day_offset": 0,   "phase": "onset",    "rainfall_mm_day": 6,  "mainstem_stage_m": 0.3, "backwater_m": 0.2, "stage_m": 0.5 },
+    { "step": 1,  "label": "15 Jun", "day_offset": 14,  "phase": "rising",   "rainfall_mm_day": 12, "mainstem_stage_m": 0.7, "backwater_m": 0.3, "stage_m": 1.0 },
+    { "step": 2,  "label": "01 Jul", "day_offset": 30,  "phase": "rising",   "rainfall_mm_day": 17, "mainstem_stage_m": 1.2, "backwater_m": 0.5, "stage_m": 1.7 },
+    { "step": 3,  "label": "15 Jul", "day_offset": 44,  "phase": "rising",   "rainfall_mm_day": 21, "mainstem_stage_m": 1.8, "backwater_m": 0.7, "stage_m": 2.5 },
+    { "step": 4,  "label": "25 Jul", "day_offset": 54,  "phase": "rising",   "rainfall_mm_day": 24, "mainstem_stage_m": 2.4, "backwater_m": 1.0, "stage_m": 3.4 },
+    { "step": 5,  "label": "05 Aug", "day_offset": 65,  "phase": "rising",   "rainfall_mm_day": 20, "mainstem_stage_m": 2.9, "backwater_m": 1.4, "stage_m": 4.3 },
+    { "step": 6,  "label": "15 Aug", "day_offset": 75,  "phase": "rising",   "rainfall_mm_day": 14, "mainstem_stage_m": 3.2, "backwater_m": 2.0, "stage_m": 5.2 },
+    { "step": 7,  "label": "25 Aug", "day_offset": 85,  "phase": "peak",     "rainfall_mm_day": 10, "mainstem_stage_m": 3.4, "backwater_m": 2.6, "stage_m": 6.0 },
+    { "step": 8,  "label": "05 Sep", "day_offset": 96,  "phase": "receding", "rainfall_mm_day": 7,  "mainstem_stage_m": 3.2, "backwater_m": 2.0, "stage_m": 5.2 },
+    { "step": 9,  "label": "15 Sep", "day_offset": 106, "phase": "receding", "rainfall_mm_day": 5,  "mainstem_stage_m": 2.7, "backwater_m": 1.4, "stage_m": 4.1 },
+    { "step": 10, "label": "30 Sep", "day_offset": 121, "phase": "receding", "rainfall_mm_day": 3,  "mainstem_stage_m": 1.9, "backwater_m": 1.0, "stage_m": 2.9 },
+    { "step": 11, "label": "15 Oct", "day_offset": 136, "phase": "receding", "rainfall_mm_day": 2,  "mainstem_stage_m": 1.0, "backwater_m": 0.6, "stage_m": 1.6 }
+  ],
+  "model": {
+    "name": "HAND-threshold scenario",
+    "version": "hand-v1",
+    "burn_depth_m": 3.0,
+    "max_channel_distance_m": 12000,
+    "connectivity": "8-connected; component must touch a channel cell",
+    "min_polygon_area_km2": 0.02,
+    "simplify_tolerance_m": 75,
+    "depth_bands_m": [0.0, 0.5, 1.5, 3.0, null],
+    "min_component_cells": 3
+  },
+  "assumptions": [
+    "Rainfall, main-stem stage, backwater allowance, stage values, step dates and the 4.0 m threshold are synthetic; no gauge record, official warning or predictive claim is represented.",
+    "Stage is applied uniformly to every mapped channel; the water surface is flat within a step.",
+    "Inundation is a HAND threshold with 8-connected component filtering; a component must touch a channel cell or a cell within one cell of a channel.",
+    "The model is not calibrated to a gauge, satellite extent or event statistic.",
+    "The hydrograph is a declared synthetic shape: rainfall peaks at S04 and stage peaks at S07."
+  ],
+  "limitations": [
+    "No hydrodynamic routing, unsteady flow, sediment transport or solved backwater term.",
+    "No levee, embankment, road or flood-defence failure is represented; protection is not subtracted.",
+    "Mapped channels are incomplete, especially first-order streams; HAND is coarse near unmapped tributaries.",
+    "Analysis grid is 90 m; smaller channels, culverts and local depressions are not resolved.",
+    "Distances are Euclidean nearest-drainage distances, not flow-path lengths; a channel across a ridge can be selected.",
+    "No population, building, crop, casualty or asset-loss estimate is made; risk is scenario-conditional terrain risk, not expected loss."
+  ]
+}

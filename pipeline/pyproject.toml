@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "baanh-pipeline"
+version = "1.0.0"
+description = "Offline HAND-based Assam flood scenario pipeline for Baanh M0"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy",
+  "scipy",
+  "rasterio",
+  "shapely",
+  "pyproj",
+  "Pillow",
+  "mercantile",
+  "requests",
+  "jsonschema",
+  "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
