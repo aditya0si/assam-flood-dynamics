@@ -1111,7 +1111,8 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         )
     )
 
-    # V-A5 — peak depth (REVIEW-03 B3).
+    # V-A5 — peak depth shape gate, REVIEW-05 D1 (v4).  The absolute 1.0–2.2 m
+    # band is withdrawn; these four rules plus the clamp gate are binding.
     a5_failures = []
     peak_index_summary = int(summary.get("peak_step", -1)) if isinstance(summary, dict) else -1
     peak_step_summary = (
@@ -1124,37 +1125,101 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
     peak_clamped_wet = peak_step_summary.get("clamped_wet_share")
     peak_stage = peak_step_summary.get("stage_m")
     median_min = float(cfg.pipeline["inundation"]["peak_median_depth_min_m"])
-    median_max = float(cfg.pipeline["inundation"]["peak_median_depth_max_m"])
+    median_offset = float(
+        cfg.pipeline["inundation"]["peak_median_depth_offset_below_stage_m"]
+    )
+    spread_min = float(cfg.pipeline["inundation"]["peak_depth_spread_min_m"])
     clamped_wet_max = float(cfg.pipeline["inundation"]["peak_clamped_wet_share_max"])
+    median_max = None
+    spread = None
     if peak_median is None:
         a5_failures.append("summary has no median_depth_m at the peak")
-    elif not (median_min <= float(peak_median) <= median_max):
-        a5_failures.append(
-            f"median {float(peak_median):.3f} m outside {median_min:.2f}–{median_max:.2f} m"
-        )
+    elif float(peak_median) < median_min - 1e-9:
+        a5_failures.append(f"median {float(peak_median):.3f} m < {median_min:.2f} m")
     if peak_p95 is None or peak_stage is None:
         a5_failures.append("summary has no p95_depth_m/stage_m at the peak")
-    elif float(peak_p95) > float(peak_stage) + 1e-9:
-        a5_failures.append(
-            f"p95 {float(peak_p95):.3f} m > peak stage {float(peak_stage):.3f} m"
-        )
+    else:
+        median_max = float(peak_stage) - median_offset
+        if peak_median is not None:
+            if float(peak_median) > median_max + 1e-9:
+                a5_failures.append(
+                    f"median {float(peak_median):.3f} m > peak stage "
+                    f"{float(peak_stage):.3f} − {median_offset:.2f} = {median_max:.3f} m"
+                )
+            spread = float(peak_p95) - float(peak_median)
+            if spread < spread_min - 1e-9:
+                a5_failures.append(
+                    f"p95 − median {spread:.3f} m < {spread_min:.2f} m"
+                )
+        if float(peak_p95) > float(peak_stage) + 1e-9:
+            a5_failures.append(
+                f"p95 {float(peak_p95):.3f} m > peak stage {float(peak_stage):.3f} m"
+            )
     if peak_clamped_wet is None:
         a5_failures.append("summary has no clamped_wet_share at the peak")
     elif float(peak_clamped_wet) > clamped_wet_max + 1e-9:
         a5_failures.append(
             f"clamped share of wet {float(peak_clamped_wet):.2%} > {clamped_wet_max:.0%}"
         )
+
+    # REVIEW-05 D2 — the depth distribution is an artifact.  Every step must
+    # carry wet_cells plus six ordered deciles; p50/p95 must agree with the
+    # headline median/p95 rather than being a second, unreconciled series.
+    decile_keys = ("p10", "p25", "p50", "p75", "p90", "p95")
+    decile_steps = 0
+    for step_doc in steps:
+        step_id = int(step_doc.get("step", -1))
+        wet_cells = step_doc.get("wet_cells")
+        deciles = step_doc.get("delay_deciles")
+        if not isinstance(wet_cells, int) or wet_cells < 0:
+            a5_failures.append(f"S{step_id:02d}: wet_cells missing or invalid")
+            continue
+        if int(step_doc.get("inundated_area_km2", 0)) > 0 and wet_cells == 0:
+            a5_failures.append(f"S{step_id:02d}: wet_cells is zero for a wet step")
+        if not isinstance(deciles, dict) or any(key not in deciles for key in decile_keys):
+            a5_failures.append(f"S{step_id:02d}: delay_deciles missing")
+            continue
+        try:
+            values = [float(deciles[key]) for key in decile_keys]
+        except (TypeError, ValueError):
+            a5_failures.append(f"S{step_id:02d}: delay_deciles are not numeric")
+            continue
+        if any(value < 0 for value in values):
+            a5_failures.append(f"S{step_id:02d}: delay_deciles contain a negative depth")
+        if any(values[i] > values[i + 1] + 1e-9 for i in range(len(values) - 1)):
+            a5_failures.append(f"S{step_id:02d}: delay_deciles are not non-decreasing")
+        step_median = step_doc.get("median_depth_m")
+        step_p95 = step_doc.get("p95_depth_m")
+        if step_median is not None and abs(values[2] - float(step_median)) > 1e-3:
+            a5_failures.append(
+                f"S{step_id:02d}: decile p50 {values[2]:.4f} != median "
+                f"{float(step_median):.4f}"
+            )
+        if step_p95 is not None and abs(values[5] - float(step_p95)) > 1e-3:
+            a5_failures.append(
+                f"S{step_id:02d}: decile p95 {values[5]:.4f} != p95 "
+                f"{float(step_p95):.4f}"
+            )
+        decile_steps += 1
+
     checks.append(
         _check(
             "V-A5",
             "Peak depth",
-            f"peak-step median {median_min:.1f}–{median_max:.1f} m; p95 ≤ peak "
-            f"stage; clamped share of wet cells ≤{clamped_wet_max:.0%} (stage − HAND), "
-            "computed on the area-filtered mask",
-            f"median {peak_median}, p95 {peak_p95}, clamped wet {peak_clamped_wet}"
-            if peak_median is not None and peak_p95 is not None
-            else "peak depth missing",
-            "; ".join(a5_failures) if a5_failures else "peak depth inside the gate",
+            f"peak-step median ≥{median_min:.1f} m and ≤ peak stage − "
+            f"{median_offset:.1f} m; p95 ≤ peak stage; p95 − median ≥"
+            f"{spread_min:.1f} m; clamped share of wet cells ≤{clamped_wet_max:.0%} "
+            "(stage − HAND), computed on the area-filtered mask; every step carries "
+            "wet_cells and six ordered depth deciles whose p50/p95 equal the step "
+            "median/p95 (REVIEW-05 D1/D2)",
+            (
+                f"median {peak_median}, p95 {peak_p95}, p95 − median "
+                f"{spread:.3f} m, clamp wet {peak_clamped_wet}, deciles "
+                f"{decile_steps}/{len(steps)} steps"
+                if peak_median is not None and peak_p95 is not None and spread is not None
+                else "peak depth or deciles missing"
+            ),
+            "; ".join(a5_failures[:6]) if a5_failures else "peak depth shape and deciles valid",
             "fail" if a5_failures else "pass",
         )
     )
@@ -1325,6 +1390,12 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
                 continue
             with rasterio.open(wet_path) as src:
                 committed_wet = src.read(1).astype(bool)
+            recorded_wet_cells = step_doc.get("wet_cells")
+            if recorded_wet_cells is None or int(recorded_wet_cells) != int(committed_wet.sum()):
+                a9_failures.append(
+                    f"S{step_id:02d}: recorded wet_cells {recorded_wet_cells} != "
+                    f"committed mask {int(committed_wet.sum())}"
+                )
             raw = domain & (hand <= stage_m)
             labels_raw, raw_count = label(raw, structure=structure)
             if connectivity_enabled and distance is not None:

@@ -36,6 +36,10 @@ BAND_LABELS = [
     ("3.0+", 3.0, None),
 ]
 
+# REVIEW-05 D2: the per-step depth distribution is an artifact, not a sentence.
+DECILE_KEYS = ("p10", "p25", "p50", "p75", "p90", "p95")
+DECILE_QUANTILES = (10.0, 25.0, 50.0, 75.0, 90.0, 95.0)
+
 # id, label, RGBA, lower edge, upper edge.  Class 0 is dry and fully transparent.
 CLASS_PALETTE = [
     (0, "dry", (0, 0, 0, 0), None, 0.0),
@@ -55,6 +59,20 @@ def _band_index(depth: np.ndarray, edges: list[float | None]) -> np.ndarray:
 
 def _row_area(areas: np.ndarray, mask: np.ndarray) -> float:
     return float(areas[:, 0].dot(mask.sum(axis=1)))
+
+
+def _depth_deciles(values: np.ndarray) -> dict[str, float]:
+    """REVIEW-05 D2: depth percentiles over the wet cells of one step.
+
+    The deciles are published independently.  No consumer may collapse them
+    into a single number: the p10–p95 strip is the shape evidence that the
+    V-A5 spread rule is designed to test.
+    """
+    quantiles = np.percentile(values, DECILE_QUANTILES)
+    return {
+        key: round(float(value), 4)
+        for key, value in zip(DECILE_KEYS, quantiles)
+    }
 
 
 def _component_area_filter(
@@ -318,6 +336,8 @@ def run(
     peak_median_depth = None
     peak_max_depth = None
     peak_p95_depth = None
+    peak_deciles = None
+    peak_wet_cells = None
     peak_clamped_wet_share = None
     peak_clamped_aoi_share = None
     peak_filter_audit: dict = {}
@@ -348,6 +368,7 @@ def run(
         aoi_domain.write_mask(mask_path, wet, transform, str(crs))
 
         area_km2 = _row_area(areas, wet)
+        wet_cells = int(wet.sum())
         new_km2 = _row_area(areas, wet & ~prev_wet)
         receded_km2 = _row_area(areas, ~wet & prev_wet)
         if wet.any():
@@ -355,6 +376,7 @@ def run(
             max_depth = float(values.max())
             median_depth = float(np.median(values))
             p95_depth = float(np.percentile(values, 95))
+            deciles = _depth_deciles(values)
             mean_depth = _row_area(areas, depth * wet) / area_km2 if area_km2 > 0 else None
             clamped_wet_km2 = _row_area(areas, wet & clamped_domain)
             clamped_wet_share = clamped_wet_km2 / area_km2 if area_km2 > 0 else None
@@ -363,6 +385,7 @@ def run(
             mean_depth = None
             median_depth = None
             p95_depth = None
+            deciles = None
             clamped_wet_share = None
 
         affected = 0
@@ -410,10 +433,12 @@ def run(
             "stage_m": stage_m,
             "above_threshold": bool(stage_m >= scenario.threshold_m),
             "inundated_area_km2": round(area_km2, 4),
+            "wet_cells": wet_cells,
             "new_inundation_km2": round(new_km2, 4),
             "receded_area_km2": round(receded_km2, 4),
             "median_depth_m": round(median_depth, 4) if median_depth is not None else None,
             "p95_depth_m": round(p95_depth, 4) if p95_depth is not None else None,
+            "delay_deciles": deciles,
             "max_depth_m": round(max_depth, 4) if max_depth is not None else None,
             "mean_depth_m": round(mean_depth, 4) if mean_depth is not None else None,
             "clamped_wet_share": (
@@ -461,6 +486,8 @@ def run(
             peak_median_depth = median_depth
             peak_max_depth = max_depth
             peak_p95_depth = p95_depth
+            peak_deciles = deciles
+            peak_wet_cells = wet_cells
             peak_clamped_wet_share = clamped_wet_share
             peak_clamped_aoi_share = clamped_aoi_share
             peak_filter_audit = dict(filter_audit)
@@ -474,9 +501,24 @@ def run(
             f"median {median_depth if median_depth is None else round(median_depth, 2)}, "
             f"p95 {p95_depth if p95_depth is None else round(p95_depth, 2)}, "
             f"clamped {clamped_wet_share if clamped_wet_share is None else round(clamped_wet_share, 3)}, "
+            f"wet {wet_cells:,} cells, "
             f"components {filter_audit['components_before']}->{filter_audit['components_after']}, "
             f"dropped {filter_audit['dropped_area_km2']:.1f} km², "
             f"PNG {frame_width}x{frame_height} {frame_bytes / 1024:.1f} KB"
+        )
+
+    # REVIEW-05 D2: print the same per-step decile table that flood-summary.json
+    # publishes, so a reviewer can see the distribution shape without trusting a
+    # single median.  No downstream consumer may average these columns.
+    print("[09] depth deciles over wet cells (m):")
+    print("[09] step  wet_cells    p10    p25    p50    p75    p90    p95")
+    for step_summary in step_summaries:
+        step_deciles = step_summary["delay_deciles"] or {}
+        print(
+            f"[09] S{step_summary['step']:02d} {step_summary['wet_cells']:>10,}  "
+            + "  ".join(
+                f"{step_deciles.get(key, float('nan')):5.2f}" for key in DECILE_KEYS
+            )
         )
 
     # Hydrograph shape — exact, not a widened tolerance.
@@ -520,19 +562,33 @@ def run(
             f"{max_flood_prone_share:.0%}"
         )
 
-    # V-A5 / V-A6 — measured on the same area-filtered wet masks that are written.
+    # V-A5 v4 (REVIEW-05 D1) / V-A6 — measured on the same area-filtered wet
+    # masks that are written.  The shape gate replaces the withdrawn absolute
+    # 1.0–2.2 m band; every rule is binding and none is widened here.
     peak_step_summary = step_summaries[scenario.peak_step]
     peak_stage_m = float(peak_step_summary["stage_m"])
     v_a5_failures: list[str] = []
     median_min = float(inundation_cfg["peak_median_depth_min_m"])
-    median_max = float(inundation_cfg["peak_median_depth_max_m"])
+    median_offset = float(inundation_cfg["peak_median_depth_offset_below_stage_m"])
+    spread_min = float(inundation_cfg["peak_depth_spread_min_m"])
     clamped_wet_max = float(inundation_cfg["peak_clamped_wet_share_max"])
-    if not (median_min <= float(peak_median_depth) <= median_max):
+    median_max = peak_stage_m - median_offset
+    if float(peak_median_depth) < median_min - 1e-9:
         v_a5_failures.append(
-            f"median {float(peak_median_depth):.3f} m outside {median_min:.2f}–{median_max:.2f} m"
+            f"median {float(peak_median_depth):.3f} m < {median_min:.2f} m"
+        )
+    if float(peak_median_depth) > median_max + 1e-9:
+        v_a5_failures.append(
+            f"median {float(peak_median_depth):.3f} m > peak stage {peak_stage_m:.2f} m "
+            f"− {median_offset:.2f} m = {median_max:.2f} m"
         )
     if float(peak_p95_depth) > peak_stage_m + 1e-6:
         v_a5_failures.append(f"p95 {float(peak_p95_depth):.3f} m > peak stage {peak_stage_m:.2f} m")
+    spread = float(peak_p95_depth) - float(peak_median_depth)
+    if spread < spread_min - 1e-9:
+        v_a5_failures.append(
+            f"p95 − median {spread:.3f} m < {spread_min:.2f} m"
+        )
     if float(peak_clamped_wet_share) > clamped_wet_max + 1e-9:
         v_a5_failures.append(
             f"clamped wet share {float(peak_clamped_wet_share):.1%} > {clamped_wet_max:.0%}"
@@ -572,12 +628,27 @@ def run(
         "totals": {
             "max_area_km2": round(peak_area, 4),
             "peak_stage_m": peak_stage_m,
+            "wet_cells_at_peak": peak_wet_cells,
             "median_depth_at_peak_m": (
                 round(peak_median_depth, 4) if peak_median_depth is not None else None
             ),
             "p95_depth_at_peak_m": (
                 round(peak_p95_depth, 4) if peak_p95_depth is not None else None
             ),
+            "delay_deciles_at_peak": peak_deciles,
+            "v_a5_version": str(inundation_cfg.get("v_a5_version", "v4-shape")),
+            "v_a5_rules": {
+                "median_min_m": median_min,
+                "median_max_m": round(median_max, 4),
+                "median_max_rule": (
+                    f"peak stage {peak_stage_m:.2f} m − "
+                    f"{median_offset:.2f} m"
+                ),
+                "p95_max_m": peak_stage_m,
+                "p95_minus_median_min_m": spread_min,
+                "p95_minus_median_m": round(spread, 4),
+                "clamped_wet_share_max": clamped_wet_max,
+            },
             "clamped_wet_share_at_peak": (
                 round(peak_clamped_wet_share, 6)
                 if peak_clamped_wet_share is not None
@@ -652,12 +723,16 @@ def run(
             "peak_stage_m": max(float(s["stage_m"]) for s in step_summaries),
             "scenario_days": int(scenario.raw["total_days"]),
             "districts_any_inundation": len(district_ever_wet),
+            "wet_cells_at_peak": peak_wet_cells,
             "median_depth_at_peak_m": (
                 round(peak_median_depth, 4) if peak_median_depth is not None else None
             ),
             "p95_depth_at_peak_m": (
                 round(peak_p95_depth, 4) if peak_p95_depth is not None else None
             ),
+            "delay_deciles_at_peak": peak_deciles,
+            "v_a5_version": attempt["totals"]["v_a5_version"],
+            "v_a5_rules": attempt["totals"]["v_a5_rules"],
             "clamped_wet_share_at_peak": (
                 round(peak_clamped_wet_share, 6)
                 if peak_clamped_wet_share is not None
@@ -726,9 +801,16 @@ def run(
     stage.metric("valid_cell_share_aoi_v2", round(valid_cell_share, 6))
     stage.metric("median_depth_at_peak_m", summary["totals"]["median_depth_at_peak_m"])
     stage.metric("max_depth_at_peak_m", summary["totals"]["max_depth_at_peak_m"])
+    stage.metric("wet_cells_at_peak", peak_wet_cells)
+    stage.metric("v_a5_version", attempt["totals"]["v_a5_version"])
+    stage.metric("v_a5_p95_minus_median_m", attempt["totals"]["v_a5_rules"]["p95_minus_median_m"])
     stage.finish(
-        f"REVIEW-04 C1/C2: component-area filter >= {min_cells} cells (no opening, no "
-        f"morphological operation); half-resolution {frame_width}x{frame_height} 5-class "
+        f"REVIEW-05 D1/D2: V-A5 v4 shape gate on the area-filtered mask (median >= "
+        f"{median_min:.2f} m and <= peak stage - {median_offset:.2f} m; p95 <= peak "
+        f"stage; p95 - median >= {spread_min:.2f} m; clamped wet <= "
+        f"{clamped_wet_max:.0%}); REVIEW-04 C1/C2 component-area filter >= {min_cells} "
+        f"cells (no opening, no morphological operation); per-step wet_cells and "
+        f"delay_deciles published; half-resolution {frame_width}x{frame_height} 5-class "
         f"PNGs plus frame-index.json; no per-band GeoJSON and no polygonisation. AOI v2 "
         f"core {core_area:,.1f} km²; per-step uint8 wet masks in {out_masks_dir.name}/; "
         "no inundation-stack.npz."
