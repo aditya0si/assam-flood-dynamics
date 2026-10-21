@@ -11,7 +11,7 @@ Date: 2026-10-21. Repository state: `cf1a835` + review docs; live
 | **gpt-6-sol** (chatgpt sol 6, high reasoning) | `openai-codex`, full repo brief | complete | `04-gpt-6-sol.md` |
 | **mimo-v2.6-flash** (high) | `opencode-go`, full repo brief | complete | `02-mimo-v2.6-flash.md` |
 | **glm-5.3-flash** (high) | `opencode-go`, full repo brief | complete | `03-glm-5.3-flash.md` |
-| **minimax-m3.1-flash** (high) | `opencode-go`, bounded brief | re-run in progress | `01-minimax-m3.1-flash.md` |
+| **minimax-m3.1-flash** (high) | `opencode-go`, bounded brief after a first run exhausted its tool budget | **complete** (19.7 KB) | `01-minimax-m3.1-flash.md` · claims audited in `08-claims-verified.md` |
 
 Deviations, stated plainly:
 
@@ -19,8 +19,10 @@ Deviations, stated plainly:
   `403 — "free tier can only be used from within OpenCode"` to any non-OpenCode client, and the
   OpenCode CLI on this machine is unauthenticated (`Invalid credential`). Same model family, same
   version; the only difference is which quota pays.
-- **`minimax` first run hit its 30-tool-call budget** exploring the repo and produced no report; it
-  was re-dispatched with a 6-file budget. Its findings are therefore pending in this synthesis.
+- **`minimax` first run hit its 30-tool-call budget** exploring the repo and produced no report; the
+  bounded re-run succeeded and contributed the only *internal* defect findings of the panel — one
+  confirmed (inert depth term), one not reproducible (79 % class width), one partial (46.6 % minimum
+  AOI coverage). See `08-claims-verified.md`.
 - Two of the four briefs pointed at the whole repository, which is why two panelists spent their
   budget on file reads. The bounded brief (§`00c`) is the better template for next time.
 
