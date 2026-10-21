@@ -28,7 +28,7 @@ export const ESRI_IMAGERY_TILES =
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 export const TERRAIN_EXAGGERATION = 1.4;
-export const HOME_PITCH = 38;
+export const HOME_PITCH = 42;
 export const HOME_BEARING = -12;
 export const HOME_ZOOM = 7.2;
 /**
@@ -52,16 +52,20 @@ export const CROSSFADE_MS = 220;
 export const TILE_HEALTH_TIMEOUT_MS = 6000;
 
 /**
- * R6: the map is the dominant surface. After fitting the core flood belt, ease
- * in slightly so the S07 mask is legible at a glance rather than a thin band in
- * a wide viewport. This changes presentation only; no raster or value changes.
+ * B4 camera fit. The peak frame is scanned at runtime to find the dominant wet
+ * core; the map then fits that extent (not the wider flood-prone belt) with an
+ * 8% total margin and the review's 42 degree pitch. Presentation only: no
+ * frame, class or value is regenerated.
  */
-export const HOME_ZOOM_BOOST = 0.4;
-export const MAP_FIT_PADDING = 12;
+export const PEAK_FIT_PADDING_RATIO = 0.04;
+export const PEAK_EXTENT_SCAN_MAX_WIDTH = 1200;
+export const PEAK_EXTENT_ALPHA_FLOOR = 8;
+export const PEAK_EXTENT_ROW_DENSITY_FLOOR = 0.1;
+export const PEAK_EXTENT_TRIM = 0.05;
 
 /**
- * Palette separation (REVIEW-07 B2):
- * - The shallow flood class is baked into the committed PNG (#9ecae1). It stays blue.
+ * Palette separation (REVIEW-07 B2 + REVIEW-09 B4):
+ * - Depth classes are recoloured at runtime to cyan -> teal -> indigo -> violet.
  * - Rivers are warm sand, not cyan, so a mapped channel can never be confused with water.
  * - Hillshade is lower-contrast and desaturated so it does not compete at valley scale.
  */

@@ -51,7 +51,7 @@
 
 .brandSub {
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--muted);
@@ -69,7 +69,7 @@
 
 .scenarioKicker {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--muted);
@@ -101,7 +101,7 @@
   background: var(--amber-wash);
   color: var(--amber-strong);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -126,7 +126,7 @@
   background: var(--accent-wash);
   color: var(--accent-strong);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -134,7 +134,7 @@
 
 .datasetVersion {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   color: var(--faint);
   white-space: nowrap;
 }
@@ -163,7 +163,7 @@
 
 .stepPhase {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--amber);
@@ -171,7 +171,7 @@
 
 .stepPosition {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   color: var(--faint);
 }
 
@@ -217,30 +217,46 @@
 }
 
 .skipLinks {
-  position: absolute;
+  position: fixed;
   top: 8px;
   left: 8px;
   z-index: 100;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
 .skipLink {
-  transform: translateY(-180%);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skipLink:focus,
+.skipLink:focus-visible {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  width: auto;
+  height: auto;
+  margin: 0;
   padding: 8px 12px;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
   border-radius: var(--radius-sm);
   background: var(--accent);
   color: #061014;
+  font-size: 12px;
   font-weight: 650;
   text-decoration: none;
   box-shadow: var(--shadow);
-}
-
-.skipLink:focus-visible {
-  transform: translateY(0);
-  outline: 2px solid #061014;
-  outline-offset: -4px;
+  outline: 3px solid var(--accent-strong);
+  outline-offset: 2px;
 }
 
 .loading {
@@ -268,7 +284,7 @@
 
 .loadingKicker {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--accent);
@@ -344,7 +360,7 @@
   background: var(--danger-wash);
   color: #f0a794;
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -399,7 +415,7 @@
   background: rgba(7, 16, 20, 0.84);
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.03em;
   backdrop-filter: blur(7px);
   pointer-events: none;
@@ -487,7 +503,7 @@
 
 @media (max-width: 680px) {
   .notForecast {
-    font-size: 8.5px;
+    font-size: 11px;
     padding: 4px 6px;
   }
 

@@ -10,6 +10,7 @@ import {
   FLOOD_OUTGOING_LAYER_ID,
   FLOOD_OUTGOING_SOURCE_ID,
 } from './mapConfig';
+import { recolorFloodFrame } from './depthPalette';
 
 interface FloodHooks {
   onFrameError?: (step: number) => void;
@@ -40,6 +41,7 @@ export function createFloodController(
 ): FloodController {
   const images = new Map<number, HTMLImageElement>();
   const pending = new Map<number, Promise<HTMLImageElement>>();
+  const presentationUrls = new Map<number, string>();
   let displayedStep = -1;
   let displayedUrl: string | null = null;
   let requestId = 0;
@@ -56,6 +58,21 @@ export function createFloodController(
   };
 
   const frameUrl = (step: number): string => dataUrl(`flood/${frameIndex.steps[step].file}`);
+
+  const presentationUrl = (step: number, image: HTMLImageElement): string => {
+    const cached = presentationUrls.get(step);
+    if (cached) return cached;
+    let recolored: string | null = null;
+    try {
+      recolored = recolorFloodFrame(image, frameIndex);
+    } catch {
+      // Canvas limits or a tainted image must never stop the flood layer.
+      recolored = null;
+    }
+    const url = recolored ?? frameUrl(step);
+    presentationUrls.set(step, url);
+    return url;
+  };
 
   const loadFrame = (step: number): Promise<HTMLImageElement> => {
     const cached = images.get(step);
@@ -138,6 +155,9 @@ export function createFloodController(
     for (const key of Array.from(images.keys())) {
       if (!keep.has(key)) images.delete(key);
     }
+    for (const key of Array.from(presentationUrls.keys())) {
+      if (!keep.has(key)) presentationUrls.delete(key);
+    }
   };
 
   const updateImageSources = (outgoingUrl: string, currentUrl: string): boolean => {
@@ -154,30 +174,30 @@ export function createFloodController(
     if (clamped === displayedStep && displayedUrl) return true;
 
     try {
-      await loadFrame(clamped);
+      const image = await loadFrame(clamped);
+      if (destroyed || id !== requestId) return false;
+
+      const nextUrl = presentationUrl(clamped, image);
+      const outgoingUrl = displayedUrl ?? nextUrl;
+      if (!updateImageSources(outgoingUrl, nextUrl)) {
+        if (id === requestId) hooks.onFrameError?.(clamped);
+        return false;
+      }
+
+      displayedUrl = nextUrl;
+      displayedStep = clamped;
+      hooks.onFrameApplied?.(clamped, frameIndex.steps[clamped].file);
+
+      if (animate) crossfade();
+      else applyOpacity();
+
+      prefetch(clamped + 1);
+      prune(clamped);
+      return true;
     } catch {
       if (id === requestId) hooks.onFrameError?.(clamped);
       return false;
     }
-    if (destroyed || id !== requestId) return false;
-
-    const nextUrl = frameUrl(clamped);
-    const outgoingUrl = displayedUrl ?? nextUrl;
-    if (!updateImageSources(outgoingUrl, nextUrl)) {
-      if (id === requestId) hooks.onFrameError?.(clamped);
-      return false;
-    }
-
-    displayedUrl = nextUrl;
-    displayedStep = clamped;
-    hooks.onFrameApplied?.(clamped, frameIndex.steps[clamped].file);
-
-    if (animate) crossfade();
-    else applyOpacity();
-
-    prefetch(clamped + 1);
-    prune(clamped);
-    return true;
   };
 
   const goToStep = (step: number): void => {
@@ -203,6 +223,7 @@ export function createFloodController(
       stopAnimation();
       images.clear();
       pending.clear();
+      presentationUrls.clear();
       displayedUrl = null;
     },
   };

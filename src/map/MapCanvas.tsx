@@ -33,19 +33,20 @@ import {
   HOME_BEARING,
   HOME_PITCH,
   HOME_ZOOM,
-  HOME_ZOOM_BOOST,
   HOTSPOTS_LAYER_ID,
-  MAP_FIT_PADDING,
   MAX_BOUNDS,
   MAX_PITCH,
   MAX_ZOOM,
   MIN_ZOOM,
+  PEAK_FIT_PADDING_RATIO,
   bboxCenter,
 } from './mapConfig';
 import { applyLayerPaint, buildMapStyle, setTerrain } from './mapStyle';
 import { LAYER_IDS } from './layerRegistry';
 import { createTileHealthTracker, type TileHealthTracker } from './tileHealth';
 import { tileHealthCopy } from './tileHealthState';
+import { depthPresentationColor } from './depthPalette';
+import { scanPeakWetExtent, type PeakWetExtent } from './peakExtent';
 import styles from './map.module.css';
 
 interface MapCanvasProps {
@@ -151,6 +152,14 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     container.setAttribute('data-step', String(useTimelineStore.getState().step));
     container.setAttribute('data-frame-file', '');
 
+    let peakExtent: PeakWetExtent | null = null;
+    const peakExtentPromise = scanPeakWetExtent(dataset.frameIndex, dataset.summary.peak_step)
+      .then((extent) => {
+        peakExtent = extent;
+        return extent;
+      })
+      .catch(() => null);
+
     // The probe is a live view of the stores, not a snapshot that can drift.
     const probe = Object.freeze({
       get step(): number {
@@ -197,6 +206,12 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       get districtTop() {
         return topDistrictProbe;
       },
+      get peakBounds() {
+        return peakExtent?.bounds ?? AOI_CORE_BOUNDS;
+      },
+      get peakRetainedShare() {
+        return peakExtent?.retainedShare ?? null;
+      },
     });
     Object.defineProperty(window, '__baanh', {
       value: probe,
@@ -234,11 +249,6 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     map.addControl(new NavigationControl({ visualizePitch: true, showCompass: true }), 'top-left');
     map.addControl(new ScaleControl({ unit: 'metric', maxWidth: 96 }), 'bottom-right');
     map.addControl(new AttributionControl({ compact: true }), 'bottom-right');
-
-    const bounds = new LngLatBounds(
-      [AOI_CORE_BOUNDS[0], AOI_CORE_BOUNDS[1]],
-      [AOI_CORE_BOUNDS[2], AOI_CORE_BOUNDS[3]],
-    );
 
     const updateAriaLabel = (step: number) => {
       const summary = dataset.summary.steps[step];
@@ -313,10 +323,20 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
 
         const score = document.createElement('span');
         score.className = styles.districtLabelScore;
-        score.textContent = formatScore(properties.risk_score);
+        score.textContent = `#${properties.rank} · ${formatScore(properties.risk_score)}`;
+        score.dataset.rank = String(properties.rank);
+        score.dataset.score = formatScore(properties.risk_score);
 
         element.append(name, score);
-        element.title = `${properties.name} · risk ${formatScore(properties.risk_score)}`;
+        element.title = `${properties.name} · district risk score ${formatScore(
+          properties.risk_score,
+        )} of 100 · rank ${properties.rank} in the Risk panel`;
+        element.setAttribute(
+          'aria-label',
+          `${properties.name}, district risk score ${formatScore(
+            properties.risk_score,
+          )} of 100, rank ${properties.rank} in the Risk panel`,
+        );
         const marker = new Marker({ element, anchor: 'center' })
           .setLngLat([properties.centroid_lon, properties.centroid_lat])
           .addTo(map);
@@ -389,6 +409,39 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     let sceneStarted = false;
     let readyFallback = 0;
 
+    const fitPeakExtent = async () => {
+      const extent = await peakExtentPromise;
+      if (mapRef.current !== map) return;
+      const fitBounds = extent?.bounds ?? AOI_CORE_BOUNDS;
+      const bounds = new LngLatBounds(
+        [fitBounds[0], fitBounds[1]],
+        [fitBounds[2], fitBounds[3]],
+      );
+      const canvas = map.getCanvas();
+      const minSide = Math.min(canvas.clientWidth, canvas.clientHeight);
+      const padding = Math.max(8, Math.round(minSide * PEAK_FIT_PADDING_RATIO));
+      const camera = map.cameraForBounds(bounds, {
+        padding: { top: padding, right: padding, bottom: padding, left: padding },
+        pitch: HOME_PITCH,
+        bearing: HOME_BEARING,
+      });
+      if (camera?.center && typeof camera.zoom === 'number') {
+        map.jumpTo({
+          center: camera.center,
+          zoom: camera.zoom,
+          pitch: HOME_PITCH,
+          bearing: HOME_BEARING,
+        });
+      } else {
+        map.jumpTo({
+          center: bboxCenter(fitBounds),
+          zoom: HOME_ZOOM,
+          pitch: HOME_PITCH,
+          bearing: HOME_BEARING,
+        });
+      }
+    };
+
     // style.load / styledata mean the style document is installed; they do not
     // wait for remote tiles (map 'load' does, and that is what froze playback).
     const startScene = () => {
@@ -401,26 +454,7 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       map.off('style.load', startScene);
 
       setTerrain(map, true);
-      const camera = map.cameraForBounds(bounds, {
-        padding: MAP_FIT_PADDING,
-        pitch: HOME_PITCH,
-        bearing: HOME_BEARING,
-      });
-      if (camera?.center && typeof camera.zoom === 'number') {
-        map.jumpTo({
-          center: camera.center,
-          zoom: camera.zoom + HOME_ZOOM_BOOST,
-          pitch: HOME_PITCH,
-          bearing: HOME_BEARING,
-        });
-      } else {
-        map.jumpTo({
-          center: bboxCenter(AOI_CORE_BOUNDS),
-          zoom: HOME_ZOOM,
-          pitch: HOME_PITCH,
-          bearing: HOME_BEARING,
-        });
-      }
+      void fitPeakExtent();
       updateAriaLabel(useTimelineStore.getState().step);
 
       applyLayers();
@@ -532,14 +566,13 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
         </div>
         <ul className={styles.legendList} data-flood-visible={floodVisible ? 'true' : 'false'}>
           {depthClasses.map((entry) => (
-            <li
-              key={entry.id}
-              className={styles.legendItem}
-              style={{ opacity: floodVisible ? 1 : 0.35 }}
-            >
+            <li key={entry.id} className={styles.legendItem}>
               <span
                 className={styles.swatch}
-                style={{ backgroundColor: entry.color, opacity: Math.max(0.55, entry.alpha / 255) }}
+                style={{
+                  backgroundColor: depthPresentationColor(entry.id, entry.color),
+                  opacity: floodVisible ? Math.max(0.55, entry.alpha / 255) : 0.35,
+                }}
               />
               <span>{`${entry.label} m`}</span>
             </li>
@@ -549,6 +582,10 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
           {floodVisible
             ? `${frameWidth} × ${frameHeight} px · ${formatStage(frameResolution)} m/px · classes from frame-index.json`
             : 'Flood extent hidden in Layers; depth classes still from frame-index.json.'}
+        </p>
+        <p className={styles.markerKey}>
+          District markers: <strong>#1 · 71.9</strong> = rank · district risk score 0–100; rank
+          matches the Risk panel.
         </p>
       </div>
 

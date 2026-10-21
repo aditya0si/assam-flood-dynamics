@@ -63,7 +63,22 @@ p {
 
 .maplibregl-ctrl-attrib {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
+}
+
+/* MapLibre's own rule is more specific; keep the attribution dark and legible. */
+.maplibregl-ctrl.maplibregl-ctrl-attrib,
+.maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact {
+  background-color: rgba(7, 16, 20, 0.88);
+  color: var(--text-soft);
+}
+
+.maplibregl-ctrl.maplibregl-ctrl-attrib a {
+  color: var(--accent-strong);
+}
+
+.maplibregl-ctrl.maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button {
+  filter: invert(1) opacity(0.85);
 }
 
 /*
@@ -112,7 +127,7 @@ p {
   border-color: var(--line-strong);
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .maplibregl-ctrl-attrib,

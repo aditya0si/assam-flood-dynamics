@@ -8,7 +8,6 @@ import {
   formatStepCode,
 } from '../data/format';
 import { useTimelineStore } from '../state/timelineStore';
-import { DepthDecileStrip } from './DepthDecileStrip';
 import { TelemetryChart } from './TelemetryChart';
 import styles from '../timeline/timeline.module.css';
 
@@ -122,13 +121,11 @@ export function ChartGrid({ summary, series }: ChartGridProps) {
               syncKey={SYNC_KEY}
               threshold={model.threshold}
               thresholdLabel={model.thresholdLabel}
-              height={32}
+              height={38}
             />
           </section>
         ))}
       </div>
-
-      <DepthDecileStrip step={current} />
 
       <table className={styles.srOnly}>
         <caption>Rainfall, scenario stage, inundated area and depth deciles by step</caption>

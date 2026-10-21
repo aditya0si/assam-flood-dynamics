@@ -98,11 +98,11 @@ export function TelemetryChart({
         },
         axes: [
           {
-            stroke: '#6f8893',
-            font: '8px ui-monospace, "Cascadia Mono", Consolas, monospace',
+            stroke: '#849ca6',
+            font: '11px ui-monospace, "Cascadia Mono", Consolas, monospace',
             ticks: { show: true, stroke: '#27414c', width: 1, size: 3 },
             grid: { show: false },
-            size: 15,
+            size: 18,
             values: (_u, splits) =>
               splits.map((value) => {
                 const index = Math.round(value);
@@ -113,11 +113,11 @@ export function TelemetryChart({
               }),
           },
           {
-            stroke: '#6f8893',
-            font: '8px ui-monospace, "Cascadia Mono", Consolas, monospace',
+            stroke: '#849ca6',
+            font: '11px ui-monospace, "Cascadia Mono", Consolas, monospace',
             ticks: { show: false },
             grid: { stroke: '#1e3440', width: 1 },
-            size: 42,
+            size: 46,
             values: (_u, splits) =>
               splits.map((value) => (maxY >= 1000 ? String(Math.round(value)) : formatValue(value))),
           },

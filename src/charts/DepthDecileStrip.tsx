@@ -42,15 +42,16 @@ export function DepthDecileStrip({ step }: DepthDecileStripProps) {
                   style={{ height: `${Math.max(3, (value / maxValue) * 100)}%` }}
                 />
               </span>
-              <span className={styles.decileKey}>{key.toUpperCase()}</span>
-              <span className={styles.decileValue}>{formatDepthValue(value)}</span>
+              <span className={styles.decileLabels}>
+                <span className={styles.decileKey}>{key.toUpperCase()}</span>
+                <span className={styles.decileValue}>{formatDepthValue(value)}</span>
+              </span>
             </span>
           );
         })}
       </div>
       <p className={styles.decileNote}>
-        Bathtub depth percentiles from <code>flood-summary.json</code>; six ordered values, not a
-        distribution average.
+        Bathtub depth percentiles from <code>flood-summary.json</code>.
       </p>
     </figure>
   );

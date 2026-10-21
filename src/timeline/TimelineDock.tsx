@@ -4,6 +4,7 @@ import { formatArea, formatPercent, formatPhase, formatStage, formatStepCode, st
 import { badgeFor } from '../data/labels';
 import { useTimelineStore } from '../state/timelineStore';
 import { ChartGrid } from '../charts/ChartGrid';
+import { DepthDecileStrip } from '../charts/DepthDecileStrip';
 import { PlaybackControls } from './PlaybackControls';
 import { TimelineScrubber } from './TimelineScrubber';
 import { usePlayback } from './usePlayback';
@@ -69,6 +70,10 @@ export function TimelineDock({ dataset }: TimelineDockProps) {
           <Metric label="Inundated area" value={formatArea(current.inundated_area_km2)} unit="km²" />
           <Metric label="Share of Assam" value={formatPercent(current.share_of_assam)} />
           <Metric label="Share of flood-prone area" value={formatPercent(current.share_of_flood_prone_area)} />
+        </div>
+
+        <div className={styles.decileSlot}>
+          <DepthDecileStrip step={current} />
         </div>
 
         <TimelineScrubber summary={dataset.summary} />
