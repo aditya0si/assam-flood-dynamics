@@ -1,0 +1,172 @@
+.mapWrap {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-deep);
+  overflow: hidden;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.canvas :global(.maplibregl-canvas) {
+  outline: none;
+}
+
+.canvas :global(.maplibregl-canvas-container) {
+  cursor: grab;
+}
+
+.canvas :global(.maplibregl-canvas-container:active) {
+  cursor: grabbing;
+}
+
+.legend {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 6;
+  width: 220px;
+  padding: 10px 12px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(8, 19, 24, 0.86);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(9px);
+}
+
+.legendHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.legendBadge {
+  padding: 2px 5px;
+  border: 1px solid rgba(124, 199, 232, 0.34);
+  border-radius: 3px;
+  color: var(--accent);
+  font-size: 7.5px;
+  letter-spacing: 0.1em;
+}
+
+.legendList {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-soft);
+}
+
+.swatch {
+  width: 18px;
+  height: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.legendMeta {
+  margin: 7px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 8px;
+  line-height: 1.4;
+  color: var(--faint);
+}
+
+.degradedChip {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 6;
+  padding: 5px 8px;
+  border: 1px solid rgba(242, 184, 75, 0.42);
+  border-radius: var(--radius-sm);
+  background: rgba(22, 25, 20, 0.88);
+  color: var(--amber-strong);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  backdrop-filter: blur(7px);
+}
+
+.frameWarning {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 6;
+  transform: translateX(-50%);
+  padding: 5px 9px;
+  border: 1px solid rgba(224, 122, 99, 0.42);
+  border-radius: var(--radius-sm);
+  background: rgba(24, 17, 16, 0.9);
+  color: #f1b3a3;
+  font-family: var(--mono);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.webglFallback {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-deep);
+}
+
+.webglImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+  filter: saturate(0.7) contrast(1.05);
+}
+
+.webglMessage {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 40px));
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(242, 184, 75, 0.45);
+  border-radius: var(--radius);
+  background: rgba(8, 19, 24, 0.92);
+  color: var(--amber-strong);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+@media (max-width: 760px) {
+  .legend {
+    width: 186px;
+    left: 10px;
+    bottom: 10px;
+  }
+
+  .degradedChip {
+    left: 10px;
+    top: 10px;
+  }
+}

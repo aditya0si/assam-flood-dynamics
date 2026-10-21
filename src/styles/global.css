@@ -1,0 +1,120 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  background: #071014;
+}
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  font-family: var(--sans);
+}
+
+::selection {
+  color: #061014;
+  background: var(--accent);
+}
+
+a {
+  color: var(--accent);
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+  border-radius: 3px;
+}
+
+.maplibregl-ctrl-attrib {
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  min-height: 22px;
+}
+
+.maplibregl-ctrl-group {
+  background: #0c191f;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.maplibregl-ctrl-group button {
+  background: transparent;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--line);
+}
+
+.maplibregl-ctrl-group button span {
+  filter: invert(1) opacity(0.78);
+}
+
+.maplibregl-ctrl-scale {
+  background: rgba(7, 16, 20, 0.72);
+  border-color: var(--line-strong);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.maplibregl-ctrl-attrib,
+.maplibregl-ctrl-attrib a {
+  color: var(--muted);
+}
+
+.maplibregl-ctrl-attrib {
+  background: rgba(7, 16, 20, 0.72);
+}
+
+.maplibregl-ctrl-attrib-button {
+  filter: opacity(0.7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

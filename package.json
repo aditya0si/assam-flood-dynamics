@@ -1,0 +1,29 @@
+{
+  "name": "baanh",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Baanh — an Assam flood-dynamics scenario explorer. Not a forecast.",
+  "scripts": {
+    "dev": "node scripts/prebundle.mjs && node scripts/vite-run.mjs",
+    "build": "tsc -p tsconfig.json --noEmit && node scripts/vite-run.mjs build",
+    "preview": "node scripts/vite-run.mjs preview"
+  },
+  "dependencies": {
+    "maplibre-gl": "^5.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "uplot": "^1.6.32",
+    "zod": "^4.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "esbuild-wasm": "0.28.2",
+    "typescript": "^5.7.0",
+    "vite": "^7.0.0"
+  }
+}

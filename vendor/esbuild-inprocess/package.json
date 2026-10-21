@@ -1,0 +1,12 @@
+{
+  "name": "esbuild",
+  "version": "0.28.2",
+  "description": "In-process esbuild-wasm shim for the sandboxed B1 build (same public API as esbuild)",
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "dependencies": {
+    "esbuild-wasm": "0.28.2"
+  }
+}
