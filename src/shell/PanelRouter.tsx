@@ -4,6 +4,7 @@ import { MethodologyPanel } from '../panels/MethodologyPanel';
 import { LayersPanel } from '../panels/LayersPanel';
 import { ProvenancePanel } from '../panels/ProvenancePanel';
 import { RiskPanel } from '../panels/RiskPanel';
+import { ValidationPanel } from '../panels/ValidationPanel';
 import { usePanelStore } from '../state/panelStore';
 import styles from '../panels/panels.module.css';
 
@@ -38,6 +39,9 @@ export function PanelRouter({ dataset }: PanelRouterProps) {
       data-active-panel={activePanel}
     >
       {activePanel === 'risk' ? <RiskPanel risk={dataset.districtRisk} /> : null}
+      {activePanel === 'validation' ? (
+        <ValidationPanel scorecard={dataset.scorecard} />
+      ) : null}
       {activePanel === 'provenance' ? <ProvenancePanel dataset={dataset} /> : null}
       {activePanel === 'methodology' ? <MethodologyPanel dataset={dataset} /> : null}
       {activePanel === 'layers' ? <LayersPanel dataset={dataset} /> : null}

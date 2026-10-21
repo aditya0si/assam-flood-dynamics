@@ -55,6 +55,25 @@
     "used_by_pipeline": false,
     "note": "Not ingested in M0. Reserved for a future event-context cross-check; absence is recorded in provenance."
   },
+  "sentinel1": {
+    "name": "Copernicus Sentinel-1 GRD via Earth Search STAC",
+    "collection": "sentinel-1-grd",
+    "stac_url": "https://earth-search.aws.element84.com/v1",
+    "datetime": "2022-06-01T00:00:00Z/2022-07-31T23:59:59Z",
+    "instrument_mode": "IW",
+    "product_type": "GRD",
+    "scene_count": 2,
+    "aws_no_sign_request": "YES",
+    "aws_region": "us-west-2",
+    "decimation": 9,
+    "resampling": "average",
+    "sensitivity_db": [-2, 0, 2],
+    "slope_mask_deg": 10,
+    "min_component_cells": 5,
+    "coverage_min": 0.90,
+    "licence": "Copernicus Sentinel data; Earth Search STAC; anonymous S3 access",
+    "note": "Review 17 P1.1. The measurement COG reports crs None but carries WGS84 GCPs; the stage assigns EPSG:32646 from proj:centroid before reprojection. Otsu is computed on 10*log10(DN) over AOI core pixels only. No absolute dB threshold is hard-coded."
+  },
   "flood_prone_area": {
     "name": "Government of Assam, Water Resources Department — flood-prone area",
     "url": "https://waterresources.assam.gov.in/portlets/flood-erosion-problems",

@@ -75,9 +75,9 @@ export function MethodologyPanel({ dataset }: MethodologyPanelProps) {
         <p className={styles.quote}>{model.depth_bias}</p>
         <p>
           At the peak step the bathtub surface is capped by the scenario stage (3.7 m), so
-          <code> p90_peak_depth_m</code> is the same for every district. Peak depth is therefore
-          reported as context — median depth and the share of wet cells deeper than 1.5 m — but it is
-          not a scored driver.
+          <code> p90_peak_depth_m</code> is the same for every district. Peak depth therefore
+          enters the separate severity index (depth &gt;1.5 m share and median depth) but not the
+          extent score; the two ranks are labelled separately.
         </p>
       </section>
 
@@ -109,11 +109,13 @@ export function MethodologyPanel({ dataset }: MethodologyPanelProps) {
           <li>
             <span className={styles.classBadge}>{badgeFor(districtRisk.class)}</span>
             <span>
-              Risk zones and district ranking: {districtRisk.class}, weighted{' '}
+              Extent score and district ranking: {districtRisk.class}, weighted{' '}
               {formatPercent(districtRisk.weights.area_share)} area share and{' '}
               {formatPercent(districtRisk.weights.duration)} duration (two drivers, weights{' '}
-              {districtRisk.weights_version}). Peak depth saturates at the stage, so it is reported
-              as context but not scored. Districts below 75% valid coverage carry a coverage badge.
+              {districtRisk.weights_version}). The severity index is a separate 0–100 profile of
+              depth &gt;1.5 m share × median depth × duration, min–max normalised; it is never
+              added to the extent score. Districts below 75% valid coverage carry a coverage
+              badge.
             </span>
           </li>
         </ul>

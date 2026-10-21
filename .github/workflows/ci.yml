@@ -54,3 +54,29 @@ jobs:
             playwright-report/
           if-no-files-found: ignore
           retention-days: 7
+
+  pipeline-tests:
+    name: pipeline pytest (headless Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+
+      - name: Install pipeline
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r pipeline/requirements.txt
+          python -m pip install -e pipeline
+
+      - name: Run pipeline unit tests
+        working-directory: pipeline
+        run: python -m pytest tests -q
+

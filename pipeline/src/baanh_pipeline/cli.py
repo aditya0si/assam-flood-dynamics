@@ -142,6 +142,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--manifest", required=True)
     p.add_argument("--provenance", required=True)
 
+    p = add("build-validation", "Stage 16: Sentinel-1 validation scorecard")
+    p.add_argument("--aoi", required=True)
+    p.add_argument("--sources", required=True)
+    p.add_argument("--core-mask", required=True)
+    p.add_argument("--dem", required=True)
+    p.add_argument("--frame-index", required=True)
+    p.add_argument("--frames", required=True)
+    p.add_argument("--scenario", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--cache", required=True)
+    p.add_argument("--refresh", action="store_true")
+
     return parser
 
 
@@ -271,6 +283,19 @@ def _dispatch(args) -> None:
         from . import publish
 
         publish.run(cfg, rel(args.data), args.version, rel(args.manifest), rel(args.provenance))
+    elif args.command == "build-validation":
+        from . import calibration_s1
+
+        calibration_s1.run(
+            cfg,
+            rel(args.core_mask),
+            rel(args.dem),
+            rel(args.frame_index),
+            rel(args.frames),
+            rel(args.out),
+            rel(args.cache),
+            args.refresh,
+        )
     else:  # pragma: no cover - argparse prevents this
         raise SystemExit(f"unknown command: {args.command}")
 

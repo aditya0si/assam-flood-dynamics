@@ -24,21 +24,22 @@ export function RiskPanel({ risk }: RiskPanelProps) {
       <div className={styles.panelIntro}>
         <div className={styles.panelTitleRow}>
           <h2 className={styles.panelTitle} tabIndex={-1}>
-            District risk ranking
+            District extent and severity
           </h2>
           <span className={styles.classBadge}>{badgeFor(risk.class)}</span>
         </div>
         <p className={styles.panelLead}>
-          {districts.length} districts ordered by scenario-conditional terrain risk. Click a row to
-          focus the district on the map.
+          {districts.length} districts ordered by the extent score. Each row shows both the
+          extent rank and the separate severity rank; click a row to focus the district.
         </p>
         <p className={styles.formulaNote}>
-          Score = {formatPercent(risk.weights.area_share)} area share +{' '}
+          <strong>Extent score</strong> = {formatPercent(risk.weights.area_share)} area share +{' '}
           {formatPercent(risk.weights.duration)} duration. Area saturates at{' '}
           {formatPercent(risk.reference_values.area_share_saturation)}; duration at{' '}
-          {risk.reference_values.duration_saturation_days} days. Two drivers are scored: peak depth
-          is reported below as context, not scored, because bathtub depth saturates at the stage.
-          Weights {risk.weights_version}.
+          {risk.reference_values.duration_saturation_days} days. <strong>Severity index</strong>{' '}
+          = 100 × min–max of the product of district z-scores for depth &gt;1.5 m share, median
+          depth and mean duration. Extent rank orders the extent score; severity rank orders the
+          index. The two are never combined. Weights {risk.weights_version}.
         </p>
       </div>
 
@@ -57,7 +58,7 @@ export function RiskPanel({ risk }: RiskPanelProps) {
         </span>
       </div>
 
-      <ol className={styles.riskList} aria-label="Districts sorted by descending risk score">
+      <ol className={styles.riskList} aria-label="Districts sorted by descending extent score">
         {districts.map((district) => (
           <li key={district.district_id}>
             <RiskRow
@@ -74,8 +75,9 @@ export function RiskPanel({ risk }: RiskPanelProps) {
       </ol>
 
       <p className={styles.panelFoot}>
-        Risk is scenario-conditional terrain exposure, not expected loss. No population, asset or
-        casualty field exists in the committed data.
+        Extent is scenario-conditional terrain exposure, not expected loss. Severity is a
+        per-wet-cell profile, not a second loss estimate. No population, asset or casualty field
+        exists in the committed data.
       </p>
     </div>
   );

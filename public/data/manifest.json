@@ -3,7 +3,7 @@
   "dataset_version": "2026.10.0",
   "app_min_version": "0.1.0",
   "scenario_id": "assam-monsoon-composite-v1",
-  "generated_at": "2026-10-21T16:08:58Z",
+  "generated_at": "2026-10-21T18:42:12Z",
   "crs": "EPSG:4326",
   "analysis_crs": "EPSG:32646",
   "bbox": [
@@ -33,7 +33,8 @@
       "data/risk/district-risk.json",
       "data/scenario.json",
       "data/series/monsoon-series.json",
-      "data/validation-report.json"
+      "data/validation-report.json",
+      "data/validation/scorecard.json"
     ],
     "animation": [
       "data/flood/flood-summary.json",
@@ -65,8 +66,8 @@
   "files": [
     {
       "path": "data/admin/assam-districts.geojson",
-      "bytes": 170918,
-      "sha256": "86977bd6aae4604fc6b6b12a9bc210ceffb4527aa370b8f8137034da4e9e6278",
+      "bytes": 173407,
+      "sha256": "b53716bed301f53616dbd15e287ae913e58ee490f125cfdf87694ee5d65455d7",
       "class": "source",
       "tier": "critical",
       "description": "Assam ADM2 district boundaries (source) with derived scenario risk attributes."
@@ -225,16 +226,16 @@
     },
     {
       "path": "data/provenance.json",
-      "bytes": 21077,
-      "sha256": "d774bb2a2e1d50678dfe0a85d47cbefba8a9cf14850c44894c60193982d3af56",
+      "bytes": 22913,
+      "sha256": "159ac60cd3718fb2403e2f82111d72dd288522e568c9cb2d02f1fff763751f2a",
       "class": "derived",
       "tier": "critical",
       "description": "Source → stage → file provenance for every dataset."
     },
     {
       "path": "data/risk/district-risk.json",
-      "bytes": 17966,
-      "sha256": "dfccf68516d044896201c79409d62b3b7c0fd3a23e175bb29c0b42ec9dd0264d",
+      "bytes": 20995,
+      "sha256": "c3db06525374fa1b14e536df829191d0667a53ce75a1e07b9af1489e0c766832",
       "class": "derived",
       "tier": "critical",
       "description": "Scenario-conditional district exposure ranking (no demographics)."
@@ -280,9 +281,17 @@
       "description": "Chart-ready synthetic rainfall and scenario stage series."
     },
     {
+      "path": "data/validation/scorecard.json",
+      "bytes": 2656,
+      "sha256": "1d874bbf231c981948a37e017c9d1693ed2f27c5f84b05482b406ea4425b26d7",
+      "class": "derived",
+      "tier": "critical",
+      "description": "Sentinel-1 GRD validation scorecard: extent-shape IoU/precision/recall at Otsu and ±2 dB, not an event hindcast."
+    },
+    {
       "path": "data/validation-report.json",
       "bytes": 10476,
-      "sha256": "5553c5d5f98e827f8a26d65746a96d800c7f995dde051c4fba5d9557983ca043",
+      "sha256": "8ee49902044fbc3379ee5947c1da38f146edf7779527743bdb6b5f04cb611aee",
       "class": "derived",
       "tier": "critical",
       "description": "V01–V20 plus V-A1–V-A10 validation report for the committed data."

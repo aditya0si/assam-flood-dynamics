@@ -220,13 +220,15 @@ test.describe('M0 acceptance', () => {
     const errors = collectErrors(page);
     await openApp(page);
 
-    const rows = page.getByRole('button', { name: /risk [\d.]+ of 100/i });
+    const rows = page.getByRole('button', { name: /extent score [\d.]+ of 100/i });
     await expect(rows).toHaveCount(33);
     await expect(rows.first()).toContainText('Sivasagar');
     await expect(rows.first()).toContainText('66.8');
     await expect(rows.first()).toContainText('Very high');
     await expect(rows.first().locator('[data-depth-share]')).toBeVisible();
-    await expect(rows.first()).toContainText('Depth context');
+    await expect(rows.first()).toContainText('Severity inputs');
+    await expect(rows.first()).toHaveAttribute('data-rank', '1');
+    await expect(rows.first()).toHaveAttribute('data-severity-rank', /^\d+$/);
 
     // Second skip link -> rail -> active Risk tab -> first risk row.
     await page.keyboard.press('Tab');
@@ -252,13 +254,36 @@ test.describe('M0 acceptance', () => {
     expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
 
+  test('validation tab renders the Sentinel-1 scorecard and both district ranks', async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await openApp(page);
+
+    await openPanel(page, 'Validation');
+    const panel = page.locator('[data-validation-panel="true"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('[data-validation-scene]')).toHaveCount(2);
+    await expect(panel.getByText(/not an event hindcast/i).first()).toBeVisible();
+    await expect(panel.getByText(/Absolute SAR calibration was unavailable/i).first()).toBeVisible();
+
+    await openPanel(page, 'Risk');
+    const first = page.getByRole('button', { name: /extent score [\d.]+ of 100/i }).first();
+    await expect(first).toHaveAttribute('data-rank', '1');
+    await expect(first).toHaveAttribute('data-severity-rank', /^\d+$/);
+    await expect(first).toContainText('extent');
+    await expect(first).toContainText('severity');
+
+    expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
   test('coverage badge and row annotation appear for the lowest-coverage district', async ({
     page,
   }) => {
     const errors = collectErrors(page);
     await openApp(page);
 
-    const rows = page.getByRole('button', { name: /risk [\d.]+ of 100/i });
+    const rows = page.getByRole('button', { name: /extent score [\d.]+ of 100/i });
     await expect(rows).toHaveCount(33);
     const coverages = await rows.evaluateAll((nodes) =>
       nodes.map((node) => Number(node.getAttribute('data-coverage'))),

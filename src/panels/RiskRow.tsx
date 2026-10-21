@@ -38,19 +38,31 @@ export function RiskRow({
       className={`${styles.riskRow} ${selected ? styles.riskRowSelected : ''}`}
       onClick={() => onSelect(district.district_id)}
       aria-pressed={selected}
-      aria-label={`${district.name}, risk ${formatScore(district.risk_score)} of 100, ${riskClassLabel(
-        district.risk_class,
-      )}. Focus district on the map.`}
+      aria-label={`${district.name}, extent score ${formatScore(district.risk_score)} of 100 rank ${
+        district.rank
+      }, severity index ${formatScore(district.severity_index)} rank ${district.severity_rank}. Focus district on the map.`}
       data-district-id={district.district_id}
       data-rank={district.rank}
+      data-severity-rank={district.severity_rank}
+      data-severity-index={formatScore(district.severity_index)}
       data-score={formatScore(district.risk_score)}
       data-coverage={district.valid_area_share}
     >
-      <span className={styles.riskRank}>{district.rank}</span>
+      <span className={styles.riskRanks}>
+        <span className={styles.riskRank} title="Extent rank">
+          #{district.rank}
+          <em>extent</em>
+        </span>
+        <span className={styles.riskRankSeverity} title="Severity rank">
+          #{district.severity_rank}
+          <em>severity</em>
+        </span>
+      </span>
       <span className={styles.riskBody}>
         <span className={styles.riskTitleRow}>
           <span className={styles.riskName}>{district.name}</span>
           <span className={styles.riskScoreGroup}>
+            <span className={styles.riskScoreLabel}>Extent score</span>
             <span className={styles.riskScore}>{formatScore(district.risk_score)}</span>
             {lowCoverage ? (
               <span
@@ -90,11 +102,11 @@ export function RiskRow({
         </span>
         <span
           className={styles.depthContext}
-          aria-label={`Depth context for ${district.name}, reported but not scored`}
+          aria-label={`Severity inputs for ${district.name}, separate from the extent score`}
           data-depth-share={district.depth_over_1_5m_share}
           data-median-depth={district.median_depth_m}
         >
-          <span className={styles.depthContextLabel}>Depth context · reported, not scored</span>
+          <span className={styles.depthContextLabel}>Severity inputs · not in extent score</span>
           <span className={styles.contextMetric}>
             <span className={styles.contextMetricLabel}>Depth &gt;1.5 m</span>
             <span className={styles.contextTrack} aria-hidden="true">
@@ -110,6 +122,18 @@ export function RiskRow({
               <span className={styles.contextFill} style={{ width: `${medianDepthWidth}%` }} />
             </span>
             <span className={styles.contextValue}>{formatDepthValue(district.median_depth_m)} m</span>
+          </span>
+          <span className={styles.contextMetric}>
+            <span className={styles.contextMetricLabel}>Severity index</span>
+            <span className={styles.contextTrack} aria-hidden="true">
+              <span
+                className={styles.contextFill}
+                style={{ width: `${district.severity_index}%` }}
+              />
+            </span>
+            <span className={styles.contextValue}>
+              {formatScore(district.severity_index)} · #{district.severity_rank}
+            </span>
           </span>
         </span>
       </span>

@@ -162,7 +162,29 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
             "output_paths": present(
                 "data/risk/risk-zones.geojson", "data/risk/district-risk.json"
             ),
-            "notes": "Cell risk weights HAND 0.60 and duration 0.40; district score weights area share 0.5625 and duration 0.4375 (weights_version area-duration-v1, two drivers). Bathtub peak depth is limited by the stage, so it is reported as context (median depth and share >1.5 m) but not scored. risk_class_area_share is the per-cell class area share over all cells wet at peak S07. No population, asset loss, agency or incident field exists.",
+            "notes": "Cell risk weights HAND 0.60 and duration 0.40; district score weights area share 0.5625 and duration 0.4375 (weights_version area-duration-v1, two drivers). severity_index is a separate P1.7 profile: 100 x min-max of the product of population z-scores of depth>1.5 m share, median depth and mean duration; all constants are published in district-risk.json. Bathtub peak depth is limited by the stage, so it is reported as context (median depth and share >1.5 m) and enters severity but not risk_score. risk_class_area_share is the per-cell class area share over all cells wet at peak S07. No population, asset loss, agency or incident field exists.",
+        },
+        {
+            "id": "validation",
+            "dataset": "Sentinel-1 GRD extent-shape validation scorecard",
+            "class": "derived",
+            "source_name": "Copernicus Sentinel-1 GRD via Earth Search STAC",
+            "source_url": "https://earth-search.aws.element84.com/v1",
+            "licence": "Copernicus Sentinel data; Earth Search STAC; anonymous S3 access",
+            "fetched_at": _fetched_at(fragments, "16"),
+            "pipeline": _stage_pipeline(fragments, ["16"]),
+            "output_paths": present("data/validation/scorecard.json"),
+            "notes": (
+                "Two Sentinel-1 IW GRD VV acquisitions (earliest and latest usable "
+                "Jun–Jul 2022 acquisitions over the AOI core). VV is decimated ~1/9 "
+                "with average resampling and converted to 10*log10(DN); the Otsu "
+                "threshold is computed over AOI core pixels only, with a ±2 dB band. "
+                "Water components below 5 analysis cells and DEM slope >10° are "
+                "removed; masks are reprojected nearest to the 90 m frame grid with a "
+                "fractional coverage raster. This is an extent-shape comparison, not "
+                "an event hindcast; absolute SAR calibration was unavailable. Scene "
+                "binaries and masks remain in the gitignored pipeline cache."
+            ),
         },
         {
             "id": "series",

@@ -92,6 +92,8 @@ DISTRICT_PROPS = {
     "risk_score": NUMBER_OR_NULL,
     "risk_class": {"anyOf": [{"enum": RISK_CLASSES}, {"type": "null"}]},
     "rank": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
+    "severity_index": NUMBER_OR_NULL,
+    "severity_rank": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
     "valid_area_share": {"type": "number", "minimum": 0, "maximum": 1},
     "derived_fields": {"type": "array", "items": {"type": "string"}},
     "label": {"type": "string"},
@@ -448,6 +450,7 @@ DISTRICT_RISK_SCHEMA = {
         "weights_version",
         "weights",
         "reference_values",
+        "severity",
         "risk_class_area_share",
         "districts",
         "counts",
@@ -473,6 +476,23 @@ DISTRICT_RISK_SCHEMA = {
             "properties": {
                 "area_share_saturation": {"type": "number", "minimum": 0},
                 "duration_saturation_days": {"type": "number", "minimum": 0},
+            },
+        },
+        "severity": {
+            "type": "object",
+            "required": ["formula", "z_statistic", "inputs", "normalisation", "z_population"],
+            "properties": {
+                "formula": {"type": "string"},
+                "z_statistic": {"type": "string"},
+                "inputs": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {"type": "string"},
+                },
+                "normalisation": {"type": "object"},
+                "z_population": {"type": "object"},
+                "note": {"type": "string"},
             },
         },
         "risk_class_area_share": {
@@ -512,6 +532,8 @@ DISTRICT_RISK_SCHEMA = {
                     "risk_class",
                     "drivers",
                     "valid_area_share",
+                    "severity_index",
+                    "severity_rank",
                     "class",
                 ],
                 "properties": {
@@ -529,6 +551,8 @@ DISTRICT_RISK_SCHEMA = {
                     "risk_class": {"enum": RISK_CLASSES},
                     "drivers": {"type": "array", "maxItems": 2, "items": {"enum": ["area", "duration"]}},
                     "valid_area_share": {"type": "number", "minimum": 0, "maximum": 1},
+                    "severity_index": NUMBER_OR_NULL,
+                    "severity_rank": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
                     "class": {"const": "derived"},
                 },
             },
@@ -674,6 +698,137 @@ VALIDATION_SCHEMA = {
     },
 }
 
+SCORECARD_SCHEMA = {
+    "type": "object",
+    "required": ["schema_version", "generated_at", "method", "scenes", "summary"],
+    "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "generated_at": {"type": "string"},
+        "method": {
+            "type": "object",
+            "required": [
+                "collection",
+                "threshold_method",
+                "sensitivity_db",
+                "slope_mask_deg",
+                "min_component_cells",
+                "resampling",
+                "crs",
+                "resolution_m",
+            ],
+            "properties": {
+                "collection": {"const": "sentinel-1-grd"},
+                "threshold_method": {"const": "otsu"},
+                "sensitivity_db": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {"type": "number"},
+                },
+                "slope_mask_deg": {"const": 10.0},
+                "min_component_cells": {"const": 5},
+                "resampling": {"const": "average→nearest"},
+                "crs": {"const": "EPSG:32646"},
+                "resolution_m": {"const": 90},
+            },
+        },
+        "scenes": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+                "type": "object",
+                "required": [
+                    "scene_id",
+                    "datetime",
+                    "platform",
+                    "relative_orbit",
+                    "observed_area_km2",
+                    "observed_water_fraction_of_aoi",
+                    "best_match_step",
+                    "best_match_iou",
+                    "threshold_db",
+                    "peak_step",
+                    "sensitivity",
+                ],
+                "properties": {
+                    "scene_id": {"type": "string", "minLength": 1},
+                    "datetime": {"type": "string", "minLength": 1},
+                    "platform": {"type": "string", "minLength": 1},
+                    "relative_orbit": {"type": "integer"},
+                    "observed_area_km2": {"type": "number", "exclusiveMinimum": 0},
+                    "observed_water_fraction_of_aoi": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "best_match_step": {"type": "integer", "minimum": 0, "maximum": 11},
+                    "best_match_iou": {"type": "number", "minimum": 0, "maximum": 1},
+                    "threshold_db": {"type": "number"},
+                    "peak_step": {
+                        "type": "object",
+                        "required": [
+                            "step",
+                            "modelled_area_km2",
+                            "iou",
+                            "precision",
+                            "recall",
+                            "f1",
+                            "area_bias_pct",
+                        ],
+                        "properties": {
+                            "step": {"type": "integer", "minimum": 0, "maximum": 11},
+                            "modelled_area_km2": {"type": "number", "minimum": 0},
+                            "iou": {"type": "number", "minimum": 0, "maximum": 1},
+                            "precision": {"type": "number", "minimum": 0, "maximum": 1},
+                            "recall": {"type": "number", "minimum": 0, "maximum": 1},
+                            "f1": {"type": "number", "minimum": 0, "maximum": 1},
+                            "area_bias_pct": {"type": "number"},
+                        },
+                    },
+                    "sensitivity": {
+                        "type": "object",
+                        "required": ["minus2db", "plus2db"],
+                        "properties": {
+                            key: {
+                                "type": "object",
+                                "required": ["iou", "precision", "recall"],
+                                "properties": {
+                                    "iou": {"type": "number", "minimum": 0, "maximum": 1},
+                                    "precision": {"type": "number", "minimum": 0, "maximum": 1},
+                                    "recall": {"type": "number", "minimum": 0, "maximum": 1},
+                                },
+                            }
+                            for key in ("minus2db", "plus2db")
+                        },
+                    },
+                },
+            },
+        },
+        "summary": {
+            "type": "object",
+            "required": [
+                "mean_iou_over_scenes",
+                "mean_precision",
+                "mean_recall",
+                "worst_scene",
+                "caveats",
+            ],
+            "properties": {
+                "mean_iou_over_scenes": {"type": "number", "minimum": 0, "maximum": 1},
+                "mean_precision": {"type": "number", "minimum": 0, "maximum": 1},
+                "mean_recall": {"type": "number", "minimum": 0, "maximum": 1},
+                "worst_scene": {"type": "string", "minLength": 1},
+                "caveats": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                },
+            },
+        },
+    },
+}
+
 MANIFEST_SCHEMA = {
     "type": "object",
     "required": [
@@ -753,6 +908,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "series/cross-sections.json": CROSS_SECTION_SCHEMA,
     "assets/critical-facilities.geojson": geojson_schema(ASSET_PROPS, "source", point_only=True),
     "gauges/virtual-gauges.geojson": geojson_schema(GAUGE_PROPS, "synthetic", point_only=True),
+    "validation/scorecard.json": SCORECARD_SCHEMA,
     "validation-report.json": VALIDATION_SCHEMA,
     "manifest.json": MANIFEST_SCHEMA,
     "provenance.json": PROVENANCE_SCHEMA,

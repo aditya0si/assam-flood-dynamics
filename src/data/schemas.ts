@@ -218,6 +218,10 @@ export const districtRiskEntrySchema = z.object({
   median_depth_m: z.number(),
   risk_score: z.number(),
   risk_class: z.string(),
+  /** P1.7: 0–100 severity profile, separate from risk_score (extent score). */
+  severity_index: z.number().min(0).max(100),
+  /** P1.7: dense rank by severity_index; `rank` remains the extent-led rank. */
+  severity_rank: z.number().int().positive(),
   drivers: z.array(z.string()),
   valid_area_share: z.number(),
   class: z.string(),
@@ -239,6 +243,29 @@ export const districtRiskSchema = z.object({
     duration_saturation_days: z.number(),
   }),
   /**
+   * P1.7: the exact severity formula and the constants that reproduce it.
+   * The index is a separate profile; it is never folded into risk_score.
+   */
+  severity: z.object({
+    formula: z.string(),
+    z_statistic: z.string(),
+    inputs: z.array(z.string()),
+    normalisation: z.object({
+      method: z.string(),
+      min: z.number(),
+      max: z.number(),
+      n_districts: z.number().int(),
+    }),
+    z_population: z.record(
+      z.string(),
+      z.object({
+        mean: z.number(),
+        std: z.number(),
+      }),
+    ),
+    note: z.string().optional(),
+  }),
+  /**
    * P0.4: area share per per-cell risk class over all cells wet at the peak
    * step (S07) with valid HAND. The denominator is peak wet area, not
    * district polygon area, so the four shares sum to 1.
@@ -251,6 +278,63 @@ export const districtRiskSchema = z.object({
   }),
   districts: z.array(districtRiskEntrySchema),
   counts: z.record(z.string(), z.number()),
+});
+
+export const scorecardSensitivitySchema = z.object({
+  iou: z.number().min(0).max(1),
+  precision: z.number().min(0).max(1),
+  recall: z.number().min(0).max(1),
+});
+
+export const scorecardPeakSchema = z.object({
+  step: z.number().int().min(0).max(11),
+  modelled_area_km2: z.number().nonnegative(),
+  iou: z.number().min(0).max(1),
+  precision: z.number().min(0).max(1),
+  recall: z.number().min(0).max(1),
+  f1: z.number().min(0).max(1),
+  area_bias_pct: z.number(),
+});
+
+export const scorecardSceneSchema = z.object({
+  scene_id: z.string().min(1),
+  datetime: z.string().min(1),
+  platform: z.string().min(1),
+  relative_orbit: z.number().int(),
+  /** REVIEW-17 addition: the Otsu threshold the scene actually chose, in dB. */
+  threshold_db: z.number(),
+  observed_area_km2: z.number().positive(),
+  observed_water_fraction_of_aoi: z.number().min(0).max(1),
+  best_match_step: z.number().int().min(0).max(11),
+  best_match_iou: z.number().min(0).max(1),
+  peak_step: scorecardPeakSchema,
+  sensitivity: z.object({
+    minus2db: scorecardSensitivitySchema,
+    plus2db: scorecardSensitivitySchema,
+  }),
+});
+
+export const scorecardSchema = z.object({
+  schema_version: z.string(),
+  generated_at: z.string(),
+  method: z.object({
+    collection: z.literal('sentinel-1-grd'),
+    threshold_method: z.literal('otsu'),
+    sensitivity_db: z.tuple([z.literal(-2), z.literal(0), z.literal(2)]),
+    slope_mask_deg: z.number(),
+    min_component_cells: z.number().int(),
+    resampling: z.literal('average→nearest'),
+    crs: z.literal('EPSG:32646'),
+    resolution_m: z.number(),
+  }),
+  scenes: z.array(scorecardSceneSchema).length(2),
+  summary: z.object({
+    mean_iou_over_scenes: z.number().min(0).max(1),
+    mean_precision: z.number().min(0).max(1),
+    mean_recall: z.number().min(0).max(1),
+    worst_scene: z.string().min(1),
+    caveats: z.array(z.string()).min(1),
+  }),
 });
 
 export const seriesPointSchema = z.object({
@@ -357,6 +441,11 @@ export type ProvenanceEntry = z.infer<typeof provenanceEntrySchema>;
 export type ProvenanceStage = z.infer<typeof provenanceStageSchema>;
 export type DistrictRisk = z.infer<typeof districtRiskSchema>;
 export type DistrictRiskEntry = z.infer<typeof districtRiskEntrySchema>;
+export type SeverityMethod = DistrictRisk['severity'];
+export type Scorecard = z.infer<typeof scorecardSchema>;
+export type ScorecardScene = z.infer<typeof scorecardSceneSchema>;
+export type ScorecardPeak = z.infer<typeof scorecardPeakSchema>;
+export type ScorecardSensitivity = z.infer<typeof scorecardSensitivitySchema>;
 export type MonsoonSeries = z.infer<typeof monsoonSeriesSchema>;
 export type SeriesEntry = z.infer<typeof seriesEntrySchema>;
 export type RiskZoneCollection = z.infer<typeof riskZoneFeatureCollectionSchema>;

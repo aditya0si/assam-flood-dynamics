@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 
-export type PanelId = 'risk' | 'provenance' | 'methodology' | 'layers';
+export type PanelId = 'risk' | 'validation' | 'provenance' | 'methodology' | 'layers';
 
-export const PANEL_ORDER: PanelId[] = ['risk', 'provenance', 'methodology', 'layers'];
+export const PANEL_ORDER: PanelId[] = ['risk', 'validation', 'provenance', 'methodology', 'layers'];
 
 export const PANEL_LABELS: Record<PanelId, string> = {
   risk: 'Risk',
+  validation: 'Validation',
   provenance: 'Provenance',
   methodology: 'Methodology',
   layers: 'Layers',

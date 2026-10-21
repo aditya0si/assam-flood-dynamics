@@ -15,6 +15,7 @@ import {
   provenanceSchema,
   riskZoneFeatureCollectionSchema,
   scenarioSchema,
+  scorecardSchema,
 } from '../src/data/schemas.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -147,6 +148,7 @@ const risk = readJson('risk/district-risk.json');
 const series = readJson('series/monsoon-series.json');
 const provenance = readJson('provenance.json');
 const report = readJson('validation-report.json');
+const scorecard = readJson('validation/scorecard.json');
 const AOI = frameIndex.bbox;
 
 console.log('check-data: committed JSON schemas, manifest integrity and A-series invariants');
@@ -333,6 +335,156 @@ check('P0.4 risk class area shares over wet-at-peak cells sum to 1.0', () => {
     sum += shares[key];
   }
   close(sum, 1.0, 0.01, 'risk class area share sum');
+});
+
+check('P1.2 Sentinel-1 scorecard: schema, method, metrics and caveats', () => {
+  const parsed = scorecardSchema.safeParse(scorecard);
+  assert(parsed.success, `scorecard: ${parsed.error?.issues[0]?.message ?? 'schema failed'}`);
+  const method = scorecard.method;
+  assert(method.collection === 'sentinel-1-grd', `collection is ${method.collection}`);
+  assert(method.threshold_method === 'otsu', `threshold_method is ${method.threshold_method}`);
+  assert(
+    JSON.stringify(method.sensitivity_db) === JSON.stringify([-2, 0, 2]),
+    `sensitivity_db is ${JSON.stringify(method.sensitivity_db)}`,
+  );
+  assert(method.slope_mask_deg === 10, `slope_mask_deg is ${method.slope_mask_deg}`);
+  assert(method.min_component_cells === 5, `min_component_cells is ${method.min_component_cells}`);
+  assert(method.resampling === 'average→nearest', `resampling is ${method.resampling}`);
+  assert(method.crs === 'EPSG:32646', `crs is ${method.crs}`);
+  assert(method.resolution_m === 90, `resolution_m is ${method.resolution_m}`);
+
+  assert(scorecard.scenes.length === 2, `expected 2 scenes, found ${scorecard.scenes.length}`);
+  const sceneIds = new Set();
+  for (const scene of scorecard.scenes) {
+    assert(typeof scene.scene_id === 'string' && scene.scene_id.length > 0, 'scene has no id');
+    assert(!sceneIds.has(scene.scene_id), `duplicate scene ${scene.scene_id}`);
+    sceneIds.add(scene.scene_id);
+    assert(Number.isFinite(scene.threshold_db), `${scene.scene_id}: threshold_db is not finite`);
+    assert(scene.observed_area_km2 > 0, `${scene.scene_id}: observed_area_km2 must be > 0`);
+    assert(
+      scene.observed_water_fraction_of_aoi >= 0 && scene.observed_water_fraction_of_aoi <= 1,
+      `${scene.scene_id}: invalid observed water fraction`,
+    );
+    assert(
+      Number.isInteger(scene.best_match_step) && scene.best_match_step >= 0 && scene.best_match_step <= 11,
+      `${scene.scene_id}: invalid best_match_step`,
+    );
+    for (const [label, metrics] of [
+      ['best_match_iou', { iou: scene.best_match_iou }],
+      ['peak_step', scene.peak_step],
+      ['sensitivity.minus2db', scene.sensitivity.minus2db],
+      ['sensitivity.plus2db', scene.sensitivity.plus2db],
+    ]) {
+      for (const key of label === 'peak_step'
+        ? ['iou', 'precision', 'recall', 'f1']
+        : label === 'best_match_iou'
+          ? ['iou']
+          : ['iou', 'precision', 'recall']) {
+        const value = metrics[key];
+        assert(
+          Number.isFinite(value) && value >= 0 && value <= 1,
+          `${scene.scene_id} ${label}.${key} outside [0,1]: ${value}`,
+        );
+      }
+    }
+    assert(
+      Number.isFinite(scene.peak_step.area_bias_pct),
+      `${scene.scene_id}: area_bias_pct is not finite`,
+    );
+    assert(
+      scene.peak_step.step === summary.peak_step,
+      `${scene.scene_id}: peak_step ${scene.peak_step.step} != summary ${summary.peak_step}`,
+    );
+    assert(scene.peak_step.modelled_area_km2 >= 0, `${scene.scene_id}: negative modelled area`);
+  }
+
+  for (const key of ['mean_iou_over_scenes', 'mean_precision', 'mean_recall']) {
+    const value = scorecard.summary[key];
+    assert(Number.isFinite(value) && value >= 0 && value <= 1, `summary.${key} outside [0,1]: ${value}`);
+    close(value, Number(value.toFixed(6)), 1e-9, `summary.${key} rounding`);
+  }
+  assert(sceneIds.has(scorecard.summary.worst_scene), 'worst_scene is not one of the scenes');
+  assert(Array.isArray(scorecard.summary.caveats) && scorecard.summary.caveats.length > 0, 'caveats are empty');
+  const caveats = scorecard.summary.caveats.join(' ').toLowerCase();
+  assert(caveats.includes('not an event hindcast'), 'caveats must contain "not an event hindcast"');
+  assert(
+    caveats.includes('absolute sar calibration was unavailable'),
+    'caveats must state that absolute SAR calibration was unavailable',
+  );
+});
+
+check('P1.7 severity index: formula, distinct values and both ranks', () => {
+  const districts = risk.districts;
+  const severityValues = new Set();
+  const severityRanks = [];
+  for (const district of districts) {
+    assert(Number.isFinite(district.severity_index), `${district.name}: severity_index is not finite`);
+    assert(
+      district.severity_index >= 0 && district.severity_index <= 100,
+      `${district.name}: severity_index outside 0-100`,
+    );
+    assert(
+      Number.isInteger(district.severity_rank) && district.severity_rank >= 1,
+      `${district.name}: severity_rank is not a positive integer`,
+    );
+    assert(Number.isInteger(district.rank) && district.rank >= 1, `${district.name}: extent rank missing`);
+    severityValues.add(district.severity_index.toFixed(6));
+    severityRanks.push(district.severity_rank);
+  }
+  assert(severityValues.size > 5, `severity_index has only ${severityValues.size} distinct values`);
+  severityRanks.sort((a, b) => a - b);
+  for (let index = 0; index < severityRanks.length; index += 1) {
+    assert(severityRanks[index] === index + 1, `severity_rank ${index + 1} missing or duplicated`);
+  }
+
+  const inputs = ['depth_over_1_5m_share', 'median_depth_m', 'mean_duration_days'];
+  const means = {};
+  const stds = {};
+  for (const key of inputs) {
+    const values = districts.map((district) => district[key]);
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+    const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+    means[key] = mean;
+    stds[key] = Math.sqrt(variance);
+    close(risk.severity.z_population[key].mean, mean, 1e-6, `${key} severity mean`);
+    close(risk.severity.z_population[key].std, stds[key], 1e-6, `${key} severity std`);
+  }
+  const products = districts.map((district) => {
+    let product = 1;
+    for (const key of inputs) {
+      product *= stds[key] === 0 ? 0 : (district[key] - means[key]) / stds[key];
+    }
+    return product;
+  });
+  const productMin = Math.min(...products);
+  const productMax = Math.max(...products);
+  close(risk.severity.normalisation.min, productMin, 1e-6, 'severity product min');
+  close(risk.severity.normalisation.max, productMax, 1e-6, 'severity product max');
+  districts.forEach((district, index) => {
+    const expected = productMax === productMin ? 0 : (100 * (products[index] - productMin)) / (productMax - productMin);
+    close(district.severity_index, expected, 0.01, `${district.name} severity index`);
+  });
+});
+
+check('P1.7 Dima Hasao is severity-led, not extent-led', () => {
+  const dima = risk.districts.find((district) => district.name === 'Dima Hasao');
+  assert(dima, 'Dima Hasao is missing');
+  close(dima.depth_over_1_5m_share, 0.882086, 1e-6, 'Dima Hasao depth >1.5 m share');
+  close(dima.median_depth_m, 3.7, 1e-9, 'Dima Hasao median depth');
+  close(dima.mean_duration_days, 114.6664, 1e-6, 'Dima Hasao mean duration');
+  assert(dima.area_share < 0.01, `Dima Hasao area share ${dima.area_share} is not a small extent`);
+  assert(
+    dima.severity_rank <= Math.ceil(risk.districts.length / 3),
+    `Dima Hasao severity rank ${dima.severity_rank} is not in the top third`,
+  );
+  const areaRank =
+    1 +
+    risk.districts.filter((district) => district.area_share > dima.area_share).length;
+  console.log(
+    `        Dima Hasao: severity rank ${dima.severity_rank}/${risk.districts.length}, ` +
+      `extent score rank ${dima.rank}/${risk.districts.length}, ` +
+      `area-share rank ${areaRank}/${risk.districts.length}`,
+  );
 });
 
 check('V-A1 AOI v2 area inside the 45,000-56,000 km2 band', () => {

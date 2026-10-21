@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +32,91 @@ from .util import (
 
 CLASS_NAMES = {1: "very_high", 2: "high", 3: "moderate", 4: "low"}
 CLASS_ORDER = {name: rank for rank, name in CLASS_NAMES.items()}
+
+# REVIEW-17 P1.7. The severity index is a separate, explicitly documented
+# profile. It is never folded into risk_score.
+SEVERITY_INPUTS = ("depth_over_1_5m_share", "median_depth_m", "mean_duration_days")
+SEVERITY_Z_STATISTIC = (
+    "population z-score across the scoreable districts: (x - mean) / std(ddof=0)"
+)
+SEVERITY_FORMULA = (
+    "severity_index = 100 * (p - min(p)) / (max(p) - min(p)), "
+    "p = z(depth_over_1_5m_share) * z(median_depth_m) * z(mean_duration_days)"
+)
+
+
+def _severity(
+    rows: list[dict],
+) -> tuple[list[float | None], list[int | None], dict]:
+    """Compute P1.7 severity indices, ranks and the published constants.
+
+    ``rows`` are the district output rows in input order.  Only districts with
+    all three inputs finite take part in the z-score population and the
+    min–max normalisation.  Distinct values are preserved; no constant is
+    hidden in this function.
+    """
+    n = len(rows)
+    values = np.full((n, len(SEVERITY_INPUTS)), np.nan, dtype=np.float64)
+    for index, row in enumerate(rows):
+        for column, key in enumerate(SEVERITY_INPUTS):
+            value = row.get(key)
+            if value is not None and np.isfinite(float(value)):
+                values[index, column] = float(value)
+    scoreable = np.isfinite(values).all(axis=1)
+    if not scoreable.any():
+        return [None] * n, [None] * n, {
+            "formula": SEVERITY_FORMULA,
+            "z_statistic": SEVERITY_Z_STATISTIC,
+            "inputs": list(SEVERITY_INPUTS),
+            "note": "no district had all three severity inputs",
+        }
+    population = values[scoreable]
+    means = population.mean(axis=0)
+    stds = population.std(axis=0, ddof=0)
+    safe_stds = np.where(stds > 0, stds, 1.0)
+    z = (values - means) / safe_stds
+    z[:, stds <= 0] = 0.0
+    product = z[:, 0] * z[:, 1] * z[:, 2]
+    product_min = float(product[scoreable].min())
+    product_max = float(product[scoreable].max())
+    if math.isclose(product_min, product_max):
+        normalised = np.zeros(n, dtype=np.float64)
+    else:
+        normalised = 100.0 * (product - product_min) / (product_max - product_min)
+    indices: list[float | None] = [None] * n
+    for index in range(n):
+        if scoreable[index]:
+            indices[index] = round(float(np.clip(normalised[index], 0.0, 100.0)), 3)
+    ranked = [index for index in range(n) if indices[index] is not None]
+    ranked.sort(key=lambda index: (-float(indices[index]), str(rows[index]["name"])))
+    ranks_all: list[int | None] = [None] * n
+    for rank, index in enumerate(ranked, start=1):
+        ranks_all[index] = rank
+    metadata = {
+        "formula": SEVERITY_FORMULA,
+        "z_statistic": SEVERITY_Z_STATISTIC,
+        "inputs": list(SEVERITY_INPUTS),
+        "normalisation": {
+            "method": "min-max over the district products",
+            "min": round(product_min, 9),
+            "max": round(product_max, 9),
+            "n_districts": int(scoreable.sum()),
+        },
+        "z_population": {
+            key: {
+                "mean": round(float(means[column]), 9),
+                "std": round(float(stds[column]), 9),
+            }
+            for column, key in enumerate(SEVERITY_INPUTS)
+        },
+        "note": (
+            "A product of three population z-scores is zero when any input is at "
+            "the population mean, so the min–max mapping is applied to the product, "
+            "not to the three z-scores independently. The index is severity-led and "
+            "is not added to risk_score."
+        ),
+    }
+    return indices, ranks_all, metadata
 
 
 def _duration_weights(days: list[int]) -> np.ndarray:
@@ -554,6 +640,19 @@ def run(
             }
         )
 
+    # REVIEW-17 P1.7: severity is a second labelled profile. risk_score and
+    # rank above remain the extent-led score and rank; severity_index and
+    # severity_rank are added, never blended in.
+    severity_indices, severity_ranks, severity_metadata = _severity(districts_out)
+    for index, district in enumerate(districts_out):
+        district["severity_index"] = severity_indices[index]
+        district["severity_rank"] = severity_ranks[index]
+    severity_rank_by_id = {
+        district["district_id"]: district["severity_rank"]
+        for district in districts_out
+        if district["severity_rank"] is not None
+    }
+
     counts = {
         "total": n_districts,
         "very_high": sum(1 for d in districts_out if d["risk_class"] == "very_high"),
@@ -580,6 +679,7 @@ def run(
             "area_share_saturation": float(district_cfg["area_share_saturation"]),
             "duration_saturation_days": float(district_cfg["duration_saturation_days"]),
         },
+        "severity": severity_metadata,
         "risk_class_area_share": risk_class_area_share,
         "districts": [{**d, "rank": rank_by_id[d["district_id"]]} for d in ranked_out],
         "counts": counts,
@@ -608,9 +708,17 @@ def run(
                 "risk_score": risk["risk_score"],
                 "risk_class": risk["risk_class"],
                 "rank": rank_by_id.get(props["district_id"]),
+                "severity_index": risk["severity_index"],
+                "severity_rank": risk["severity_rank"],
                 "valid_area_share": risk["valid_area_share"],
                 "class": "source",
-                "derived_fields": ["risk_score", "risk_class", "rank"],
+                "derived_fields": [
+                    "risk_score",
+                    "risk_class",
+                    "rank",
+                    "severity_index",
+                    "severity_rank",
+                ],
                 "label": "District boundary (source); risk attributes (derived)",
             }
             item = feature(geom, joined_props, cfg.aoi.decimals)
@@ -713,6 +821,22 @@ def run(
     for d in districts_out:
         if d["risk_score"] is not None and not (0 <= d["risk_score"] <= 100):
             raise RuntimeError(f"stage 10: district score out of range for {d['name']}")
+        if d["severity_index"] is not None and not (0 <= d["severity_index"] <= 100):
+            raise RuntimeError(f"stage 10: severity index out of range for {d['name']}")
+        if (d["severity_index"] is None) != (d["severity_rank"] is None):
+            raise RuntimeError(f"stage 10: severity index/rank disagree for {d['name']}")
+    severity_values = [
+        round(float(d["severity_index"]), 6)
+        for d in districts_out
+        if d["severity_index"] is not None
+    ]
+    if len(set(severity_values)) < 6:
+        raise RuntimeError("stage 10: severity_index has fewer than six distinct values")
+    severity_ranks = [
+        int(d["severity_rank"]) for d in districts_out if d["severity_rank"] is not None
+    ]
+    if sorted(severity_ranks) != list(range(1, len(severity_ranks) + 1)):
+        raise RuntimeError("stage 10: severity_rank is not dense")
     if len({d["district_id"] for d in districts_out}) != len(districts_out):
         raise RuntimeError("stage 10: duplicate district in ranking")
     if sorted(ranks.values()) != list(range(1, len(ranks) + 1)):
@@ -740,6 +864,9 @@ def run(
     stage.metric("hotspot_count", len(hotspot_features))
     stage.metric("max_district_score", round(float(np.nanmax(scores)), 3))
     stage.metric("depth_over_1_5m_share_distinct", len({round(float(value), 6) for value in depth_over_1_5m_share}))
+    stage.metric("severity_index_distinct", len(set(severity_values)))
+    stage.metric("severity_ranked_districts", len(severity_ranks))
+    stage.metric("severity_formula", SEVERITY_FORMULA)
     stage.metric("risk_class_area_share", risk_class_area_share)
     stage.metric("zone_simplify_m", zone_tolerance)
     stage.metric("zone_block_factor", block_factor)
@@ -750,9 +877,12 @@ def run(
         f"({zone_grid_m:.0f} m, factor {block_factor}) with 90 m cell statistics, "
         f"simplified at {zone_tolerance:.0f} m to satisfy the fixed 0.9 MB raw cap; "
         "district score = 0.5625 area share + 0.4375 duration (two drivers, "
-        f"weights_version {district_cfg['weights_version']}); bathtub peak depth is "
-        "reported as context (median depth, share >1.5 m) but not scored because it "
-        "saturates at the stage; hotspots are low-HAND distant pockets, not breaches. "
+        f"weights_version {district_cfg['weights_version']}); severity_index is a "
+        "separate P1.7 profile: 100 x min-max of the product of population z-scores "
+        "of depth>1.5 m share, median depth and mean duration, with all constants "
+        "published in district-risk.json; bathtub peak depth is reported as context "
+        "(median depth, share >1.5 m) and enters severity but not risk_score; "
+        "hotspots are low-HAND distant pockets, not breaches. "
         "Wet masks and depth are read from the stage-09 uint8 per-step cache, not a "
         "float stack. No demographics."
     )

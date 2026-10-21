@@ -66,6 +66,7 @@ REQUIRED_JSON = [
     "risk/risk-zones.geojson",
     "risk/district-risk.json",
     "series/monsoon-series.json",
+    "validation/scorecard.json",
     "validation-report.json",
 ]
 OPTIONAL_JSON = [
@@ -453,6 +454,12 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
             manifest_failures.append("duplicate manifest entries")
         for entry in entries:
             path = public_root / entry["path"]
+            if entry["path"] == "data/validation-report.json":
+                # The report cannot contain its own final hash: validate writes it
+                # after this check, and publish hashes the freshly written file.
+                # Every other committed file is still checked here, and
+                # scripts/check-data.mjs verifies the report hash after publish.
+                continue
             if not path.exists():
                 manifest_failures.append(f"missing {entry['path']}")
                 continue
@@ -531,6 +538,13 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
     ranks = [int(item["rank"]) for item in ranked]
     if sorted(ranks) != list(range(1, len(ranks) + 1)):
         join_failures.append("rank is not dense from 1")
+    severity_ranks = [
+        int(item["severity_rank"])
+        for item in ranked
+        if item.get("severity_rank") is not None
+    ]
+    if severity_ranks and sorted(severity_ranks) != list(range(1, len(severity_ranks) + 1)):
+        join_failures.append("severity_rank is not dense from 1")
     for item in ranked:
         if item["district_id"] not in district_by_id:
             join_failures.append(f"{item['district_id']} missing from districts GeoJSON")
@@ -539,11 +553,21 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
             join_failures.append(f"{item['name']} score out of range")
         if item["risk_class"] != _district_class(float(item["risk_score"]), cfg):
             join_failures.append(f"{item['name']} class does not match score")
+        severity_index = item.get("severity_index")
+        severity_rank = item.get("severity_rank")
+        if severity_index is not None and not (0 <= float(severity_index) <= 100):
+            join_failures.append(f"{item['name']} severity index out of range")
+        if (severity_index is None) != (severity_rank is None):
+            join_failures.append(f"{item['name']} severity index/rank disagree")
         props = district_by_id[item["district_id"]]["properties"]
         if props.get("risk_score") is None or abs(float(props["risk_score"]) - float(item["risk_score"])) > 1e-6:
             join_failures.append(f"{item['name']} score not joined into districts")
         if props.get("rank") != item["rank"]:
             join_failures.append(f"{item['name']} rank not joined into districts")
+        if props.get("severity_index") != severity_index:
+            join_failures.append(f"{item['name']} severity index not joined into districts")
+        if props.get("severity_rank") != severity_rank:
+            join_failures.append(f"{item['name']} severity rank not joined into districts")
     for feature in district_features:
         props = feature["properties"]
         if props.get("risk_score") is not None and props.get("rank") is None:
@@ -872,7 +896,7 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         provenance_detail = "publish will aggregate fragments into provenance.json"
     else:
         entries = {entry.get("id"): entry for entry in provenance.get("entries", [])}
-        required_entries = ["terrain", "boundaries", "rivers", "flood", "risk", "series", "hillshade"]
+        required_entries = ["terrain", "boundaries", "rivers", "flood", "risk", "series", "hillshade", "validation"]
         for entry_id in required_entries:
             entry = entries.get(entry_id)
             if not entry:

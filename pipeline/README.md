@@ -64,6 +64,7 @@ All commands run from the repository root. `$py` below means
 | 13 | `$py build-gauges --rivers public/data/hydro/assam-rivers.geojson --summary public/data/flood/flood-summary.json --out public/data/gauges/virtual-gauges.geojson` | optional virtual gauges |
 | 14 | `$py validate --data public/data --config pipeline/config --report public/data/validation-report.json --version 2026.10.0` | `validation-report.json` |
 | 15 | `$py publish --data public/data --version 2026.10.0 --manifest public/data/manifest.json --provenance public/data/provenance.json` | `manifest.json`, `provenance.json` |
+| 16 | `$py build-validation --aoi pipeline/config/aoi.json --sources pipeline/config/sources.json --core-mask pipeline/work/aoi-v2-core-90m.tif --dem pipeline/work/dem-90m.tif --frame-index public/data/flood/frame-index.json --frames public/data/flood/frames --scenario pipeline/config/scenario.json --out public/data/validation/scorecard.json --cache pipeline/cache/s1` | `validation/scorecard.json` (P1; no scene or mask committed) |
 
 Each stage writes `pipeline/work/provenance/<stage>.json` with the command,
 wall time, byte counts, source URLs, resolved package versions and output

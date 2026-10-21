@@ -14,8 +14,10 @@ not a browser capture; run `npm run dev` for the interactive WebGL view.*
 ## What it is
 
 - **A causal story in one screen.** Rainfall peaks before the main-stem stage; the stage floods
-  low HAND terrain; the risk panel ranks districts by how much area is wet, for how long, and
-  how deep. The map is the dominant surface; the analysis rail floats over it.
+  low HAND terrain; the risk panel shows two labelled ranks — an extent score (area share and
+  duration) and a separate severity index (depth share, median depth and duration) — and the
+  Validation tab reports the Sentinel-1 extent-shape comparison. The map is the dominant surface;
+  the analysis rail floats over it.
 - **A terrain screening model, not hydraulics.** HAND = height above nearest drainage. A single
   scenario stage is applied to every mapped channel; cells with lower HAND become wet. There is
   no flow routing, levee failure, sediment, or bathymetry in the model.
@@ -122,12 +124,13 @@ invent values.
 | Districts / state | source | geoBoundaries gbOpen ADM2/ADM1 → `build-admin` → `data/admin/*.geojson` |
 | Rivers | source | OSM Overpass (Natural Earth fallback) → `build-rivers` → `data/hydro/assam-rivers.geojson` |
 | Flood extent / depth | scenario | DEM + mapped channels + synthetic stage → HAND/inundation → `data/flood/frames/step-00…11.png`, `flood-summary.json`, `frame-index.json` |
-| Risk zones / ranking | derived | HAND × scenario duration/depth → `build-risk` → `data/risk/risk-zones.geojson`, `district-risk.json` |
+| Risk zones / ranking | derived | HAND × scenario duration/depth → `build-risk` → `data/risk/risk-zones.geojson`, `district-risk.json` (extent score + separate severity index) |
 | Rainfall / stage series | synthetic | Scenario parameters + DEM/HAND profiles → `build-series` → `data/series/monsoon-series.json` |
+| Sentinel-1 validation | derived | Two Jun–Jul 2022 Sentinel-1 GRD VV acquisitions → `build-validation` → `data/validation/scorecard.json` (extent-shape IoU, not an event hindcast) |
 
 `data/provenance.json` carries the full source → stage → file record, licences, and assumptions
 for every dataset. `data/validation-report.json` records V01–V20 and V-A1…V-A10; the committed
-report is `pass`.
+report is `pass`. The Sentinel-1 scorecard and its two caveats are gated by `check-data`.
 
 ## Accessibility baseline
 

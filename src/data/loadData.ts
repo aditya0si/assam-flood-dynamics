@@ -10,6 +10,7 @@ import {
   provenanceSchema,
   riskZoneFeatureCollectionSchema,
   scenarioSchema,
+  scorecardSchema,
   type DistrictRisk,
   type FeatureCollection,
   type FloodSummary,
@@ -20,6 +21,7 @@ import {
   type Provenance,
   type RiskZoneCollection,
   type Scenario,
+  type Scorecard,
 } from './schemas';
 import type { Dataset } from './types';
 
@@ -114,6 +116,7 @@ export async function loadDataset(): Promise<Dataset> {
     series,
     riskZones,
     hotspots,
+    scorecard,
   ] = await Promise.all([
     getJson(scenarioSchema, 'scenario.json'),
     getJson(floodSummarySchema, 'flood/flood-summary.json'),
@@ -126,6 +129,7 @@ export async function loadDataset(): Promise<Dataset> {
     getJson(monsoonSeriesSchema, 'series/monsoon-series.json'),
     getJson(riskZoneFeatureCollectionSchema, 'risk/risk-zones.geojson'),
     getJson(hotspotFeatureCollectionSchema, 'risk/hotspots.geojson'),
+    getJson(scorecardSchema, 'validation/scorecard.json'),
   ]);
 
   assertSameDataset('flood/frame-index.json', frameIndex.dataset_version, manifest.dataset_version);
@@ -151,14 +155,34 @@ export async function loadDataset(): Promise<Dataset> {
     );
   }
   const ranks = new Set<number>();
+  const severityRanks = new Set<number>();
   for (const district of districtRisk.districts) {
     if (!Number.isFinite(district.risk_score)) {
       throw new DataContractError('risk/district-risk.json', `${district.name} has a non-finite risk_score`);
+    }
+    if (!Number.isFinite(district.severity_index)) {
+      throw new DataContractError('risk/district-risk.json', `${district.name} has a non-finite severity_index`);
     }
     if (ranks.has(district.rank)) {
       throw new DataContractError('risk/district-risk.json', `rank ${district.rank} is duplicated`);
     }
     ranks.add(district.rank);
+    if (severityRanks.has(district.severity_rank)) {
+      throw new DataContractError(
+        'risk/district-risk.json',
+        `severity_rank ${district.severity_rank} is duplicated`,
+      );
+    }
+    severityRanks.add(district.severity_rank);
+  }
+  if (scorecard.summary.caveats.length === 0) {
+    throw new DataContractError('validation/scorecard.json', 'caveats are empty');
+  }
+  if (!scorecard.summary.caveats.some((caveat) => /not an event hindcast/i.test(caveat))) {
+    throw new DataContractError(
+      'validation/scorecard.json',
+      'the required "not an event hindcast" caveat is missing',
+    );
   }
   for (const entry of provenance.entries) {
     if (entry.class === 'source' && entry.pipeline.length === 0) {
@@ -203,6 +227,7 @@ export async function loadDataset(): Promise<Dataset> {
     series,
     riskZones,
     hotspots,
+    scorecard,
   };
 }
 
@@ -217,4 +242,5 @@ export type {
   Provenance,
   RiskZoneCollection,
   Scenario,
+  Scorecard,
 };

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-10-21T16:08:50Z",
+  "generated_at": "2026-10-21T18:42:05Z",
   "dataset_version": "2026.10.0",
   "status": "pass",
   "checks": [
@@ -9,7 +9,7 @@
       "name": "Schema validity",
       "status": "pass",
       "expected": "every committed JSON/GeoJSON parses and matches its §6 schema",
-      "actual": "16 files schema-checked; 0 parse error(s); 0 schema error(s)",
+      "actual": "17 files schema-checked; 0 parse error(s); 0 schema error(s)",
       "detail": "all checked files valid"
     },
     {
@@ -73,7 +73,7 @@
       "name": "File caps",
       "status": "pass",
       "expected": "every file ≤ its §11 raw cap; every frame PNG ≤400 KB raw; JSON gzip caps respected; public/data ≤9.0 MB",
-      "actual": "total 4.63 MB; meta 49 KB; 12 PNGs, max 249 KB; 0 over cap",
+      "actual": "total 4.64 MB; meta 51 KB; 12 PNGs, max 249 KB; 0 over cap",
       "detail": "all raw and gzip file caps satisfied"
     },
     {
@@ -81,7 +81,7 @@
       "name": "Manifest integrity",
       "status": "pass",
       "expected": "every file except manifest listed once; SHA-256 and bytes match; no orphan",
-      "actual": "28 manifest entries, 0 mismatch(es)",
+      "actual": "29 manifest entries, 0 mismatch(es)",
       "detail": "manifest hashes and sizes match"
     },
     {
@@ -161,7 +161,7 @@
       "name": "First-paint budget",
       "status": "pass",
       "expected": "critical ≤3.5 MB; animation (12 PNGs + frame-index + summary + risk-zones) ≤4.0 MB raw; optional/fallback ≤3.0 MB",
-      "actual": "critical 1.18 MB, animation 2.24 MB raw, optional/fallback 1.20 MB",
+      "actual": "critical 1.19 MB, animation 2.24 MB raw, optional/fallback 1.20 MB",
       "detail": "all tier budgets satisfied"
     },
     {
@@ -169,7 +169,7 @@
       "name": "Provenance completeness",
       "status": "pass",
       "expected": "every committed dataset has source/licence/stage/output; UNOSAT absence noted",
-      "actual": "12 entries, 0 violation(s)",
+      "actual": "13 entries, 0 violation(s)",
       "detail": "required source→stage→file entries present"
     },
     {
@@ -254,7 +254,7 @@
     }
   ],
   "counts": {
-    "files": 29,
+    "files": 30,
     "steps": 12,
     "features": 3852,
     "gates": 31,

@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "scenario_id": "assam-monsoon-composite-v1",
   "class": "derived",
-  "generated_at": "2026-10-21T15:47:50Z",
+  "generated_at": "2026-10-21T18:10:27Z",
   "weights_version": "area-duration-v1",
   "weights": {
     "area_share": 0.5625,
@@ -11,6 +11,36 @@
   "reference_values": {
     "area_share_saturation": 0.6,
     "duration_saturation_days": 90.0
+  },
+  "severity": {
+    "formula": "severity_index = 100 * (p - min(p)) / (max(p) - min(p)), p = z(depth_over_1_5m_share) * z(median_depth_m) * z(mean_duration_days)",
+    "z_statistic": "population z-score across the scoreable districts: (x - mean) / std(ddof=0)",
+    "inputs": [
+      "depth_over_1_5m_share",
+      "median_depth_m",
+      "mean_duration_days"
+    ],
+    "normalisation": {
+      "method": "min-max over the district products",
+      "min": -3.244379812,
+      "max": 15.63606358,
+      "n_districts": 33
+    },
+    "z_population": {
+      "depth_over_1_5m_share": {
+        "mean": 0.642725848,
+        "std": 0.090629974
+      },
+      "median_depth_m": {
+        "mean": 2.558021212,
+        "std": 0.718554976
+      },
+      "mean_duration_days": {
+        "mean": 56.747818182,
+        "std": 15.547784862
+      }
+    },
+    "note": "A product of three population z-scores is zero when any input is at the population mean, so the min–max mapping is applied to the product, not to the three z-scores independently. The index is severity-led and is not added to risk_score."
   },
   "risk_class_area_share": {
     "low": 0.276617,
@@ -37,6 +67,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 18.096,
+      "severity_rank": 7,
       "rank": 1
     },
     {
@@ -57,6 +89,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 17.109,
+      "severity_rank": 16,
       "rank": 2
     },
     {
@@ -77,6 +111,8 @@
       ],
       "valid_area_share": 0.930237,
       "class": "derived",
+      "severity_index": 27.973,
+      "severity_rank": 3,
       "rank": 3
     },
     {
@@ -97,6 +133,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 13.615,
+      "severity_rank": 29,
       "rank": 4
     },
     {
@@ -117,6 +155,8 @@
       ],
       "valid_area_share": 0.997395,
       "class": "derived",
+      "severity_index": 15.967,
+      "severity_rank": 25,
       "rank": 5
     },
     {
@@ -137,6 +177,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 20.271,
+      "severity_rank": 6,
       "rank": 6
     },
     {
@@ -157,6 +199,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 15.07,
+      "severity_rank": 27,
       "rank": 7
     },
     {
@@ -177,6 +221,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 13.68,
+      "severity_rank": 28,
       "rank": 8
     },
     {
@@ -197,6 +243,8 @@
       ],
       "valid_area_share": 0.914181,
       "class": "derived",
+      "severity_index": 21.329,
+      "severity_rank": 4,
       "rank": 9
     },
     {
@@ -217,6 +265,8 @@
       ],
       "valid_area_share": 0.999782,
       "class": "derived",
+      "severity_index": 16.861,
+      "severity_rank": 21,
       "rank": 10
     },
     {
@@ -237,6 +287,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 20.803,
+      "severity_rank": 5,
       "rank": 11
     },
     {
@@ -257,6 +309,8 @@
       ],
       "valid_area_share": 0.466131,
       "class": "derived",
+      "severity_index": 100.0,
+      "severity_rank": 1,
       "rank": 12
     },
     {
@@ -277,6 +331,8 @@
       ],
       "valid_area_share": 0.970667,
       "class": "derived",
+      "severity_index": 17.749,
+      "severity_rank": 8,
       "rank": 13
     },
     {
@@ -297,6 +353,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 17.167,
+      "severity_rank": 13,
       "rank": 14
     },
     {
@@ -317,6 +375,8 @@
       ],
       "valid_area_share": 0.964356,
       "class": "derived",
+      "severity_index": 17.327,
+      "severity_rank": 9,
       "rank": 15
     },
     {
@@ -337,6 +397,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 0.0,
+      "severity_rank": 33,
       "rank": 16
     },
     {
@@ -357,6 +419,8 @@
       ],
       "valid_area_share": 0.580479,
       "class": "derived",
+      "severity_index": 37.466,
+      "severity_rank": 2,
       "rank": 17
     },
     {
@@ -377,6 +441,8 @@
       ],
       "valid_area_share": 0.999679,
       "class": "derived",
+      "severity_index": 17.18,
+      "severity_rank": 12,
       "rank": 18
     },
     {
@@ -397,6 +463,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 8.253,
+      "severity_rank": 31,
       "rank": 19
     },
     {
@@ -417,6 +485,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 17.115,
+      "severity_rank": 15,
       "rank": 20
     },
     {
@@ -437,6 +507,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 17.221,
+      "severity_rank": 11,
       "rank": 21
     },
     {
@@ -457,6 +529,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 16.419,
+      "severity_rank": 23,
       "rank": 22
     },
     {
@@ -477,6 +551,8 @@
       ],
       "valid_area_share": 0.996007,
       "class": "derived",
+      "severity_index": 15.094,
+      "severity_rank": 26,
       "rank": 23
     },
     {
@@ -497,6 +573,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 16.274,
+      "severity_rank": 24,
       "rank": 24
     },
     {
@@ -517,6 +595,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 12.677,
+      "severity_rank": 30,
       "rank": 25
     },
     {
@@ -537,6 +617,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 5.175,
+      "severity_rank": 32,
       "rank": 26
     },
     {
@@ -557,6 +639,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 17.01,
+      "severity_rank": 19,
       "rank": 27
     },
     {
@@ -577,6 +661,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 17.029,
+      "severity_rank": 18,
       "rank": 28
     },
     {
@@ -597,6 +683,8 @@
       ],
       "valid_area_share": 1.0,
       "class": "derived",
+      "severity_index": 16.553,
+      "severity_rank": 22,
       "rank": 29
     },
     {
@@ -617,6 +705,8 @@
       ],
       "valid_area_share": 0.995167,
       "class": "derived",
+      "severity_index": 17.109,
+      "severity_rank": 17,
       "rank": 30
     },
     {
@@ -637,6 +727,8 @@
       ],
       "valid_area_share": 0.557618,
       "class": "derived",
+      "severity_index": 17.228,
+      "severity_rank": 10,
       "rank": 31
     },
     {
@@ -657,6 +749,8 @@
       ],
       "valid_area_share": 0.977483,
       "class": "derived",
+      "severity_index": 16.925,
+      "severity_rank": 20,
       "rank": 32
     },
     {
@@ -677,6 +771,8 @@
       ],
       "valid_area_share": 0.744241,
       "class": "derived",
+      "severity_index": 17.138,
+      "severity_rank": 14,
       "rank": 33
     }
   ],

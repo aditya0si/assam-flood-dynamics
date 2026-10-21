@@ -39,7 +39,8 @@ public/data/
 ├─ series/cross-sections.json             (P1)
 ├─ basemap/assam-hillshade.webp
 ├─ assets/critical-facilities.geojson     (P1)
-└─ gauges/virtual-gauges.geojson          (P1)
+├─ gauges/virtual-gauges.geojson          (P1)
+└─ validation/scorecard.json              (P1)
 ```
 
 - Coordinates in every GeoJSON are **WGS84 / EPSG:4326**, longitude then latitude, 5 decimal
@@ -198,10 +199,13 @@ Conventions for every stage:
 | 13 | `build-gauges` (P1) | rivers, summary | virtual gauges | Yes |
 | 14 | `validate` | all public data | validation report + exit code | Yes |
 | 15 | `publish` | validated data | manifest, provenance | Yes |
+| 16 | `build-validation` (P1) | Earth Search Sentinel-1 GRD, DEM, frames | `validation/scorecard.json` | Yes (scorecard only; no scene or mask) |
 
 M0 runs stages **01–11, 14, 15**. Stages 12–13 are optional P1 outputs; when omitted, the
-manifest simply has no entry for them and the app hides those panels. Stages 04–11 are the
-minimum to produce the M0 data; stages 01–03 fetch its sources.
+manifest simply has no entry for them and the app hides those panels. Stage 16
+(`build-validation`) is the Phase 1a Sentinel-1 scorecard and is run after stages 09–15; it
+commits only the scorecard JSON, never a scene or mask. Stages 04–11 are the minimum to produce
+the M0 data; stages 01–03 fetch its sources.
 
 ---
 
@@ -582,7 +586,65 @@ python -m baanh_pipeline.cli publish `
 - **Validation:** manifest covers every data file except itself; every file has a hash; hashes
   match; `dataset_version` matches the CLI `--version`; `step_count` is 12.
 
+### Stage 16 — Sentinel-1 validation scorecard (P1.1/P1.2)
+
+```powershell
+python -m baanh_pipeline.cli build-validation `
+  --aoi pipeline/config/aoi.json `
+  --sources pipeline/config/sources.json `
+  --core-mask pipeline/work/aoi-v2-core-90m.tif `
+  --dem pipeline/work/dem-90m.tif `
+  --frame-index public/data/flood/frame-index.json `
+  --frames public/data/flood/frames `
+  --scenario pipeline/config/scenario.json `
+  --out public/data/validation/scorecard.json `
+  --cache pipeline/cache/s1
+```
+
+- **Input:** Earth Search STAC (`sentinel-1-grd`), AOI bbox and core mask, the existing DEM
+  (slope only), the committed PNG frames and frame-index, and the scenario peak step.
+- **STAC search:** collection `sentinel-1-grd` at
+  `https://earth-search.aws.element84.com/v1`, bbox from `config/aoi.json`, datetime
+  `2022-06-01/2022-07-31`, instrument mode `IW`, product type `GRD`, VV asset required. The
+  **earliest and latest usable acquisitions** are selected; within each date the slice with the
+  largest AOI-core overlap is used. Scene binaries and masks are cached under
+  `pipeline/cache/s1/` and are never committed.
+- **Anonymous S3:** the stage sets `AWS_NO_SIGN_REQUEST=YES` and `AWS_REGION=us-west-2` before
+  opening the `s3://` VV asset. The measurement COG reports `crs: None`; it carries WGS84 GCPs,
+  so the stage transforms the GCPs into EPSG:32646 (zone from `proj:centroid`) and assigns that
+  CRS before reprojection. On hosts where GDAL cannot complete the anonymous TLS request, a
+  loopback range proxy around `requests` serves the same S3 bytes; the stage logs which path was
+  used.
+- **Decimation:** VV is read at `out_shape = (height // 9, width // 9)` with
+  `Resampling.average` (native 10 m → ~90 m). It is never read at native resolution.
+- **Water mask:** `10·log10(DN)` for positive DN, Otsu **over AOI core pixels only** (not the
+  whole radar slice), water where dB ≤ threshold, plus a **−2 dB / +2 dB** sensitivity band. No
+  absolute dB threshold is hard-coded. Components smaller than **5 analysis cells** (≈4 ha at
+  90 m) are dropped. Cells whose DEM slope exceeds **10°** are excluded; the slope is derived
+  from `pipeline/work/dem-90m.tif`, not a new DEM.
+- **Grid:** masks reproject to **EPSG:32646, 90 m, aligned to the frame grid** with nearest
+  resampling. A fractional coverage raster (`Resampling.average` of the valid source mask) is
+  kept so partial cells are explicit. Comparison domain = coverage ≥ 0.5, AOI core, slope
+  ≤10°.
+- **Coverage rule:** if a selected scene cannot be fetched, or the valid observed share of its
+  AOI footprint is below **90 %**, the stage exits non-zero with the exact error. It does not
+  substitute another date and does not lower the bar. A single Sentinel-1 GRD slice covers only
+  ~7 % of the full 52,240 km² AOI core, so the scorecard is explicitly a comparison over the
+  observed footprint, not over the full AOI; the full-AOI footprint share is logged and cached
+  in each scene's metadata.
+- **Scoring:** the committed PNG frames are decoded with frame-index placement (paletted class
+  >0 = wet) and compared with the observed mask at every step. The stage reports the
+  best-matching step (IoU) and the scenario peak S07 (IoU, precision, recall, F1, area bias).
+  Sensitivity at −2/+2 dB is scored at S07, so the spread is directly comparable with the peak
+  row. Observed area, modelled area and area bias use the same observed comparison domain.
+- **Stop/report:** the Otsu threshold, observed water area, observed water fraction (of the
+  observed AOI footprint), best-match step/IoU, peak metrics and ±2 dB metrics are written to
+  `validation/scorecard.json`. A bad IoU is the finding; it is not improved to fit.
+- **Output:** `public/data/validation/scorecard.json` (≤128 KB) only. No scene, mask or cache
+  file is committed.
+
 ---
+
 
 ## 6. Output schemas
 
@@ -660,8 +722,9 @@ its own hash). The validation report is included.
 }
 ```
 
-Required entries: terrain, boundaries, rivers, flood frames, risk, series, hillshade, and
-(if present) assets, gauges, UNOSAT note. `notes` must state assumptions that affect the layer.
+Required entries: terrain, boundaries, rivers, flood frames, risk, series, hillshade,
+validation (Sentinel-1 scorecard), and (if present) assets, gauges, UNOSAT note. `notes` must
+state assumptions that affect the layer.
 
 ### 6.3 `scenario.json`
 
@@ -994,6 +1057,17 @@ cartographic generalisation required by the size cap, not a change to the risk f
     "area_share_saturation": 0.60,
     "duration_saturation_days": 90
   },
+  "severity": {
+    "formula": "severity_index = 100 * (p - min(p)) / (max(p) - min(p)), p = z(depth_over_1_5m_share) * z(median_depth_m) * z(mean_duration_days)",
+    "z_statistic": "population z-score across the scoreable districts: (x - mean) / std(ddof=0)",
+    "inputs": ["depth_over_1_5m_share", "median_depth_m", "mean_duration_days"],
+    "normalisation": { "method": "min-max over the district products", "min": 0.0, "max": 0.0, "n_districts": 33 },
+    "z_population": {
+      "depth_over_1_5m_share": { "mean": 0.0, "std": 0.0 },
+      "median_depth_m": { "mean": 0.0, "std": 0.0 },
+      "mean_duration_days": { "mean": 0.0, "std": 0.0 }
+    }
+  },
   "risk_class_area_share": {
     "low": 0.0,
     "moderate": 0.0,
@@ -1014,6 +1088,8 @@ cartographic generalisation required by the size cap, not a change to the risk f
       "median_depth_m": 0.0,
       "risk_score": 0.0,
       "risk_class": "very_high",
+      "severity_index": 0.0,
+      "severity_rank": 1,
       "drivers": ["area", "duration"],
       "valid_area_share": 0.0,
       "class": "derived"
@@ -1040,6 +1116,13 @@ cartographic generalisation required by the size cap, not a change to the risk f
 - `valid_area_share` is the share of the district's raster cells with valid HAND. The UI shows a
   `coverage …%` badge and the row annotation `Scored on the AOI-covered share only` when it is
   below 0.75.
+- `severity_index` (0–100) and `severity_rank` are the separate P1.7 profile. They are never
+  added to `risk_score`; `risk_score` and `rank` remain the extent-led score and rank. The exact
+  formula and every constant are in §9.5 and in the top-level `severity` object, so the index is
+  reproducible from the committed JSON without a hidden constant.
+- The district GeoJSON joins `severity_index` and `severity_rank` alongside `risk_score`,
+  `risk_class` and `rank`. The Risk panel labels `risk_score` as **Extent score** and shows both
+  ranks on every row.
 
 ### 6.11 `risk/hotspots.geojson` (P1)
 
@@ -1212,6 +1295,83 @@ with the AOI Mercator corners from `manifest.json` (`bbox`) and `provenance.json
 labels, no water, no flood extent—only relief—so it cannot be mistaken for an observation.
 
 ---
+
+### 6.18 `validation/scorecard.json` (P1)
+
+The exact schema required by REVIEW-17 P1.2, with one additive field per scene
+(`threshold_db`) because the Otsu threshold must be reported. The scorecard is `derived`, not
+`source`: it compares a scenario extent shape with real Sentinel-1 acquisitions and is not an
+event hindcast.
+
+```json
+{
+  "schema_version": "1.0.0",
+  "generated_at": "2022-10-21T00:00:00Z",
+  "method": {
+    "collection": "sentinel-1-grd",
+    "threshold_method": "otsu",
+    "sensitivity_db": [-2, 0, 2],
+    "slope_mask_deg": 10.0,
+    "min_component_cells": 5,
+    "resampling": "average→nearest",
+    "crs": "EPSG:32646",
+    "resolution_m": 90
+  },
+  "scenes": [
+    {
+      "scene_id": "S1A_IW_GRDH_1SDV_…",
+      "datetime": "2022-06-01T23:39:20.965799Z",
+      "platform": "sentinel-1a",
+      "relative_orbit": 4,
+      "threshold_db": 20.035442,
+      "observed_area_km2": 202.6602,
+      "observed_water_fraction_of_aoi": 0.054224,
+      "best_match_step": 9,
+      "best_match_iou": 0.12335,
+      "peak_step": {
+        "step": 7,
+        "modelled_area_km2": 552.2886,
+        "iou": 0.120288,
+        "precision": 0.146773,
+        "recall": 0.399984,
+        "f1": 0.214745,
+        "area_bias_pct": 172.5195
+      },
+      "sensitivity": {
+        "minus2db": { "iou": 0.09991, "precision": 0.116511, "recall": 0.412176 },
+        "plus2db": { "iou": 0.182627, "precision": 0.279717, "recall": 0.344756 }
+      }
+    }
+  ],
+  "summary": {
+    "mean_iou_over_scenes": 0.131668,
+    "mean_precision": 0.16397,
+    "mean_recall": 0.390555,
+    "worst_scene": "S1A_IW_GRDH_1SDV_…",
+    "caveats": [
+      "This is an extent-shape comparison against real Sentinel-1 acquisitions, not an event hindcast. The scenario's stage and duration were not fitted to these dates.",
+      "Absolute SAR calibration was unavailable; masks use an Otsu threshold with a ±2 dB band."
+    ]
+  }
+}
+```
+
+- `observed_area_km2` is the Otsu water area over the observed comparison domain. The domain is
+  the scene footprint ∩ AOI core with coverage ≥0.5 and slope ≤10°; it is not the full AOI.
+- `observed_water_fraction_of_aoi` is `observed_area_km2 / observed_domain_area`. The denominator
+  is the observed AOI footprint (the part of the AOI the slice actually sees), not the full
+  52,240 km² AOI core. This is stated because one GRD slice covers only a fraction of the AOI;
+  the full-AOI footprint share (~7 %) is recorded in the scene cache metadata and the stage log.
+- `best_match_step` and `best_match_iou` are the best of the 12 committed frames. `peak_step`
+  is always S07 and carries the full precision/recall/F1/area-bias row. `modelled_area_km2` is
+  measured on the same observed domain, not on the full frame.
+- `sensitivity.minus2db` and `plus2db` recompute the observed mask at Otsu−2 and Otsu+2 dB and
+  score it against the S07 frame on the same domain. The Otsu row is the `peak_step` metrics.
+- `summary.mean_iou_over_scenes` is the mean of the per-scene best-match IoU. `mean_precision`
+  and `mean_recall` are the mean of the per-scene **S07** precision/recall. `worst_scene` is the
+  scene with the lowest best-match IoU.
+- The two caveat sentences are required and checked by `check-data`. A low IoU is the finding
+  and ships unchanged.
 
 ## 7. Inundation model specification
 
@@ -1658,6 +1818,43 @@ For each OSM facility point, sample `depth[step]` at its cell:
 
 This is a **scenario depth exposure**, not damage, loss, or operational status.
 
+### 9.5 Severity index beside extent (P1.7)
+
+<!-- amended: REVIEW-17 -->
+
+`risk_score` is an **extent-led** score: area share dominates and duration is the second
+driver. It answers "how much of the district is wet", not "how bad is the water where it is
+wet". P1.7 publishes a second, explicitly separate profile for the latter.
+
+For district `d`, with `x1 = depth_over_1_5m_share`, `x2 = median_depth_m`,
+`x3 = mean_duration_days`:
+
+```text
+μk = mean(xk) over the scoreable districts
+σk = population standard deviation of xk (ddof = 0)
+zk = (xk − μk) / σk        (zk = 0 if σk = 0)
+p  = z1 × z2 × z3
+severity_index = 100 × (p − min(p)) / (max(p) − min(p))
+```
+
+- The mean and population standard deviation are computed over the districts that have all
+  three inputs. Every constant (`μk`, `σk`, `min(p)`, `max(p)`, the number of districts) is
+  published in the top-level `severity` object of `district-risk.json`; nothing is hidden.
+- The min–max mapping is applied to the **product** `p`, not to each z-score separately. A
+  district exactly at the population mean on any input has `p = 0`; the index is therefore not
+  a claim that all three inputs are independently "good".
+- `severity_rank` is dense (1..N) descending by `severity_index`, ties broken by district name
+  ascending. `rank` remains the dense extent-score rank. Both are shown, never combined.
+- Class labels (`risk_class`) are still the extent-score classes. The severity profile has no
+  class; it has an index and a rank.
+- Measured example: Dima Hasao has `depth_over_1_5m_share 0.882086`, `median_depth_m 3.7`,
+  `mean_duration_days 114.6664`, `area_share 0.003634`; it ranks **1/33 on severity** but
+  **12/33 on the extent score** (and 33/33 on area share). The acceptance sentence in
+  REVIEW-17 says "bottom half on extent"; the committed extent score puts it just above the
+  median because duration is 43.75 % of that score. This is reported as a finding, not tuned
+  away: the severity formula is exactly the one above, and the extent score was not changed.
+- No demographic, population, asset-loss, agency or incident field enters either profile.
+
 ---
 
 ## 10. Validation — checks that must pass before data ships
@@ -1681,7 +1878,7 @@ refuses if `status != "pass"`. The report lists every gate by ID in
 | V09 | File caps | Every frame PNG ≤400 KB raw; JSON gzip caps respected; `public/data/` total ≤9.0 MB | fail |
 | V10 | Manifest integrity | Every file except `manifest.json` is listed once; SHA-256 and byte size match; no orphan data file | fail |
 | V11 | Series and stage consistency | `monsoon-series` points equal `flood-summary` at every step (1e−6); threshold = 2.0; `stage_m = mainstem_stage_m + backwater_m` at every step | fail |
-| V12 | District join | Every ranking district exists in districts GeoJSON exactly once; `rank` dense; score 0–100 | fail |
+| V12 | District join | Every ranking district exists in districts GeoJSON exactly once; `rank` and `severity_rank` dense; score 0–100; joined risk and severity fields match | fail |
 | V13 | Forbidden fields/claims | No `casualties`, `deaths`, `displaced`, `affected_persons`, `incident_id`, `agency_id`, `relief_camp`, `eta`, `warning_issued`; no positive `operational forecast`/`official forecast`/`flood forecast`. A bare `forecast` passes only inside the required negation `not a forecast` / `never a forecast` or the boolean key `not_a_forecast`. | fail |
 | V14 | Step count | Exactly 12 steps; labels/days/phases match `scenario.json`; every step has one frame PNG and one `frame-index` entry | fail |
 | V15 | Coordinate hygiene | 5 decimals; no consecutive duplicates; RFC 7946 winding (vector layers) | fail |
@@ -1689,7 +1886,7 @@ refuses if `status != "pass"`. The report lists every gate by ID in
 | V17 | Channel coverage | ≥85% of AOI v2 core cells valid HAND; no-channel cells reported; clamped negatives ≤6.0% | warn if 80–85% valid or clamped 2–6%; fail <80% valid or >6% |
 | V18 | Fallback asset | `assam-hillshade.webp` exists, ≤1.5 MB, decodes, width 2000 | fail |
 | V19 | First-paint budget | Critical-tier bytes ≤3.5 MB raw; animation tier (12 PNGs + frame-index + summary + risk-zones) ≤4.0 MB raw; optional/fallback ≤3.0 MB | fail |
-| V20 | Provenance completeness | Every committed dataset has a provenance entry with source/licence/stage/output; UNOSAT absence noted; flood-prone source recorded | fail |
+| V20 | Provenance completeness | Every committed dataset has a provenance entry with source/licence/stage/output; UNOSAT absence noted; flood-prone and Sentinel-1 validation sources recorded | fail |
 | V-A1 | AOI v2 area | AOI v2 core area between 45,000 and 56,000 km²; mask area agrees with metadata | fail |
 | V-A2 | Channel policy | Channel cells ≤4.0% of AOI v2; zero model ways with midpoint outside AOI v2 + 5 km; every model way is `waterway=river` | fail |
 | V-A3 | Stage series v3 | Strictly increases S00→S07, strictly decreases S08→S11, peak = 3.70 m at S07, threshold 2.0 m | fail |
@@ -1721,6 +1918,27 @@ Additional assertions inside stages:
 the published `weights` sum to 1.0 and reproduce every `risk_score`; the 33
 `depth_over_1_5m_share` values are not constant; and the four `risk_class_area_share` values sum
 to 1.0 ± 0.01.
+
+<!-- amended: REVIEW-17 -->
+
+`check-data` also gates the two Phase 1a artifacts:
+
+- `validation/scorecard.json` exists and matches the schema; `collection` is
+  `sentinel-1-grd`, `threshold_method` is `otsu`, `sensitivity_db` is `[-2,0,2]`,
+  `slope_mask_deg` is 10, `min_component_cells` is 5, resampling is `average→nearest`, CRS is
+  `EPSG:32646`, resolution is 90 m; exactly two scenes are present.
+- every `iou`/`precision`/`recall`/`f1` is in `[0,1]`; `observed_area_km2 > 0`;
+  `peak_step.step` equals the scenario peak; `worst_scene` names a listed scene; the caveats
+  are non-empty and contain "not an event hindcast" and the missing-absolute-calibration
+  sentence.
+- every district has a finite `severity_index` in `[0,100]` and a positive `severity_rank`, as
+  well as the existing extent `rank`; severity has more than five distinct values; both ranks
+  are dense; the published z-score means/stds, product min/max and the min–max formula
+  reproduce every `severity_index`.
+- the Dima Hasao measured profile is asserted (0.882086, 3.7 m, 114.6664 d) and its severity
+  rank is required to be in the top third. The extent rank is printed, not asserted: the
+  committed extent score ranks it 12/33, so the "bottom half on extent" wording in REVIEW-17 is
+  not met by the extent score, while its area-share rank is 33/33. This is a reported finding.
 
 `validation-report.json` itself is validated (status, checks array, counts) and is committed so
 the provenance panel can show the last run. Warnings are displayed in the panel; they are not
@@ -1765,12 +1983,13 @@ produced locally and committed with a fresh manifest.
 | `basemap/assam-hillshade.webp` | 1.5 MB |
 | `assets/critical-facilities.geojson` | 1.0 MB |
 | `gauges/virtual-gauges.geojson` | 0.10 MB |
+| `validation/scorecard.json` | 128 KB raw / 16 KB gzip |
 | manifest + provenance + scenario + validation | 0.25 MB combined |
 | **Total committed data** | **9 MB** |
 
 Tiers: critical (manifest, scenario, provenance, districts, state, rivers, district-risk,
-monsoon-series, validation) ≤3.5 MB raw; animation (12 PNGs, frame-index, summary, risk zones)
-≤4.0 MB raw, with JSON gated on gzip and PNG gated raw; optional/fallback (hillshade,
+monsoon-series, validation, scorecard) ≤3.5 MB raw; animation (12 PNGs, frame-index, summary,
+risk zones) ≤4.0 MB raw, with JSON gated on gzip and PNG gated raw; optional/fallback (hillshade,
 cross-sections, hotspots, assets, gauges) ≤3.0 MB raw.
 
 <!-- amended: REVIEW-04 -->

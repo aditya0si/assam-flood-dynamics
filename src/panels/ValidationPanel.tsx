@@ -1,0 +1,151 @@
+import type { Scorecard } from '../data/schemas';
+import { badgeFor } from '../data/labels';
+import { formatArea, formatPercent, formatScore, formatStepCode } from '../data/format';
+import styles from './panels.module.css';
+
+interface ValidationPanelProps {
+  scorecard: Scorecard;
+}
+
+function formatUtc(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${date.toISOString().slice(0, 10)} UTC`;
+}
+
+export function ValidationPanel({ scorecard }: ValidationPanelProps) {
+  const { method, scenes, summary } = scorecard;
+  return (
+    <div className={styles.panelBody} data-validation-panel="true">
+      <div className={styles.panelIntro}>
+        <div className={styles.panelTitleRow}>
+          <h2 className={styles.panelTitle} tabIndex={-1}>
+            Sentinel-1 validation
+          </h2>
+          <span className={styles.classBadge}>{badgeFor('derived')}</span>
+        </div>
+        <p className={styles.panelLead}>
+          Two real Sentinel-1 GRD acquisitions, scored against the committed scenario frames.
+          This is an extent-shape comparison, not an event hindcast.
+        </p>
+        <p className={styles.formulaNote}>
+          {method.collection} · VV decimated with {method.resampling} · {method.threshold_method}{' '}
+          threshold over AOI pixels · sensitivity {method.sensitivity_db.join(' / ')} dB · slope &gt;{' '}
+          {method.slope_mask_deg}° masked · components &lt; {method.min_component_cells} cells
+          dropped · {method.crs} at {method.resolution_m} m.
+        </p>
+      </div>
+
+      <div className={styles.validationSummary} data-validation-summary="true">
+        <span>
+          Mean IoU <strong>{formatScore(summary.mean_iou_over_scenes)}</strong>
+        </span>
+        <span>
+          Precision <strong>{formatScore(summary.mean_precision)}</strong>
+        </span>
+        <span>
+          Recall <strong>{formatScore(summary.mean_recall)}</strong>
+        </span>
+        <span className={styles.validationWorst}>
+          Worst {summary.worst_scene}
+        </span>
+      </div>
+
+      {scenes.map((scene) => (
+        <section
+          key={scene.scene_id}
+          className={styles.methodCard}
+          data-validation-scene={scene.scene_id}
+        >
+          <h3 className={styles.subTitle}>{scene.scene_id}</h3>
+          <p className={styles.validationMeta}>
+            {formatUtc(scene.datetime)} · {scene.platform} · relative orbit{' '}
+            {scene.relative_orbit} · Otsu {formatScore(scene.threshold_db)} dB
+          </p>
+          <dl className={styles.validationGrid}>
+            <div>
+              <dt>Observed water</dt>
+              <dd>{formatArea(scene.observed_area_km2)} km²</dd>
+            </div>
+            <div>
+              <dt>Observed fraction</dt>
+              <dd>{formatPercent(scene.observed_water_fraction_of_aoi)} of observed AOI</dd>
+            </div>
+            <div>
+              <dt>Best match</dt>
+              <dd>
+                {formatStepCode(scene.best_match_step)} · IoU {formatScore(scene.best_match_iou)}
+              </dd>
+            </div>
+            <div>
+              <dt>Peak {formatStepCode(scene.peak_step.step)}</dt>
+              <dd>
+                {formatArea(scene.peak_step.modelled_area_km2)} km² modelled · IoU{' '}
+                {formatScore(scene.peak_step.iou)}
+              </dd>
+            </div>
+            <div>
+              <dt>Peak precision / recall</dt>
+              <dd>
+                {formatScore(scene.peak_step.precision)} / {formatScore(scene.peak_step.recall)} ·
+                F1 {formatScore(scene.peak_step.f1)}
+              </dd>
+            </div>
+            <div>
+              <dt>Area bias</dt>
+              <dd>
+                {scene.peak_step.area_bias_pct >= 0 ? '+' : ''}
+                {formatScore(scene.peak_step.area_bias_pct)}%
+              </dd>
+            </div>
+          </dl>
+          <table className={styles.validationTable}>
+            <caption>Sensitivity at peak {formatStepCode(scene.peak_step.step)}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Mask</th>
+                <th scope="col">IoU</th>
+                <th scope="col">Precision</th>
+                <th scope="col">Recall</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Otsu − 2 dB</th>
+                <td>{formatScore(scene.sensitivity.minus2db.iou)}</td>
+                <td>{formatScore(scene.sensitivity.minus2db.precision)}</td>
+                <td>{formatScore(scene.sensitivity.minus2db.recall)}</td>
+              </tr>
+              <tr>
+                <th scope="row">Otsu</th>
+                <td>{formatScore(scene.peak_step.iou)}</td>
+                <td>{formatScore(scene.peak_step.precision)}</td>
+                <td>{formatScore(scene.peak_step.recall)}</td>
+              </tr>
+              <tr>
+                <th scope="row">Otsu + 2 dB</th>
+                <td>{formatScore(scene.sensitivity.plus2db.iou)}</td>
+                <td>{formatScore(scene.sensitivity.plus2db.precision)}</td>
+                <td>{formatScore(scene.sensitivity.plus2db.recall)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      ))}
+
+      <section className={styles.methodCard}>
+        <h3 className={styles.subTitle}>Caveats</h3>
+        <ul className={styles.assumptionList}>
+          {summary.caveats.map((caveat) => (
+            <li key={caveat}>{caveat}</li>
+          ))}
+        </ul>
+      </section>
+
+      <p className={styles.panelFoot}>
+        The scenario has no date correspondence: the best-matching step and the scenario peak
+        S07 are both reported. A low IoU is the finding and is not improved to fit.
+      </p>
+    </div>
+  );
+}

@@ -138,10 +138,10 @@
     {
       "class": "derived",
       "dataset": "Scenario-conditional risk zones and district ranking",
-      "fetched_at": "2026-10-21T16:00:57Z",
+      "fetched_at": "2026-10-21T18:29:47Z",
       "id": "risk",
       "licence": "Derived output; source licences as recorded for terrain, boundaries and rivers",
-      "notes": "Cell risk weights HAND 0.60 and duration 0.40; district score weights area share 0.5625 and duration 0.4375 (weights_version area-duration-v1, two drivers). Bathtub peak depth is limited by the stage, so it is reported as context (median depth and share >1.5 m) but not scored. risk_class_area_share is the per-cell class area share over all cells wet at peak S07. No population, asset loss, agency or incident field exists.",
+      "notes": "Cell risk weights HAND 0.60 and duration 0.40; district score weights area share 0.5625 and duration 0.4375 (weights_version area-duration-v1, two drivers). severity_index is a separate P1.7 profile: 100 x min-max of the product of population z-scores of depth>1.5 m share, median depth and mean duration; all constants are published in district-risk.json. Bathtub peak depth is limited by the stage, so it is reported as context (median depth and share >1.5 m) and enters severity but not risk_score. risk_class_area_share is the per-cell class area share over all cells wet at peak S07. No population, asset loss, agency or incident field exists.",
       "output_paths": [
         "data/risk/risk-zones.geojson",
         "data/risk/district-risk.json"
@@ -165,6 +165,26 @@
       ],
       "source_name": "Derived from HAND, scenario duration and peak-depth context, and Assam districts",
       "source_url": "https://www.geoboundaries.org/api/current/gbOpen/IND/ADM2/"
+    },
+    {
+      "class": "derived",
+      "dataset": "Sentinel-1 GRD extent-shape validation scorecard",
+      "fetched_at": "2026-10-21T18:37:46Z",
+      "id": "validation",
+      "licence": "Copernicus Sentinel data; Earth Search STAC; anonymous S3 access",
+      "notes": "Two Sentinel-1 IW GRD VV acquisitions (earliest and latest usable Jun–Jul 2022 acquisitions over the AOI core). VV is decimated ~1/9 with average resampling and converted to 10*log10(DN); the Otsu threshold is computed over AOI core pixels only, with a ±2 dB band. Water components below 5 analysis cells and DEM slope >10° are removed; masks are reprojected nearest to the 90 m frame grid with a fractional coverage raster. This is an extent-shape comparison, not an event hindcast; absolute SAR calibration was unavailable. Scene binaries and masks remain in the gitignored pipeline cache.",
+      "output_paths": [
+        "data/validation/scorecard.json"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli build-validation --aoi pipeline/config/aoi.json --sources pipeline/config/sources.json --core-mask pipeline/work/aoi-v2-core-90m.tif --dem pipeline/work/dem-90m.tif --frame-index public/data/flood/frame-index.json --frames public/data/flood/frames --scenario pipeline/config/scenario.json --out public/data/validation/scorecard.json --cache pipeline/cache/s1 --refresh",
+          "stage": "16",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "Copernicus Sentinel-1 GRD via Earth Search STAC",
+      "source_url": "https://earth-search.aws.element84.com/v1"
     },
     {
       "class": "synthetic",
@@ -220,7 +240,7 @@
     {
       "class": "derived",
       "dataset": "Derived inundation hotspots",
-      "fetched_at": "2026-10-21T16:00:57Z",
+      "fetched_at": "2026-10-21T18:29:47Z",
       "id": "hotspots",
       "licence": "Derived output; source licences as recorded for terrain and rivers",
       "notes": "Low-HAND, >1.5 km from a channel, at least 2 km², first wet by step 6. These are backwater pockets, not embankment breaches; no breach dataset exists.",
@@ -336,7 +356,7 @@
       "source_url": "https://unosat.org/products/"
     }
   ],
-  "generated_at": "2026-10-21T16:08:58Z",
+  "generated_at": "2026-10-21T18:42:12Z",
   "schema_version": "1.0.0",
   "versions": {
     "Pillow": "12.3.0",

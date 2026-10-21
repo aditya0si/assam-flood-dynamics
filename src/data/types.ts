@@ -9,6 +9,7 @@ import type {
   Provenance,
   RiskZoneCollection,
   Scenario,
+  Scorecard,
   SummaryStep,
 } from './schemas';
 
@@ -25,6 +26,7 @@ export interface Dataset {
   series: MonsoonSeries;
   riskZones: RiskZoneCollection;
   hotspots: HotspotCollection;
+  scorecard: Scorecard;
 }
 
 export interface DataSetMeta {

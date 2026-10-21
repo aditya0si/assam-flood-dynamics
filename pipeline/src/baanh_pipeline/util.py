@@ -54,6 +54,7 @@ def ensure_dirs() -> None:
         data_dir() / "basemap",
         data_dir() / "assets",
         data_dir() / "gauges",
+        data_dir() / "validation",
     ):
         path.mkdir(parents=True, exist_ok=True)
 

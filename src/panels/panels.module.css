@@ -60,7 +60,7 @@
 
 .tabList {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   flex-shrink: 0;
   border-bottom: 1px solid var(--line-strong);
   background: rgba(6, 15, 19, 0.36);
@@ -69,15 +69,15 @@
 .tab {
   min-width: 0;
   height: 35px;
-  padding: 0 4px;
+  padding: 0 3px;
   border: 0;
   border-right: 1px solid var(--line);
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.07em;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
@@ -210,7 +210,7 @@
 
 .riskRow {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 38px minmax(0, 1fr);
   gap: 6px;
   width: 100%;
   padding: 7px 8px 7px 6px;
@@ -232,12 +232,41 @@
   background: rgba(242, 184, 75, 0.07);
 }
 
-.riskRank {
+.riskRanks {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-end;
   padding-top: 1px;
+}
+
+.riskRank,
+.riskRankSeverity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   font-family: var(--mono);
   font-size: 11px;
+  line-height: 1.05;
   color: var(--faint);
   text-align: right;
+}
+
+.riskRank em,
+.riskRankSeverity em {
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.riskRankSeverity {
+  color: var(--accent-strong);
+}
+
+.riskRankSeverity em {
+  color: var(--accent);
 }
 
 .riskBody {
@@ -277,6 +306,14 @@
   font-weight: 620;
   color: var(--amber-strong);
   font-variant-numeric: tabular-nums;
+}
+
+.riskScoreLabel {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
 }
 
 .riskCoverageBadge {
@@ -419,6 +456,103 @@
   color: var(--amber-strong);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.validationSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(17, 36, 44, 0.42);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.validationSummary strong {
+  color: var(--text-soft);
+  font-weight: 620;
+}
+
+.validationWorst {
+  flex-basis: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--amber-strong);
+}
+
+.validationMeta {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--faint);
+}
+
+.validationGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+  margin: 0;
+}
+
+.validationGrid div {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 3px 4px;
+  border: 1px solid rgba(30, 52, 64, 0.74);
+  border-radius: 3px;
+  background: rgba(7, 16, 20, 0.28);
+}
+
+.validationGrid dt {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.validationGrid dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--text-soft);
+}
+
+.validationTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.validationTable caption {
+  padding-top: 2px;
+  text-align: left;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.validationTable th,
+.validationTable td {
+  padding: 2px 3px;
+  border-top: 1px solid rgba(30, 52, 64, 0.7);
+  text-align: right;
+  font-weight: 400;
+}
+
+.validationTable th:first-child {
+  text-align: left;
+  color: var(--text-soft);
 }
 
 .provenanceList {

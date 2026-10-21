@@ -125,7 +125,7 @@ export async function gotoStep(page: Page, step: number): Promise<void> {
   await expect.poll(() => probeValue(page, 'frameFile'), { timeout: POLL_TIMEOUT }).toContain(frame);
 }
 
-export async function openPanel(page: Page, name: 'Risk' | 'Provenance' | 'Methodology' | 'Layers'): Promise<void> {
+export async function openPanel(page: Page, name: 'Risk' | 'Validation' | 'Provenance' | 'Methodology' | 'Layers'): Promise<void> {
   const tab = page.getByRole('tab', { name, exact: true });
   await tab.click();
   await expect

@@ -102,7 +102,8 @@
     "gzip_caps_bytes": {
       "data/flood/frame-index.json": 32768,
       "data/flood/flood-summary.json": 65536,
-      "data/risk/risk-zones.geojson": 262144
+      "data/risk/risk-zones.geojson": 262144,
+      "data/validation/scorecard.json": 16384
     },
     "file_caps_bytes": {
       "data/flood/frame-index.json": 65536,
@@ -129,6 +130,7 @@
       "data/basemap/assam-hillshade.webp": 1572864,
       "data/assets/critical-facilities.geojson": 1048576,
       "data/gauges/virtual-gauges.geojson": 104857,
+      "data/validation/scorecard.json": 131072,
       "meta_combined_cap_bytes": 262144
     },
     "max_frame_png_bytes": 409600,
@@ -168,6 +170,7 @@
     "data/series/cross-sections.json": { "class": "derived", "tier": "optional", "description": "DEM + HAND valley profiles with scenario water surface by step." },
     "data/risk/hotspots.geojson": { "class": "derived", "tier": "optional", "description": "Derived low-HAND backwater pockets (not breaches)." },
     "data/assets/critical-facilities.geojson": { "class": "source", "tier": "optional", "description": "OSM hospitals/clinics/schools with scenario depth exposure; completeness incomplete-osm." },
-    "data/gauges/virtual-gauges.geojson": { "class": "synthetic", "tier": "optional", "description": "Virtual stations on mapped rivers with the synthetic scenario stage; no agency or datum." }
+    "data/gauges/virtual-gauges.geojson": { "class": "synthetic", "tier": "optional", "description": "Virtual stations on mapped rivers with the synthetic scenario stage; no agency or datum." },
+    "data/validation/scorecard.json": { "class": "derived", "tier": "critical", "description": "Sentinel-1 GRD validation scorecard: extent-shape IoU/precision/recall at Otsu and ±2 dB, not an event hindcast." }
   }
 }
