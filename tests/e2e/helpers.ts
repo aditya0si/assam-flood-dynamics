@@ -223,9 +223,11 @@ export async function waitForSettledFrame(page: Page, timeout = SETTLE_TIMEOUT):
 }
 
 /**
- * B7/B8: settle A6/R6 on the committed hillshade raster. Imagery tiles stream in
- * asynchronously and contaminate a flood-on/flood-off pixel diff, so switch to
- * the committed base, then wait for the deterministic style/render predicate.
+ * B7/B8: settle A6/R6 on the committed hillshade raster. Imagery and the DEM
+ * hillshade stream in as tiles and can repaint tile-shaped patches between a
+ * flood-on/flood-off pair, so switch to the committed base and hide the
+ * streaming hillshade layer. The base is then one local raster image, and the
+ * only difference between the two captures is the flood layer.
  */
 export async function settleHillshadeBasemap(page: Page): Promise<void> {
   await openPanel(page, 'Layers');
@@ -233,6 +235,7 @@ export async function settleHillshadeBasemap(page: Page): Promise<void> {
   await expect
     .poll(async () => (await probeValue(page, 'layers'))?.baseMode, { timeout: POLL_TIMEOUT })
     .toBe('hillshade');
+  await setLayerVisible(page, 'hillshade', 'Show Terrain hillshade', false);
   await waitForSettledFrame(page);
 }
 
