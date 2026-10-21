@@ -30,7 +30,14 @@ export const ESRI_IMAGERY_TILES =
 export const TERRAIN_EXAGGERATION = 1.4;
 export const HOME_PITCH = 42;
 export const HOME_BEARING = -12;
-export const HOME_ZOOM = 7.2;
+/**
+ * B5 hero reach. The default camera centres on the committed centroid of the
+ * top-ranked district (Sivasagar) at district scale, not on the full 480 km
+ * flood belt. The reach framing is calibrated presentation only: no flood
+ * value is regenerated. The R6 test measures the painted share on the map box
+ * at this camera.
+ */
+export const HERO_ZOOM = 9.5;
 /**
  * Subject frame for the Brahmaputra flood-prone belt (the AOI v2 core), not the
  * state bbox. Derivation: the committed peak frame (step-07) has its wet pixels
@@ -50,18 +57,6 @@ export const MAX_PITCH = 75;
 export const FLOOD_OPACITY = 0.88;
 export const CROSSFADE_MS = 220;
 export const TILE_HEALTH_TIMEOUT_MS = 6000;
-
-/**
- * B4 camera fit. The peak frame is scanned at runtime to find the dominant wet
- * core; the map then fits that extent (not the wider flood-prone belt) with an
- * 8% total margin and the review's 42 degree pitch. Presentation only: no
- * frame, class or value is regenerated.
- */
-export const PEAK_FIT_PADDING_RATIO = 0.04;
-export const PEAK_EXTENT_SCAN_MAX_WIDTH = 1200;
-export const PEAK_EXTENT_ALPHA_FLOOR = 8;
-export const PEAK_EXTENT_ROW_DENSITY_FLOOR = 0.1;
-export const PEAK_EXTENT_TRIM = 0.05;
 
 /**
  * Palette separation (REVIEW-07 B2 + REVIEW-09 B4):

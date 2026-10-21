@@ -780,12 +780,12 @@ breakpoint.
 
 ## 9. Deploy (static host)
 
-- **Host:** GitHub Pages, project site at `https://<owner>.github.io/baanh/`.
+- **Host:** GitHub Pages, project site at `https://aditya0si.github.io/assam-flood-dynamics/`.
 - **Workflow:** `.github/workflows/pages.yml` on push to `main` (and manual dispatch):
   `actions/checkout` → `actions/setup-node` with Node 24 → `npm ci` → `npm run build` →
   `actions/upload-pages-artifact` with `dist/` → `actions/deploy-pages`.
-- **Base path:** `vite.config.ts` sets `base: '/baanh/'` for both dev and the Pages build, so
-  routes and data URLs are identical locally and in production. All data fetches use
+- **Base path:** `vite.config.ts` sets `base: '/assam-flood-dynamics/'` for build and preview,
+  and `/` for dev. `BAANH_BASE` overrides either default. All data fetches use
   `import.meta.env.BASE_URL + 'data/...'`, never a root-absolute `/data/...`.
 - **No secrets, no environment variables at runtime.** The only remote requests are the two
   probed tile hosts (AWS Terrarium, Esri World Imagery). No fonts, analytics, or APIs.
@@ -795,7 +795,7 @@ breakpoint.
   the manifest’s `app_min_version`.
 - **Local/offline build:** after one `npm ci` on a connected machine, `npm run build` needs no
   network. Runtime offline behaviour is the §7.7 fallback; the build itself never downloads data.
-- **No SPA rewrite needed:** there are no routes. A direct hit on `/baanh/` is the only entry;
+- **No SPA rewrite needed:** there are no routes. A direct hit on `/assam-flood-dynamics/` is the only entry;
   P1 hash state is client-side. `404.html` is not required.
 - **Verification after deploy:** `npm run verify:m0` against the local preview, plus a manual
   check that the Pages URL loads with the correct base path and that the two tile hosts are the

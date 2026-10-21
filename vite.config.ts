@@ -9,8 +9,27 @@ const mapLibreBundle = fileURLToPath(new URL('./node_modules/.vite-deps/maplibre
 // prebundle or the in-process esbuild shim.
 const sandbox = process.env.BAANH_SANDBOX === '1';
 
+/**
+ * GitHub Pages project sites live under /<repo>/. The build and preview use the
+ * repo name, while dev stays at / so local URLs remain short. BAANH_BASE overrides
+ * either default, so a renamed repository needs an environment change, not a code
+ * edit. Always normalise to a leading and trailing slash.
+ */
+const DEFAULT_PAGES_BASE = '/assam-flood-dynamics/';
+
+function normalizeBase(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '/') return '/';
+  return `/${trimmed.replace(/^\/+|\/+$/g, '')}/`;
+}
+
+const envBase = process.env.BAANH_BASE;
+
 export default defineConfig(({ command, isPreview }) => ({
-  base: command === 'build' || isPreview ? '/baanh/' : '/',
+  base:
+    command === 'build' || isPreview
+      ? normalizeBase(envBase ?? DEFAULT_PAGES_BASE)
+      : normalizeBase(envBase ?? '/'),
   plugins: [react()],
   resolve: {
     alias:

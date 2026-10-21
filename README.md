@@ -28,11 +28,18 @@ not a browser capture; run `npm run dev` for the interactive WebGL view.*
 Node 24 is required (`.nvmrc` pins it).
 
 ```bash
+git clone https://github.com/aditya0si/assam-flood-dynamics.git
+cd assam-flood-dynamics
 npm ci
-npm run dev      # Vite dev server; normally http://localhost:5173/baanh/
-npm run build    # tsc --noEmit, then plain vite build
-npm run preview  # serve dist/ at http://localhost:4173/baanh/
+npm run dev      # Vite dev server; http://localhost:5173/
+npm run build    # tsc --noEmit, then plain vite build at /assam-flood-dynamics/
+npm run preview  # serve dist/ at http://localhost:4173/assam-flood-dynamics/
 ```
+
+The production base path is `/assam-flood-dynamics/` for the GitHub Pages project site
+(`https://aditya0si.github.io/assam-flood-dynamics/`); dev stays at `/`. Set `BAANH_BASE`
+to override the build/preview base without editing code, for example
+`BAANH_BASE=/another-repo/ npm run build`.
 
 One-line form: `npm ci && npm run dev`. For the first Playwright run, install the
 browser once with `npx playwright install chromium` (CI does this automatically).
@@ -148,8 +155,9 @@ pipeline/            Python data pipeline (not needed to run the app)
 
 `.github/workflows/pages.yml` builds with plain `npm ci && npm run build` and deploys `dist/` to
 GitHub Pages. `.github/workflows/ci.yml` installs Chromium and runs `npm run verify:m0`. The
-sandbox scripts are deliberately excluded from both workflows. The Vite base path is `/baanh/`
-for the project Pages URL.
+sandbox scripts are deliberately excluded from both workflows. The Vite base path is
+`/assam-flood-dynamics/` for build and preview (the project Pages URL) and `/` for dev;
+`BAANH_BASE` overrides it for a differently named repository.
 
 ## Licence and attribution
 

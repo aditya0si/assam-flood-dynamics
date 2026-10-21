@@ -30,15 +30,14 @@ import {
   DISTRICT_LABEL_MIN_ZOOM,
   FLOOD_CURRENT_SOURCE_ID,
   FLOOD_OUTGOING_SOURCE_ID,
+  HERO_ZOOM,
   HOME_BEARING,
   HOME_PITCH,
-  HOME_ZOOM,
   HOTSPOTS_LAYER_ID,
   MAX_BOUNDS,
   MAX_PITCH,
   MAX_ZOOM,
   MIN_ZOOM,
-  PEAK_FIT_PADDING_RATIO,
   bboxCenter,
 } from './mapConfig';
 import { applyLayerPaint, buildMapStyle, setTerrain } from './mapStyle';
@@ -46,7 +45,6 @@ import { LAYER_IDS } from './layerRegistry';
 import { createTileHealthTracker, type TileHealthTracker } from './tileHealth';
 import { tileHealthCopy } from './tileHealthState';
 import { depthPresentationColor } from './depthPalette';
-import { scanPeakWetExtent, type PeakWetExtent } from './peakExtent';
 import styles from './map.module.css';
 
 interface MapCanvasProps {
@@ -125,7 +123,21 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     const container = containerRef.current;
     if (!container) return;
 
+    const districts = dataset.districts.features as Array<{
+      properties: DistrictFeatureProperties;
+      geometry: unknown;
+    }>;
+    const districtById = new Map(
+      districts.map((feature) => [feature.properties.district_id, feature.properties]),
+    );
+
     const top = topDistrict(dataset.districtRisk);
+    const topFeature = top ? districtById.get(top.district_id) : undefined;
+    // B5: hero reach is the top-ranked district's committed centroid. The map
+    // opens at district scale there instead of fitting the whole thin belt.
+    const heroCenter: [number, number] = topFeature
+      ? [topFeature.centroid_lon, topFeature.centroid_lat]
+      : bboxCenter(AOI_CORE_BOUNDS);
     const topDistrictProbe = top
       ? Object.freeze({
           name: top.name,
@@ -140,6 +152,8 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
           areaShare: top.area_share,
           durationDays: top.mean_duration_days,
           peakDepthM: top.p90_peak_depth_m,
+          centroidLon: topFeature?.centroid_lon ?? null,
+          centroidLat: topFeature?.centroid_lat ?? null,
           toString: () => top.name,
         })
       : null;
@@ -151,14 +165,6 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     container.setAttribute('data-ready', 'false');
     container.setAttribute('data-step', String(useTimelineStore.getState().step));
     container.setAttribute('data-frame-file', '');
-
-    let peakExtent: PeakWetExtent | null = null;
-    const peakExtentPromise = scanPeakWetExtent(dataset.frameIndex, dataset.summary.peak_step)
-      .then((extent) => {
-        peakExtent = extent;
-        return extent;
-      })
-      .catch(() => null);
 
     // The probe is a live view of the stores, not a snapshot that can drift.
     const probe = Object.freeze({
@@ -206,11 +212,18 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       get districtTop() {
         return topDistrictProbe;
       },
-      get peakBounds() {
-        return peakExtent?.bounds ?? AOI_CORE_BOUNDS;
+      get camera() {
+        const current = mapRef.current;
+        if (!current) return null;
+        const center = current.getCenter();
+        return {
+          center: [center.lng, center.lat] as [number, number],
+          zoom: current.getZoom(),
+          pitch: current.getPitch(),
+        };
       },
-      get peakRetainedShare() {
-        return peakExtent?.retainedShare ?? null;
+      get tileHealthHistory(): string[] {
+        return [...useTileHealthStore.getState().history];
       },
     });
     Object.defineProperty(window, '__baanh', {
@@ -225,8 +238,8 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       map = new maplibregl.Map({
         container,
         style: buildMapStyle(dataset),
-        center: bboxCenter(AOI_CORE_BOUNDS),
-        zoom: HOME_ZOOM,
+        center: heroCenter,
+        zoom: HERO_ZOOM,
         pitch: HOME_PITCH,
         bearing: HOME_BEARING,
         maxBounds: new LngLatBounds([MAX_BOUNDS[0][0], MAX_BOUNDS[0][1]], [MAX_BOUNDS[1][0], MAX_BOUNDS[1][1]]),
@@ -281,13 +294,6 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       container.setAttribute('data-ready', 'true');
     };
 
-    const districts = dataset.districts.features as Array<{
-      properties: DistrictFeatureProperties;
-      geometry: unknown;
-    }>;
-    const districtById = new Map(
-      districts.map((feature) => [feature.properties.district_id, feature.properties]),
-    );
     const riskById = new Map(
       dataset.districtRisk.districts.map((district) => [district.district_id, district]),
     );
@@ -409,39 +415,6 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     let sceneStarted = false;
     let readyFallback = 0;
 
-    const fitPeakExtent = async () => {
-      const extent = await peakExtentPromise;
-      if (mapRef.current !== map) return;
-      const fitBounds = extent?.bounds ?? AOI_CORE_BOUNDS;
-      const bounds = new LngLatBounds(
-        [fitBounds[0], fitBounds[1]],
-        [fitBounds[2], fitBounds[3]],
-      );
-      const canvas = map.getCanvas();
-      const minSide = Math.min(canvas.clientWidth, canvas.clientHeight);
-      const padding = Math.max(8, Math.round(minSide * PEAK_FIT_PADDING_RATIO));
-      const camera = map.cameraForBounds(bounds, {
-        padding: { top: padding, right: padding, bottom: padding, left: padding },
-        pitch: HOME_PITCH,
-        bearing: HOME_BEARING,
-      });
-      if (camera?.center && typeof camera.zoom === 'number') {
-        map.jumpTo({
-          center: camera.center,
-          zoom: camera.zoom,
-          pitch: HOME_PITCH,
-          bearing: HOME_BEARING,
-        });
-      } else {
-        map.jumpTo({
-          center: bboxCenter(fitBounds),
-          zoom: HOME_ZOOM,
-          pitch: HOME_PITCH,
-          bearing: HOME_BEARING,
-        });
-      }
-    };
-
     // style.load / styledata mean the style document is installed; they do not
     // wait for remote tiles (map 'load' does, and that is what froze playback).
     const startScene = () => {
@@ -454,7 +427,6 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       map.off('style.load', startScene);
 
       setTerrain(map, true);
-      void fitPeakExtent();
       updateAriaLabel(useTimelineStore.getState().step);
 
       applyLayers();

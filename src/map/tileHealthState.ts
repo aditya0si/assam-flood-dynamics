@@ -17,6 +17,12 @@ export interface TileHealthCopy {
 export const OFFLINE_AFTER_ERRORS = 3;
 /** A source that never resolves is degraded after one window, offline after two. */
 export const OFFLINE_AFTER_TIMEOUTS = 2;
+/**
+ * B5: both hosts have confirmed an error and neither has resolved a tile. Wait
+ * one short window so `degraded` is a real, visible intermediate, then confirm
+ * offline. This is outcome-driven, not a timer-only verdict.
+ */
+export const OFFLINE_CONFIRM_MS = 1500;
 
 export interface SourceHealthStats {
   successes: number;
@@ -25,6 +31,8 @@ export interface SourceHealthStats {
   pending: number;
   lastOutcome: 'none' | 'success' | 'error';
   timeoutRounds: number;
+  /** Set by the tracker after the both-hosts error confirmation window. */
+  offlineConfirmed: boolean;
 }
 
 export function newSourceStats(): SourceHealthStats {
@@ -35,6 +43,7 @@ export function newSourceStats(): SourceHealthStats {
     pending: 0,
     lastOutcome: 'none',
     timeoutRounds: 0,
+    offlineConfirmed: false,
   };
 }
 
@@ -45,8 +54,9 @@ export function newSourceStats(): SourceHealthStats {
  * - live: at least one tile resolved and the last three outcomes were not failures.
  * - degraded: some requests failed (or are still pending past a window) but the
  *   source has not earned an offline claim.
- * - offline: three failures with no success, or two full windows without a
- *   single resolved tile.
+ * - offline: three failures with no success, two full windows without a single
+ *   resolved tile, or both hosts confirmed their errors and neither recovered
+ *   within the short confirmation window (B5).
  *
  * A source with a success can never be reported offline; a later success always
  * recovers the source.
@@ -57,6 +67,7 @@ export function deriveSourceStatus(stats: SourceHealthStats): TileStatus {
       ? 'degraded'
       : 'live';
   }
+  if (stats.offlineConfirmed) return 'offline';
   if (stats.errors >= OFFLINE_AFTER_ERRORS) return 'offline';
   if (stats.timeoutRounds >= OFFLINE_AFTER_TIMEOUTS) return 'offline';
   if (stats.errors > 0 || stats.timeoutRounds > 0) return 'degraded';

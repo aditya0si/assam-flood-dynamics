@@ -12,6 +12,7 @@ import {
   TERRAIN_SOURCE_ID,
   TILE_HEALTH_TIMEOUT_MS,
 } from './mapConfig';
+import { OFFLINE_CONFIRM_MS } from './tileHealthState';
 import {
   deriveSourceStatus,
   newSourceStats,
@@ -61,6 +62,7 @@ export function createTileHealthTracker(map: MapLibreMap, onChange: HealthListen
   let destroyed = false;
   let lastKey = '';
   let terrainDisabled = false;
+  let confirmTimer = 0;
 
   const statsFor = (sourceId?: string): SourceHealthStats | null => {
     if (isDemSource(sourceId)) return state.dem;
@@ -100,9 +102,42 @@ export function createTileHealthTracker(map: MapLibreMap, onChange: HealthListen
     }
   };
 
+  const clearConfirmTimer = () => {
+    if (confirmTimer === 0) return;
+    window.clearTimeout(confirmTimer);
+    confirmTimer = 0;
+  };
+
+  const hasConfirmedError = (stats: SourceHealthStats): boolean =>
+    stats.errors > 0 && stats.successes === 0 && stats.lastOutcome === 'error';
+
+  /**
+   * Both remote hosts have answered with errors and neither has ever resolved a
+   * tile. Hold the degraded state for one short window, then confirm offline.
+   * The window makes the bad outcome deterministic without turning the first
+   * transient error into an offline claim.
+   */
+  const maybeConfirmOffline = () => {
+    const bothFailed = hasConfirmedError(state.dem) && hasConfirmedError(state.imagery);
+    if (!bothFailed) {
+      clearConfirmTimer();
+      return;
+    }
+    if (confirmTimer !== 0 || state.dem.offlineConfirmed || state.imagery.offlineConfirmed) return;
+    confirmTimer = window.setTimeout(() => {
+      confirmTimer = 0;
+      if (destroyed) return;
+      if (!hasConfirmedError(state.dem) || !hasConfirmedError(state.imagery)) return;
+      state.dem.offlineConfirmed = true;
+      state.imagery.offlineConfirmed = true;
+      settle();
+    }, OFFLINE_CONFIRM_MS);
+  };
+
   const settle = () => {
     emit();
     applyFallbacks();
+    maybeConfirmOffline();
   };
 
   const onSourceLoading = (event: MapSourceDataEvent) => {
@@ -121,6 +156,7 @@ export function createTileHealthTracker(map: MapLibreMap, onChange: HealthListen
     stats.successes += 1;
     stats.consecutiveErrors = 0;
     stats.lastOutcome = 'success';
+    stats.offlineConfirmed = false;
     settle();
   };
 
@@ -164,6 +200,7 @@ export function createTileHealthTracker(map: MapLibreMap, onChange: HealthListen
   return {
     destroy: () => {
       destroyed = true;
+      clearConfirmTimer();
       window.clearInterval(timer);
       map.off('sourcedataloading', onSourceLoading);
       map.off('sourcedata', onSourceData);

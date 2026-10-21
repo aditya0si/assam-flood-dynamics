@@ -168,8 +168,9 @@ npm ci
 npm run dev
 ```
 
-One-line form: `npm ci && npm run dev`. Open the printed local URL; with the fixed Pages base
-path it is normally `http://localhost:5173/baanh/`. Node 24 is required; `.nvmrc` pins it.
+One-line form: `npm ci && npm run dev`. Open the printed local URL; dev is served at
+`http://localhost:5173/` (the Pages base path `/assam-flood-dynamics/` is used by build and
+preview). Node 24 is required; `.nvmrc` pins it.
 
 **Acceptance:**
 

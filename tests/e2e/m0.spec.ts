@@ -10,6 +10,7 @@ import {
   openPanel,
   percentage,
   probeValue,
+  setFloodVisible,
 } from './helpers';
 
 test.describe('M0 acceptance', () => {
@@ -37,6 +38,8 @@ test.describe('M0 acceptance', () => {
             rank: district.rank,
             areaShare: district.areaShare,
             durationDays: district.durationDays,
+            centroidLon: district.centroidLon,
+            centroidLat: district.centroidLat,
           }
         : null;
     });
@@ -46,6 +49,15 @@ test.describe('M0 acceptance', () => {
     expect(top?.rank).toBe(1);
     expect(top?.areaShare).toBeGreaterThan(0.4);
     expect(top?.durationDays).toBeGreaterThan(60);
+
+    // B5: the default camera is the top-ranked district's committed centroid,
+    // at district scale and the review's 42 degree pitch.
+    const camera = await probeValue(page, 'camera');
+    expect(camera, 'window.__baanh.camera must expose the live camera').not.toBeNull();
+    expect(camera!.center[0]).toBeCloseTo(top!.centroidLon!, 2);
+    expect(camera!.center[1]).toBeCloseTo(top!.centroidLat!, 2);
+    expect(camera!.zoom).toBeCloseTo(9.5, 1);
+    expect(camera!.pitch).toBeCloseTo(42, 1);
 
     await expect(page.getByText('NOT A FORECAST').first()).toBeVisible();
     await expect(page.getByText('SCENARIO').first()).toBeVisible();
@@ -117,33 +129,55 @@ test.describe('M0 acceptance', () => {
     expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
 
-  test('the flood surface visibly changes between S00, S04 and S07', async ({ page }) => {
+  test('the flood surface paints monotonically more of the map at S00, S04 and S07', async ({
+    page,
+  }) => {
     const errors = collectErrors(page);
     await openApp(page);
-    await hideMapOverlays(page);
+    await openPanel(page, 'Layers');
 
-    await gotoStep(page, 0);
-    await page.waitForTimeout(900);
-    const s00 = decodePng(await mapCanvasScreenshot(page));
+    // Painted share = the pixels the flood raster changes at that step, measured
+    // against the same map with the flood hidden. This is a per-step share, not
+    // a S00-vs-S04 delta, so the thin early margins cannot make the test fail.
+    const measured: Array<{ step: number; different: number; pixels: number; share: number }> = [];
+    for (const step of [0, 4, 7]) {
+      await gotoStep(page, step);
+      await setFloodVisible(page, true);
+      await page.waitForTimeout(500);
+      await hideMapOverlays(page);
+      await page.waitForTimeout(250);
+      const floodOn = decodePng(await mapCanvasScreenshot(page));
 
-    await gotoStep(page, 4);
-    await page.waitForTimeout(900);
-    const s04 = decodePng(await mapCanvasScreenshot(page));
+      await setFloodVisible(page, false);
+      await page.waitForTimeout(250);
+      await hideMapOverlays(page);
+      await page.waitForTimeout(250);
+      const floodOff = decodePng(await mapCanvasScreenshot(page));
 
-    await gotoStep(page, 7);
-    await page.waitForTimeout(900);
-    const s07 = decodePng(await mapCanvasScreenshot(page));
+      expect(floodOn.width).toBe(floodOff.width);
+      expect(floodOn.height).toBe(floodOff.height);
+      const pixels = floodOn.width * floodOn.height;
+      const different = countDifferentPixels(floodOn, floodOff, 10);
+      measured.push({ step, different, pixels, share: different / pixels });
+    }
+    await setFloodVisible(page, true);
 
-    const mapPixels = s00.width * s00.height;
-    const diff04 = countDifferentPixels(s00, s04, 10) / mapPixels;
-    const diff07 = countDifferentPixels(s00, s07, 10) / mapPixels;
-    console.log(
-      `M0-A6 canvas diff: S00->S04 ${percentage(diff04 * mapPixels, mapPixels)}, ` +
-        `S00->S07 ${percentage(diff07 * mapPixels, mapPixels)} of the map`,
+    const [s00, s04, s07] = measured;
+    const summary = measured
+      .map((entry) => `S${String(entry.step).padStart(2, '0')} ${percentage(entry.different, entry.pixels)}`)
+      .join(' < ');
+    console.log(`M0-A6 painted share on the map box: ${summary}`);
+
+    expect(s04.share, `painted share must grow S00 -> S04 (measured ${summary})`).toBeGreaterThan(
+      s00.share,
     );
-    expect(diff04, 'S00 and S04 must not render the same flood surface').toBeGreaterThan(0.01);
-    expect(diff07, 'S00 and S07 must not render the same flood surface').toBeGreaterThan(0.02);
-    expect(diff07).toBeGreaterThan(diff04);
+    expect(s07.share, `painted share must grow S04 -> S07 (measured ${summary})`).toBeGreaterThan(
+      s04.share,
+    );
+    expect(
+      s07.share - s00.share,
+      `S07 - S00 painted share must be >= 3 percentage points (measured ${summary})`,
+    ).toBeGreaterThanOrEqual(0.03);
 
     expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
@@ -189,11 +223,24 @@ test.describe('M0 acceptance', () => {
 
     const flood = page.getByRole('checkbox', { name: 'Show Scenario flood extent' });
     await expect(flood).toBeChecked();
-    await flood.uncheck();
+
+    // Keyboard path: the switch input must be focusable and Space must toggle it.
+    await flood.focus();
+    await expect(flood).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(flood).not.toBeChecked();
     await expect.poll(() => probeValue(page, 'layers')).toEqual(
       expect.objectContaining({ visible: expect.not.arrayContaining(['flood']) }),
     );
+    await page.keyboard.press('Space');
+    await expect(flood).toBeChecked();
+
+    // Pointer path: the invisible input covers the visible track, so a click
+    // lands on the input instead of being intercepted by the track span.
+    await flood.uncheck();
+    await expect(flood).not.toBeChecked();
     await flood.check();
+    await expect(flood).toBeChecked();
 
     const opacity = page.locator('[data-opacity-for="flood"]');
     await opacity.focus();
@@ -260,7 +307,7 @@ test.describe('accessibility baseline', () => {
 test.describe('R6 map dominance', () => {
   test.use({ viewport: { width: 1920, height: 869 } });
 
-  test('map is 62-68% of viewport height and the S07 flood covers >=6% of the screenshot', async ({
+  test('hero camera frames S07 at >=10% of the map viewport, which is 62-68% of viewport height', async ({
     page,
   }) => {
     const errors = collectErrors(page);
@@ -274,6 +321,17 @@ test.describe('R6 map dominance', () => {
       0.62,
     );
     expect(heightShare, 'map must not exceed 68% of a 900px-class viewport').toBeLessThanOrEqual(0.68);
+
+    // Assert the camera, not just the pixels: top-ranked district centroid,
+    // district scale, 42 degree pitch.
+    const camera = await probeValue(page, 'camera');
+    const top = await page.evaluate(() => window.__baanh?.districtTop ?? null);
+    expect(top?.name).toBe('Sivasagar');
+    expect(camera, 'window.__baanh.camera must expose the live camera').not.toBeNull();
+    expect(camera!.center[0]).toBeCloseTo(top!.centroidLon!, 2);
+    expect(camera!.center[1]).toBeCloseTo(top!.centroidLat!, 2);
+    expect(camera!.zoom).toBeCloseTo(9.5, 1);
+    expect(camera!.pitch).toBeCloseTo(42, 1);
 
     await gotoStep(page, 7);
     await openPanel(page, 'Layers');
@@ -290,26 +348,30 @@ test.describe('R6 map dominance', () => {
     await page.waitForTimeout(500);
     const floodOn = decodePng(await mapCanvasScreenshot(page));
 
-    await page.locator('#analysis-rail').evaluate((element) => {
-      (element as HTMLElement).style.visibility = 'visible';
-    });
-    await page.getByRole('checkbox', { name: 'Show Scenario flood extent' }).uncheck();
+    await setFloodVisible(page, false);
+    await page.waitForTimeout(300);
     await hideMapOverlays(page);
     await page.waitForTimeout(500);
     const floodOff = decodePng(await mapCanvasScreenshot(page));
 
-    expect(floodOn.width).toBe(1920);
+    expect(floodOn.width).toBe(Math.round(mapBox!.width));
+    expect(floodOn.height).toBe(Math.round(mapBox!.height));
     const different = countDifferentPixels(floodOn, floodOff, 10);
-    const screenshotPixels = 1920 * 869;
-    const contribution = different / screenshotPixels;
+    // VIEWPORT-RELATIVE, as REVIEW-11 requires: denominator is the map element's
+    // box, never the full 1920x869 page screenshot. 10% is calibrated hero
+    // framing, not a physical constant.
+    const mapPixels = mapBox!.width * mapBox!.height;
+    const contribution = different / mapPixels;
     console.log(
-      `R6 flood-only contribution at S07: ${different} px = ${percentage(different, screenshotPixels)} ` +
-        `of the 1920x869 screenshot (map ${floodOn.width}x${floodOn.height})`,
+      `R6 hero camera ${JSON.stringify(camera)}; S07 flood-only contribution: ` +
+        `${different} px = ${percentage(different, mapPixels)} of the ` +
+        `${mapBox!.width.toFixed(0)}x${mapBox!.height.toFixed(0)} map viewport`,
     );
     expect(
       contribution,
-      'S07 flood must contribute at least 6% of a 1920x869 screenshot',
-    ).toBeGreaterThanOrEqual(0.06);
+      `S07 flood must cover at least 10% of the map viewport at the hero camera ` +
+        `(measured ${percentage(different, mapPixels)}, camera ${JSON.stringify(camera)})`,
+    ).toBeGreaterThanOrEqual(0.1);
 
     expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
   });

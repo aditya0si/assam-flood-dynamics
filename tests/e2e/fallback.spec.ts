@@ -11,14 +11,32 @@ test.describe('M0 blocked-tile fallback', () => {
     page,
   }) => {
     const errors = collectErrors(page);
+    const startedAt = Date.now();
     await openApp(page);
 
+    // B5: both hosts have confirmed errors. The sequence must pass through
+    // degraded and then settle offline within 8 s of navigation.
+    const remaining = 8_000 - (Date.now() - startedAt);
+    expect(remaining, 'app load must leave room for the 8 s offline budget').toBeGreaterThan(0);
     await expect
       .poll(() => probeValue(page, 'tileHealth'), {
-        timeout: 35_000,
-        intervals: [500, 1_000, 2_000, 3_000],
+        timeout: remaining,
+        intervals: [200, 400, 800],
       })
       .toBe('offline');
+    expect(
+      Date.now() - startedAt,
+      'the both-hosts-blocked path must reach offline within 8 s',
+    ).toBeLessThanOrEqual(8_000);
+
+    const history = await probeValue(page, 'tileHealthHistory');
+    const degradedIndex = history?.indexOf('degraded') ?? -1;
+    const offlineIndex = history?.lastIndexOf('offline') ?? -1;
+    expect(degradedIndex, 'degraded must be observed before offline').toBeGreaterThanOrEqual(0);
+    expect(offlineIndex, 'offline must follow degraded in the health history').toBeGreaterThan(
+      degradedIndex,
+    );
+    expect(history?.at(-1), 'offline must be the settled state').toBe('offline');
 
     await expect(page.getByText('Tile hosts offline · committed relief').first()).toBeVisible();
     await expect(page.locator('#map-viewport canvas')).toHaveCount(1);

@@ -19,7 +19,15 @@ interface BaanhTopDistrictProbe {
   readonly areaShare: number;
   readonly durationDays: number;
   readonly peakDepthM: number;
+  readonly centroidLon: number | null;
+  readonly centroidLat: number | null;
   toString: () => string;
+}
+
+interface BaanhCameraProbe {
+  readonly center: [number, number];
+  readonly zoom: number;
+  readonly pitch: number;
 }
 
 interface BaanhProbe {
@@ -27,6 +35,10 @@ interface BaanhProbe {
   readonly frameFile: string;
   readonly isPlaying: boolean;
   readonly tileHealth: 'live' | 'degraded' | 'offline';
+  /** Every distinct overall level observed since the map mounted, in order. */
+  readonly tileHealthHistory: string[];
+  /** Live MapLibre camera: centre, zoom and pitch (B5 hero reach). */
+  readonly camera: BaanhCameraProbe | null;
   /** Active rail panel id: risk | provenance | methodology | layers. */
   readonly panel: string;
   /** Visible layer ids, opacity per layer, and the active base mode. */

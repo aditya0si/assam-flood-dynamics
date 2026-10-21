@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { APP_BASE_PATH } from './basePath';
 
 export interface Probe {
   step: number;
@@ -10,6 +11,12 @@ export interface Probe {
   ready: boolean;
   isPlaying: boolean;
   tileHealth: 'live' | 'degraded' | 'offline';
+  tileHealthHistory: string[];
+  camera: {
+    center: [number, number];
+    zoom: number;
+    pitch: number;
+  } | null;
   panel: string;
   selectedDistrictId: string | null;
   layers: {
@@ -27,6 +34,8 @@ export interface Probe {
     areaShare: number;
     durationDays: number;
     peakDepthM: number;
+    centroidLon: number | null;
+    centroidLat: number | null;
   } | null;
 }
 
@@ -72,7 +81,7 @@ export async function probeValue<K extends keyof Probe>(
 }
 
 export async function openApp(page: Page): Promise<void> {
-  await page.goto('/baanh/', { waitUntil: 'domcontentloaded' });
+  await page.goto(APP_BASE_PATH, { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#scenario-timeline')).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => Boolean(window.__baanh)), { timeout: 30_000 })
@@ -116,6 +125,29 @@ export async function hideMapOverlays(page: Page): Promise<void> {
       }
     }
   });
+}
+
+export async function showMapOverlays(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    for (const selector of [
+      '#analysis-rail',
+      '[aria-label="Scenario flood depth classes"]',
+      '#map-viewport [role="status"]',
+    ]) {
+      for (const element of document.querySelectorAll<HTMLElement>(selector)) {
+        element.style.visibility = '';
+      }
+    }
+  });
+}
+
+/** Toggle the flood layer through the real Layers control, then leave the rail visible. */
+export async function setFloodVisible(page: Page, visible: boolean): Promise<void> {
+  await showMapOverlays(page);
+  const checkbox = page.getByRole('checkbox', { name: 'Show Scenario flood extent' });
+  if ((await checkbox.isChecked()) !== visible) await checkbox.click();
+  if (visible) await expect(checkbox).toBeChecked();
+  else await expect(checkbox).not.toBeChecked();
 }
 
 export async function mapCanvasScreenshot(page: Page): Promise<Buffer> {

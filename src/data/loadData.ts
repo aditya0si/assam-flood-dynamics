@@ -40,7 +40,7 @@ export class DataContractError extends Error {
 /**
  * Resolve a committed data path against Vite's BASE_URL, never against an
  * absolute '/data/...' path. Works for both the dev server ('/') and the
- * GitHub Pages project build ('/baanh/').
+ * GitHub Pages project build ('/assam-flood-dynamics/').
  */
 export function dataUrl(path: string): string {
   const clean = path.replace(/^\/+/, '');

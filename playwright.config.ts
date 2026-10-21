@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { APP_BASE_PATH } from './tests/e2e/basePath';
 
 const PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -37,7 +38,7 @@ export default defineConfig({
   webServer: {
     // Plain Vite preview; the sandbox-only runner is never part of verify/CI.
     command: `npm run preview -- --host 127.0.0.1 --port ${PORT}`,
-    url: `${BASE_URL}/baanh/`,
+    url: `${BASE_URL}${APP_BASE_PATH}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

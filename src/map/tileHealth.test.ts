@@ -15,6 +15,7 @@ function stats(overrides: Partial<SourceHealthStats> = {}): SourceHealthStats {
     pending: 0,
     lastOutcome: 'none',
     timeoutRounds: 0,
+    offlineConfirmed: false,
     ...overrides,
   };
 }
@@ -35,6 +36,16 @@ test('only reaches live when both sources have a resolved tile', () => {
 test('does not call a source offline while a request is pending in the first window', () => {
   assert.equal(deriveSourceStatus(stats({ pending: 1, timeoutRounds: 1 })), 'degraded');
   assert.equal(deriveSourceStatus(stats({ timeoutRounds: 2 })), 'offline');
+});
+
+test('confirmed both-host errors are degraded first, then offline', () => {
+  const failed = { errors: 1, lastOutcome: 'error' as const };
+  assert.equal(deriveSourceStatus(stats(failed)), 'degraded');
+  assert.equal(deriveSourceStatus(stats({ ...failed, offlineConfirmed: true })), 'offline');
+  assert.equal(
+    deriveSourceStatus(stats({ ...failed, successes: 1, offlineConfirmed: true })),
+    'live',
+  );
 });
 
 test('never calls a source offline after a success', () => {
