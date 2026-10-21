@@ -12,6 +12,8 @@ import jsonschema
 import numpy as np
 import rasterio
 from PIL import Image
+from rasterio.warp import transform_bounds
+from scipy.ndimage import label
 from shapely.geometry import Polygon, shape
 from shapely.validation import make_valid
 
@@ -41,14 +43,23 @@ from .util import (
 )
 
 REQUIRED_GATE_IDS = [f"V{index:02d}" for index in range(1, 21)] + [
-    f"V-A{index}" for index in range(1, 10)
+    "V-A1",
+    "V-A2",
+    "V-A3",
+    "V-A4",
+    "V-A5",
+    "V-A6",
+    "V-A7",
+    "V-A8",
+    "V-A9",
+    "V-A10",
 ]
 
 
 REQUIRED_JSON = [
     "scenario.json",
     "flood/flood-summary.json",
-    "flood/flood-frames.geojson",
+    "flood/frame-index.json",
     "admin/assam-districts.geojson",
     "admin/assam-state.geojson",
     "hydro/assam-rivers.geojson",
@@ -261,7 +272,7 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
                 for feature in _geo_features(doc):
                     if not shape(feature["geometry"]).intersects(state_geom):
                         containment.append(f"{name}: district does not intersect state")
-        for name in ("flood/flood-frames.geojson", "risk/risk-zones.geojson", "risk/hotspots.geojson"):
+        for name in ("risk/risk-zones.geojson", "risk/hotspots.geojson"):
             doc = docs.get(name)
             if not isinstance(doc, dict):
                 continue
@@ -377,25 +388,27 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         )
     )
 
-    # V09 — file caps.
+    # V09 — file caps (REVIEW-04: PNG gated raw, JSON gated on gzip).
     caps = cfg.pipeline["validation"]["file_caps_bytes"]
     public_root = data_path.parent
     cap_failures = []
-    total_data = 0
-    for key, cap in caps.items():
-        if key.startswith("meta_combined_cap_bytes"):
-            continue
-        path = public_root / key
-        if not path.exists():
-            continue
-        size = path.stat().st_size
-        total_data += size
-        if size > int(cap):
-            cap_failures.append(f"{key}: {size} > {cap}")
+    all_data_files = sorted(path for path in data_path.rglob("*") if path.is_file())
+    total_all = sum(path.stat().st_size for path in all_data_files)
     total_cap = int(cfg.pipeline["validation"]["total_cap_bytes"])
-    total_all = sum(path.stat().st_size for path in files)
     if total_all > total_cap:
-        cap_failures.append(f"total {total_all} > {total_cap}")
+        cap_failures.append(f"public/data {total_all} > {total_cap}")
+    png_sizes: list[tuple[str, int]] = []
+    for path in all_data_files:
+        relative = path.relative_to(data_path).as_posix()
+        cap = caps.get(relative)
+        size = path.stat().st_size
+        if cap is not None and size > int(cap):
+            cap_failures.append(f"{relative}: {size} > {cap}")
+        if path.suffix.lower() == ".png":
+            png_sizes.append((relative, size))
+            png_cap = int(cfg.pipeline["validation"].get("max_frame_png_bytes", 409600))
+            if size > png_cap:
+                cap_failures.append(f"{relative}: {size} > per-frame PNG cap {png_cap}")
     gzip_caps = cfg.pipeline["validation"].get("gzip_caps_bytes", {})
     gzip_measured = {}
     for key, cap in gzip_caps.items():
@@ -415,9 +428,10 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         _check(
             "V09",
             "File caps",
-            "every file ≤ its §11 raw cap and the flood frames ≤1.5 MB gzip; total ≤14 MB",
+            "every file ≤ its §11 raw cap; every frame PNG ≤400 KB raw; JSON gzip "
+            "caps respected; public/data ≤9.0 MB",
             f"total {total_all / 1024 / 1024:.2f} MB; meta {meta_size / 1024:.0f} KB; "
-            f"frames gzip {gzip_measured.get('data/flood/flood-frames.geojson', 0) / 1024:.0f} KB; "
+            f"{len(png_sizes)} PNGs, max {max((size for _, size in png_sizes), default=0) / 1024:.0f} KB; "
             f"{len(cap_failures)} over cap",
             "; ".join(cap_failures[:6]) if cap_failures else "all raw and gzip file caps satisfied",
             "fail" if cap_failures else "pass",
@@ -572,21 +586,30 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         )
     )
 
-    # V14 — step count, labels and per-step features.
+    # V14 — step count, labels and per-step frames.
     step_failures = []
     if len(steps) != 12:
         step_failures.append(f"summary has {len(steps)} steps")
     scenario_steps = docs.get("scenario.json", {}).get("steps", [])
     if len(scenario_steps) != 12:
         step_failures.append(f"scenario has {len(scenario_steps)} steps")
-    frame_steps = {}
-    for feature in geo.get("flood/flood-frames.geojson", {}).get("features", []):
-        props = feature["properties"]
-        frame_steps.setdefault(int(props["step"]), 0)
-        frame_steps[int(props["step"])] += 1
+    frame_index = docs.get("flood/frame-index.json") or {}
+    frame_index_steps = frame_index.get("steps", [])
+    frame_steps: dict[int, str] = {}
+    if len(frame_index_steps) != 12:
+        step_failures.append(f"frame-index has {len(frame_index_steps)} steps")
+    for frame_step in frame_index_steps:
+        step_id = int(frame_step.get("id", -1))
+        frame_steps[step_id] = str(frame_step.get("file"))
+        if not 0 <= step_id <= 11:
+            step_failures.append(f"frame-index step id {step_id} out of range")
+            continue
+        frame_path = data_path / "flood" / frame_steps[step_id]
+        if not frame_path.exists():
+            step_failures.append(f"step {step_id} PNG missing: {frame_steps[step_id]}")
     for index in range(12):
-        if frame_steps.get(index, 0) < 1:
-            step_failures.append(f"step {index} has no flood feature")
+        if index not in frame_steps:
+            step_failures.append(f"step {index} has no frame-index entry")
     for index, step in enumerate(scenario_steps):
         if int(step["step"]) != index:
             step_failures.append(f"scenario step {index} out of order")
@@ -597,6 +620,24 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
                 step_failures.append(f"step {index} day mismatch")
             if steps[index]["phase"] != step["phase"]:
                 step_failures.append(f"step {index} phase mismatch")
+            if index < len(frame_index_steps):
+                if abs(
+                    float(frame_index_steps[index].get("area_km2", -1))
+                    - float(steps[index]["inundated_area_km2"])
+                ) > 1e-6:
+                    step_failures.append(f"step {index} frame-index area != summary")
+    checks.append(
+        _check(
+            "V14",
+            "Step count",
+            "exactly 12 steps; labels/days/phases match scenario; every step has one "
+            "frame PNG and one frame-index entry",
+            f"summary {len(steps)} steps, scenario {len(scenario_steps)} steps, "
+            f"frames {len(frame_steps)} indexed",
+            "; ".join(step_failures[:6]) if step_failures else "12 steps, matching labels/days/phases, every step has a frame",
+            "fail" if step_failures else "pass",
+        )
+    )
     checks.append(
         _check(
             "V14",
@@ -652,10 +693,6 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
                             hygiene_failures.append(f"{name}: exterior not CCW")
                         if ring_index > 0 and area >= 0:
                             hygiene_failures.append(f"{name}: hole not CW")
-                        if name == "flood/flood-frames.geojson":
-                            ring_area = geodesic_area_km2(Polygon(ring))
-                            if ring_area < 0.02:
-                                hygiene_failures.append(f"{name}: ring <0.02 km²")
             elif kind in ("LineString", "MultiLineString"):
                 lines = [coords] if kind == "LineString" else geometry["coordinates"]
                 for line in lines:
@@ -667,7 +704,7 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         _check(
             "V15",
             "Coordinate hygiene",
-            "5 decimals; no consecutive duplicates; RFC 7946 winding; no flood ring <0.02 km²",
+            "5 decimals; no consecutive duplicates; RFC 7946 winding; no ring <4 points",
             f"{checked_coords} coordinates checked, {len(hygiene_failures)} violation(s)",
             "; ".join(hygiene_failures[:6]) if hygiene_failures else "coordinates, winding and ring sizes valid",
             "fail" if hygiene_failures else "pass",
@@ -805,22 +842,14 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
     optional_total = tiers["optional"] + tiers["fallback"]
     if optional_total > int(tier_caps["optional"]):
         budget_failures.append(f"optional/fallback {optional_total} > {tier_caps['optional']}")
-    tier_gzip_caps = cfg.pipeline["validation"].get("tier_gzip_caps_bytes", {})
-    tier_gzip = {}
-    for tier, cap in tier_gzip_caps.items():
-        measured = sum(gzip_size(public_root / path) for path in tiers.get(tier, []))
-        tier_gzip[tier] = measured
-        if measured > int(cap):
-            budget_failures.append(f"{tier} gzip {measured} > {cap}")
     checks.append(
         _check(
             "V19",
             "First-paint budget",
-            "critical ≤3.5 MB; animation ≤6.5 MB raw and ≤1.5 MB gzip; "
-            "optional/fallback ≤3.0 MB",
+            "critical ≤3.5 MB; animation (12 PNGs + frame-index + summary + risk-zones) "
+            "≤4.0 MB raw; optional/fallback ≤3.0 MB",
             f"critical {tiers['critical'] / 1024 / 1024:.2f} MB, animation "
-            f"{tiers['animation'] / 1024 / 1024:.2f} MB raw / "
-            f"{tier_gzip.get('animation', 0) / 1024 / 1024:.2f} MB gzip, "
+            f"{tiers['animation'] / 1024 / 1024:.2f} MB raw, "
             f"optional/fallback {optional_total / 1024 / 1024:.2f} MB",
             "; ".join(budget_failures) if budget_failures else "all tier budgets satisfied",
             "fail" if budget_failures else "pass",
@@ -877,6 +906,8 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
     aoi_meta: dict[str, Any] = {}
     core_mask = None
     core_transform = None
+    core_areas = None
+    core_height = core_width = 0
     if aoi_meta_path.exists():
         aoi_meta = _strict_json(aoi_meta_path)
     if core_mask_path.exists():
@@ -884,6 +915,9 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
             core_mask = src.read(1).astype(bool)
             core_transform = src.transform
             core_height, core_width = src.height, src.width
+        core_areas = row_cell_areas_km2(
+            core_transform, core_height, core_width, cfg.aoi.analysis_crs
+        )
 
     # V-A1 — AOI v2 area.
     a1_failures = []
@@ -893,10 +927,7 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
     if core_mask is None:
         a1_failures.append("aoi-v2-core-90m.tif missing")
     if core_mask is not None:
-        grid_areas = row_cell_areas_km2(
-            core_transform, core_height, core_width, cfg.aoi.analysis_crs
-        )
-        aoi_area = float(grid_areas[:, 0].dot(core_mask.sum(axis=1)))
+        aoi_area = float(core_areas[:, 0].dot(core_mask.sum(axis=1)))
         aoi_min = float(cfg.pipeline["inundation"]["aoi_v2_area_min_km2"])
         aoi_max = float(cfg.pipeline["inundation"]["aoi_v2_area_max_km2"])
         if not (aoi_min <= aoi_area <= aoi_max):
@@ -1118,7 +1149,8 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
             "V-A5",
             "Peak depth",
             f"peak-step median {median_min:.1f}–{median_max:.1f} m; p95 ≤ peak "
-            f"stage; clamped share of wet cells ≤{clamped_wet_max:.0%} (stage − HAND)",
+            f"stage; clamped share of wet cells ≤{clamped_wet_max:.0%} (stage − HAND), "
+            "computed on the area-filtered mask",
             f"median {peak_median}, p95 {peak_p95}, clamped wet {peak_clamped_wet}"
             if peak_median is not None and peak_p95 is not None
             else "peak depth missing",
@@ -1221,74 +1253,259 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         )
     )
 
-    # V-A9 — speckle control before polygonisation (REVIEW-03 B3/B4).
+    # V-A9 — component-area filter >=9 cells, no opening (REVIEW-04 C2).
     a9_failures: list[str] = []
     model_cfg = scenario_doc.get("model", {}) if isinstance(scenario_doc, dict) else {}
-    speckle_cfg = model_cfg.get("speckle_control", {}) if isinstance(model_cfg, dict) else {}
-    if not speckle_cfg.get("applied_before_polygonisation"):
-        a9_failures.append("model.speckle_control not declared applied before polygonisation")
-    if int(speckle_cfg.get("opening_cells", 0)) != 3:
-        a9_failures.append(f"opening {speckle_cfg.get('opening_cells')} cells != 3")
-    if abs(float(speckle_cfg.get("min_part_area_km2", -1)) - 0.10) > 1e-9:
-        a9_failures.append(
-            f"min part area {speckle_cfg.get('min_part_area_km2')} != 0.10 km²"
-        )
-    actual_parts: dict[int, int] = {}
-    frames_doc = docs.get("flood/flood-frames.geojson")
-    if not isinstance(frames_doc, dict):
-        a9_failures.append("flood/flood-frames.geojson missing")
+    component_cfg = (
+        model_cfg.get("component_filter", {}) if isinstance(model_cfg, dict) else {}
+    )
+    connectivity_cfg = (
+        model_cfg.get("connectivity", {}) if isinstance(model_cfg, dict) else {}
+    )
+    connectivity_enabled = bool(connectivity_cfg.get("enabled", False))
+    connectivity_distance = float(connectivity_cfg.get("max_channel_distance_m", 90.0))
+    min_cells = int(component_cfg.get("min_cells", 0))
+    if component_cfg.get("method") != "component_area_filter":
+        a9_failures.append("model.component_filter.method is not component_area_filter")
+    if min_cells < 9:
+        a9_failures.append(f"component-area filter {min_cells} cells < 9")
+    if component_cfg.get("opening") not in ("none", None, False):
+        a9_failures.append("model.component_filter.opening is not none")
+    if not component_cfg.get("applied_before_statistics"):
+        a9_failures.append("component filter not declared applied before statistics")
+
+    hand_path = work / "hand-90m.tif"
+    distance_path = work / "channel-distance-90m.tif"
+    hand = None
+    distance = None
+    if hand_path.exists():
+        with rasterio.open(hand_path) as src:
+            hand = src.read(1)
+            hand_nodata = float(src.nodata if src.nodata is not None else cfg.aoi.nodata)
     else:
-        for flood_feature in _geo_features(frames_doc):
-            step_id = int(flood_feature["properties"]["step"])
-            actual_parts[step_id] = actual_parts.get(step_id, 0) + len(
-                polygon_parts(shape(flood_feature["geometry"]))
-            )
-    recorded_before: list[int] = []
-    recorded_after: list[int] = []
-    for step_doc in steps:
-        step_id = int(step_doc["step"])
-        speckle = step_doc.get("speckle_control") or {}
-        before = speckle.get("parts_before")
-        after = speckle.get("parts_after")
-        if before is None or after is None:
-            a9_failures.append(f"S{step_id:02d}: speckle part counts missing")
-            continue
-        recorded_before.append(int(before))
-        recorded_after.append(int(after))
-        frame_parts = step_doc.get("frame_polygon_parts")
-        if frame_parts is None:
-            a9_failures.append(f"S{step_id:02d}: frame_polygon_parts missing")
-        elif int(frame_parts) != actual_parts.get(step_id, 0):
-            a9_failures.append(
-                f"S{step_id:02d}: recorded {frame_parts} polygon parts != "
-                f"committed {actual_parts.get(step_id, 0)}"
-            )
-        if float(speckle.get("removed_area_km2", 0.0)) < 0:
-            a9_failures.append(f"S{step_id:02d}: negative removed area")
-    peak_parts_before = (
-        recorded_before[peak_index_summary]
-        if recorded_before and 0 <= peak_index_summary < len(recorded_before)
+        a9_failures.append("hand-90m.tif missing")
+    if distance_path.exists():
+        with rasterio.open(distance_path) as src:
+            distance = src.read(1)
+    elif connectivity_enabled:
+        a9_failures.append("channel-distance-90m.tif missing")
+    if core_mask is None or core_areas is None:
+        a9_failures.append("AOI v2 core mask missing")
+    area_2d = (
+        np.broadcast_to(core_areas, core_mask.shape)
+        if core_areas is not None and core_mask is not None
         else None
     )
-    peak_parts_after = (
-        recorded_after[peak_index_summary]
-        if recorded_after and 0 <= peak_index_summary < len(recorded_after)
-        else None
-    )
+
+    structure = np.ones((3, 3), dtype=np.int8)
+    peak_before = None
+    peak_after = None
+    peak_dropped = None
+    if hand is not None and core_mask is not None and area_2d is not None:
+        domain = core_mask & (hand != hand_nodata)
+        for step_doc in steps:
+            step_id = int(step_doc["step"])
+            stage_m = float(step_doc["stage_m"])
+            recorded = step_doc.get("component_filter") or {}
+            if recorded.get("method") != "component_area_filter":
+                a9_failures.append(f"S{step_id:02d}: filter method is not component_area_filter")
+            if recorded.get("opening") != "none":
+                a9_failures.append(f"S{step_id:02d}: opening is not none")
+            if int(recorded.get("min_cells", 0)) < 9:
+                a9_failures.append(f"S{step_id:02d}: min_cells < 9")
+            before = recorded.get("components_before")
+            after = recorded.get("components_after")
+            dropped_area = recorded.get("dropped_area_km2")
+            if before is None or after is None or dropped_area is None:
+                a9_failures.append(f"S{step_id:02d}: component-filter audit missing")
+                continue
+            wet_path = work / "inundation-masks" / f"step-{step_id:02d}-wet.tif"
+            if not wet_path.exists():
+                a9_failures.append(f"S{step_id:02d}: wet mask missing")
+                continue
+            with rasterio.open(wet_path) as src:
+                committed_wet = src.read(1).astype(bool)
+            raw = domain & (hand <= stage_m)
+            labels_raw, raw_count = label(raw, structure=structure)
+            if connectivity_enabled and distance is not None:
+                near = raw & (distance <= connectivity_distance)
+                has_channel = np.zeros(raw_count + 1, dtype=bool)
+                if near.any():
+                    has_channel[np.unique(labels_raw[near])] = True
+                has_channel[0] = False
+                pre_filter = has_channel[labels_raw]
+            else:
+                pre_filter = raw
+            labels, before_count = label(pre_filter, structure=structure)
+            sizes = np.bincount(labels.ravel(), minlength=before_count + 1)
+            keep = sizes >= min_cells
+            keep[0] = False
+            expected = keep[labels]
+            after_count = int(keep[1:].sum())
+            expected_dropped = float(area_2d[pre_filter].sum() - area_2d[expected].sum())
+            mismatched = int((expected != committed_wet).sum())
+            if mismatched:
+                a9_failures.append(
+                    f"S{step_id:02d}: committed mask differs from area-filtered mask "
+                    f"in {mismatched} cells"
+                )
+            if int(before) != int(before_count) or int(after) != after_count:
+                a9_failures.append(
+                    f"S{step_id:02d}: recorded {before}->{after} != measured "
+                    f"{before_count}->{after_count}"
+                )
+            if abs(float(dropped_area) - expected_dropped) > 0.01:
+                a9_failures.append(
+                    f"S{step_id:02d}: dropped area {dropped_area} != measured "
+                    f"{expected_dropped:.3f} km²"
+                )
+            if step_id == peak_index_summary:
+                peak_before = before_count
+                peak_after = after_count
+                peak_dropped = expected_dropped
     checks.append(
         _check(
             "V-A9",
-            "Speckle control",
-            "3x3 binary opening on the wet mask and wet parts <0.10 km² dropped "
-            "before polygonisation; both part counts recorded for every step",
+            "Component-area filter",
+            "wet components below 9 cells (0.073 km²) dropped before statistics, "
+            "masks and rendering; no morphological opening; before/after counts and "
+            "dropped area recorded and reproducible for every step",
             (
-                f"peak parts {peak_parts_before}->{peak_parts_after}; committed "
-                f"polygon parts at peak {actual_parts.get(peak_index_summary, 0)}"
-                if peak_parts_before is not None
-                else "speckle counts missing"
+                f"peak components {peak_before}->{peak_after}, "
+                f"dropped {peak_dropped:.1f} km²"
+                if peak_before is not None
+                else "component-filter audit missing"
             ),
-            "; ".join(a9_failures[:6]) if a9_failures else "speckle control applied and counted",
+            "; ".join(a9_failures[:6])
+            if a9_failures
+            else "component-area filter applied, reproducible and counted",
             "fail" if a9_failures else "pass",
+        )
+    )
+
+    # V-A10 — frame-index/PNG agreement (REVIEW-04 C2).
+    a10_failures: list[str] = []
+    frame_index = docs.get("flood/frame-index.json")
+    frame_tolerance = 0.01
+    max_area_delta = 0.0
+    max_bbox_delta_px = 0.0
+    checked_frames = 0
+    if not isinstance(frame_index, dict):
+        a10_failures.append("flood/frame-index.json missing")
+    elif core_mask is None or core_transform is None:
+        a10_failures.append("AOI v2 core mask missing")
+    else:
+        expected_width = core_width // 2
+        expected_height = core_height // 2
+        if int(frame_index.get("width", -1)) != expected_width:
+            a10_failures.append(
+                f"index width {frame_index.get('width')} != half-res {expected_width}"
+            )
+        if int(frame_index.get("height", -1)) != expected_height:
+            a10_failures.append(
+                f"index height {frame_index.get('height')} != half-res {expected_height}"
+            )
+        expected_res = float(cfg.aoi.resolution_m) * 2.0
+        if abs(float(frame_index.get("frame_resolution_m", -1)) - expected_res) > 1e-6:
+            a10_failures.append(
+                f"frame resolution {frame_index.get('frame_resolution_m')} != {expected_res}"
+            )
+        left, top = core_transform * (0, 0)
+        right, bottom = core_transform * (core_width, core_height)
+        west, south, east, north = transform_bounds(
+            cfg.aoi.analysis_crs, "EPSG:4326", left, bottom, right, top
+        )
+        bbox = frame_index.get("bbox") or []
+        if len(bbox) != 4:
+            a10_failures.append("frame-index bbox is not four numbers")
+        else:
+            pixel_x = (east - west) / max(expected_width, 1)
+            pixel_y = (north - south) / max(expected_height, 1)
+            for actual, expected, pixel in zip(
+                [float(v) for v in bbox], [west, south, east, north], [pixel_x, pixel_y, pixel_x, pixel_y]
+            ):
+                delta_px = abs(actual - expected) / pixel if pixel else 0.0
+                max_bbox_delta_px = max(max_bbox_delta_px, delta_px)
+                if delta_px > 1.0 + 1e-6:
+                    a10_failures.append(
+                        f"bbox edge {actual:.6f} differs from {expected:.6f} by "
+                        f"{delta_px:.2f} px"
+                    )
+        classes = frame_index.get("classes") or []
+        if len(classes) != 5 or [int(item.get("id", -1)) for item in classes] != [0, 1, 2, 3, 4]:
+            a10_failures.append("frame-index classes are not ids 0–4")
+        frame_steps_index = frame_index.get("steps") or []
+        if len(frame_steps_index) != 12:
+            a10_failures.append(f"frame-index has {len(frame_steps_index)} steps")
+        for step_doc, frame_step in zip(steps, frame_steps_index):
+            step_id = int(step_doc["step"])
+            if int(frame_step.get("id", -1)) != step_id:
+                a10_failures.append(f"S{step_id:02d}: frame-index id mismatch")
+                continue
+            relative = str(frame_step.get("file", ""))
+            png_path = data_path / "flood" / relative
+            if not png_path.exists():
+                a10_failures.append(f"S{step_id:02d}: PNG missing ({relative})")
+                continue
+            try:
+                with Image.open(png_path) as image:
+                    image.load()
+                    width_px, height_px = image.size
+                    mode = image.mode
+                    pixels = np.asarray(image)
+            except Exception as exc:
+                a10_failures.append(f"S{step_id:02d}: PNG decode failed: {exc}")
+                continue
+            checked_frames += 1
+            if (width_px, height_px) != (expected_width, expected_height):
+                a10_failures.append(
+                    f"S{step_id:02d}: PNG {width_px}x{height_px} != index "
+                    f"{expected_width}x{expected_height}"
+                )
+            if mode != "P":
+                a10_failures.append(f"S{step_id:02d}: PNG mode {mode} != P (paletted)")
+            unique_classes = sorted(int(value) for value in np.unique(pixels))
+            if any(value < 0 or value > 4 for value in unique_classes):
+                a10_failures.append(f"S{step_id:02d}: PNG uses class ids outside 0–4")
+            wet_cells = int((pixels > 0).sum())
+            png_area = wet_cells * (expected_res * expected_res) / 1_000_000.0
+            recorded_area = float(frame_step.get("area_km2", -1))
+            if recorded_area <= 0:
+                a10_failures.append(f"S{step_id:02d}: frame-index area missing")
+            else:
+                delta = abs(png_area - recorded_area) / recorded_area
+                max_area_delta = max(max_area_delta, delta)
+                if delta > frame_tolerance:
+                    a10_failures.append(
+                        f"S{step_id:02d}: index area {recorded_area:.3f} km² vs PNG "
+                        f"{png_area:.3f} km² ({delta:.2%} > 1%)"
+                    )
+            if abs(png_area - float(step_doc["inundated_area_km2"])) / max(
+                float(step_doc["inundated_area_km2"]), 1e-9
+            ) > frame_tolerance:
+                a10_failures.append(
+                    f"S{step_id:02d}: PNG area differs from summary area by >1%"
+                )
+            if int(frame_step.get("png_bytes", -1)) != png_path.stat().st_size:
+                a10_failures.append(f"S{step_id:02d}: recorded PNG bytes mismatch")
+            if int(frame_step.get("png_wet_cells", -1)) != wet_cells:
+                a10_failures.append(f"S{step_id:02d}: recorded PNG wet-cell count mismatch")
+    checks.append(
+        _check(
+            "V-A10",
+            "Frame-index/PNG agreement",
+            "frame-index bbox and half-resolution reproduce every PNG extent within "
+            "1 pixel; each step area matches the PNG wet cells × cell area within 1%",
+            (
+                f"{checked_frames} frames checked; max area delta {max_area_delta:.3%}; "
+                f"max bbox delta {max_bbox_delta_px:.3f} px"
+                if checked_frames
+                else "no frames checked"
+            ),
+            "; ".join(a10_failures[:6])
+            if a10_failures
+            else "frame-index and PNG agree for every step",
+            "fail" if a10_failures else "pass",
         )
     )
 

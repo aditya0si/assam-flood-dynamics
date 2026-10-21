@@ -136,7 +136,7 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
         },
         {
             "id": "flood",
-            "dataset": "Scenario inundation depth bands and summary",
+            "dataset": "Scenario inundation raster frames and summary",
             "class": "scenario",
             "source_name": "Derived from AWS Terrarium DEM + mapped channels + synthetic scenario",
             "source_url": terrain["url_template"],
@@ -144,9 +144,11 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
             "fetched_at": _fetched_at(fragments, "09"),
             "pipeline": _stage_pipeline(fragments, ["07", "08", "09"]),
             "output_paths": present(
-                "data/flood/flood-frames.geojson", "data/flood/flood-summary.json"
+                "data/flood/frame-index.json",
+                "data/flood/flood-summary.json",
+                *[f"data/flood/frames/step-{index:02d}.png" for index in range(12)],
             ),
-            "notes": "REVIEW-02 A1/A3/A5: HAND threshold inside AOI v2 (Assam and DEM <= 120 m); uniform synthetic stage per step; 8-connected connectivity; per-step uint8 wet masks, frames written one step at a time and combined; no inundation-stack.npz. The peak-extent plausibility band is reviewer-selected, not calibrated.",
+            "notes": "REVIEW-04 C1/C2: HAND threshold inside AOI v2 (Assam and DEM <= 120 m); uniform synthetic stage per step; >=9-cell component-area filter applied before statistics and rendering, no morphological opening; half-resolution 5-class paletted PNG per step plus frame-index.json; per-step uint8 wet masks; no per-band GeoJSON, no vector outline and no inundation-stack.npz. The peak-extent plausibility band is reviewer-selected, not calibrated.",
         },
         {
             "id": "risk",

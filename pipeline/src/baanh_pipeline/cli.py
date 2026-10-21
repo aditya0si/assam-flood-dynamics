@@ -89,7 +89,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--channels", required=True)
     p.add_argument("--state", required=True)
     p.add_argument("--scenario", required=True)
-    p.add_argument("--out-frames", required=True)
+    p.add_argument("--frame-index", required=True)
     p.add_argument("--out-summary", required=True)
     p.add_argument("--out-masks", required=True)
     p.add_argument("--out-frames-dir", required=True)
@@ -120,7 +120,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sources", required=True)
     p.add_argument("--masks", required=True)
     p.add_argument("--hand", required=True)
-    p.add_argument("--frames", required=True)
+    p.add_argument("--frame-index", required=True)
     p.add_argument("--districts", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--refresh", action="store_true")
@@ -130,7 +130,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--summary", required=True)
     p.add_argument("--out", required=True)
 
-    p = add("validate", "Stage 14: run V01–V20 and V-A1–V-A9, write the validation report")
+    p = add("validate", "Stage 14: run V01–V20 and V-A1–V-A10, write the validation report")
     p.add_argument("--data", required=True)
     p.add_argument("--config", required=True)
     p.add_argument("--report", required=True)
@@ -213,7 +213,7 @@ def _dispatch(args) -> None:
             rel(args.channels),
             rel(args.state),
             rel(args.scenario),
-            rel(args.out_frames),
+            rel(args.frame_index),
             rel(args.out_summary),
             rel(args.out_masks),
             rel(args.out_frames_dir),
@@ -254,7 +254,7 @@ def _dispatch(args) -> None:
             cfg,
             rel(args.masks),
             rel(args.hand),
-            rel(args.frames),
+            rel(args.frame_index),
             rel(args.districts),
             rel(args.out),
             args.refresh,

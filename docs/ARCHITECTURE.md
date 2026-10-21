@@ -191,8 +191,10 @@ baanh/
 │     ├─ hydro/
 │     │  └─ assam-rivers.geojson       # OSM rivers with Natural Earth fallback; channel display layer
 │     ├─ flood/
-│     │  ├─ flood-frames.geojson       # all 12 scenario extents, depth bands, one feature set per step
-│     │  └─ flood-summary.json         # per-step rainfall/stage/area/depth aggregates for charts
+│     │  ├─ flood/
+│     │  │  ├─ frame-index.json       # bbox, half-res size, 5-class palette, one entry per step
+│     │  │  ├─ frames/step-XX.png     # 5-class paletted depth raster at half resolution
+│     │  │  └─ flood-summary.json     # per-step rainfall/stage/area/depth aggregates for charts
 │     ├─ risk/
 │     │  ├─ risk-zones.geojson         # derived HAND × duration zones, P0 risk layer
 │     │  ├─ district-risk.json         # ranked districts, score drivers, weights, coverage
@@ -401,7 +403,7 @@ interface TimelineState {
 ```ts
 type LayerId =
   | 'imagery' | 'hillshade' | 'districts' | 'rivers'
-  | 'flood' | 'flood-outline' | 'risk-zones'
+  | 'flood' | 'risk-zones'
   | 'hotspots' | 'assets' | 'gauges' | 'selection';
 
 type LayerClass = 'source' | 'derived' | 'scenario' | 'synthetic' | 'reference';
@@ -428,8 +430,8 @@ interface LayerSpec {
 `byId`, `styleLayerOrder`. `LayersPanel` renders only registry entries; it never knows MapLibre
 ids. `layerStore` holds `{ visible: Record<LayerId, boolean>; opacity: Record<LayerId, number>;
 baseMode: 'satellite' | 'hillshade' | 'relief' }` and actions `toggle`, `setOpacity`,
-`setBaseMode`, `reset`. Visibility of `flood-outline` follows `flood`; `selection` is controlled
-by `selectionStore`, not the panel.
+`setBaseMode`, `reset`. Visibility of `flood` controls both raster crossfade layers; `selection`
+is controlled by `selectionStore`, not the panel.
 
 ### 6.4 Panel router
 
@@ -495,7 +497,7 @@ interface CameraStatus {
 | `App` | nothing | renders shell | Owns error boundary and dataset load gate. |
 | `TopBar` | scenario label, current step, framesReady | `open('provenance')`, `play/pause`, P1 share | No step logic beyond display. |
 | `MapCanvas` | dataset, stores | map events → `selectionStore`; tile health → `StatusBar` | Creates map once; destroys on unmount only. |
-| `MapCanvas` → `flood.ts` | `step`, `stepCount`, `framesReady` | filter/paint updates | Crossfade uses two fill layers; see §7.4. |
+| `MapCanvas` → `flood.ts` | `step`, `stepCount`, `framesReady` | image-source swaps and opacity updates | Crossfade uses two raster image sources; see §7.4. |
 | `LayerRegistry` | none | `LayerSpec[]` | Pure data; no React. |
 | `LayersPanel` | `LAYERS`, `layerStore` | `toggle`, `setOpacity`, `setBaseMode` | Opacity slider 0–100, keyboard step 5. |
 | `TimelineDock` | `timelineStore` | user actions | Contains scrubber, transport, charts. |
@@ -520,11 +522,17 @@ interface CameraStatus {
 
 1. **critical** (`≤3.5 MB` raw): scenario, provenance, districts, state, rivers, district-risk,
    monsoon series.
-2. **animation** (`≤6.5 MB` raw and `≤1.5 MB` gzip): flood-frames, flood-summary, risk-zones. Frames must be parsed
-   and added to the map as one source before `framesReady = true`; Play is disabled until then.
-   The committed load contract remains one `flood-frames.geojson`; the pipeline’s per-step
-   `flood/frames/step-XX.geojson` files are internal staging and are removed after the combined
-   file is written (REVIEW-02 A5.3).
+2. **animation** (`≤4.0 MB` raw; JSON payloads gated on gzip): `flood/frame-index.json`,
+   `flood-summary.json`, `risk-zones.geojson` and the current/next step PNGs. The index is
+   loaded once; the app then fetches only the current and next PNG (a two-image working set),
+   never all 12. Play is disabled until the index and the current frame are ready.
+
+   <!-- amended: REVIEW-04 -->
+
+   The committed load contract is raster frames, not one `flood-frames.geojson`:
+   `frame-index.json` carries the WGS84 `bbox`, `width`, `height`, the 5-class palette and every
+   step's `file` and `area_km2`, so the app can place each PNG without knowing the projection.
+   There is no per-band GeoJSON and no per-step vector outline in M0.
 3. **optional** (P1): cross-sections, hotspots, assets, gauges.
 4. **failure only**: `assam-hillshade.webp` if terrain/imagery tiles fail.
 
@@ -566,9 +574,9 @@ MapLibre draws in style-layer array order. `paintOrder` in the registry matches 
 | 5 | `district-fill` | districts | very light neutral fill at low zoom; no risk colour |
 | 6 | `risk-zones-fill` | risk-zones | class colour, opacity 0.32 |
 | 7 | `risk-zones-line` | risk-zones | class colour, 0.8 px, opacity 0.55 |
-| 8 | `flood-fill-outgoing` | flood-frames | step `n−1`, fading 0.62 → 0 over 220 ms |
-| 9 | `flood-fill-current` | flood-frames | step `n`, fading 0 → 0.62 over 220 ms |
-| 10 | `flood-outline` | flood-frames | step `n`, `#d9f3ff`, 0.9 px, opacity 0.85 |
+| 8 | `flood-raster-outgoing` | frame `n−1` image | step `n−1`, fading 0.62 → 0 over 220 ms |
+| 9 | `flood-raster-current` | frame `n` image | step `n`, fading 0 → 0.62 over 220 ms |
+| 10 | `flood-raster-edge` (P1) | peak-extent outline | not shipped in M0; a peak-extent outline is P1 with its own cap |
 | 11 | `rivers` | rivers | `#7cc7e8`, width by `order`, opacity 0.85 |
 | 12 | `district-line` | districts | risk-class tint at 0.7 px; selected 2 px `#ffffff` |
 | 13 | `state-outline` | state | `#dfe9ef`, 1.4 px, opacity 0.7 |
@@ -578,14 +586,15 @@ MapLibre draws in style-layer array order. `paintOrder` in the registry matches 
 | 17 | `selection` | districts/hotspots | white outline + soft halo |
 | 18 | `sky` | — | horizon/fog |
 
-<!-- amended: REVIEW-03 B4 -->
+<!-- amended: REVIEW-04 -->
 
-**Two-class fallback (recorded, not silent).** The default is the four depth bands in
-`scenario.json`. If, *after V-A9 speckle control*, a frame still exceeds 6,815,744 bytes raw or
-1,572,864 bytes gzip, the stage may render that step as two classes — `shallow` 0–1 m and `deep`
-≥1 m — using the same layer ids and the same single-source contract. The change must be written
-in this section and in `manifest.json`; it may not be applied by dropping real polygons, by
-reducing the four bands without this record, or by coarsening below 75 m.
+**Raster frame contract.** The flood layer is now two `image` sources, not a set of filtered
+fill layers: `flood-raster-current` and `flood-raster-outgoing`. Each source carries one
+half-resolution 5-class paletted PNG (`0` transparent/dry, `1` 0–0.5 m, `2` 0.5–1.5 m,
+`3` 1.5–3.0 m, `4` 3.0+ m), positioned with the WGS84 `bbox` from `frame-index.json`. The
+palette is baked into the PNG; the UI legend reads the same class list from `frame-index.json`,
+so the two cannot drift. The two-class fallback is retired: the PNG frame is already an order of
+magnitude below the old vector budget, and no per-step outline is shipped in M0.
 
 District names and hotspot labels are DOM `Marker`s positioned from committed centroids, not
 MapLibre symbol layers, so no glyph endpoint is required. They are hidden below zoom 6.5 to avoid
@@ -604,39 +613,37 @@ clutter and have `pointer-events: none` except hotspot labels.
 
 ### 7.4 Animating flood extent between steps without re-tiling
 
-All 12 extents live in **one** GeoJSON source, `flood-frames`, loaded once. Each feature has a
-numeric `step` (0–11) and a `depth_band`. The two fill layers are filtered to the current and
-previous step:
+<!-- amended: REVIEW-04 -->
+
+The 12 extents are 12 half-resolution PNGs, not one GeoJSON source. Two MapLibre `image` sources
+are the working set:
 
 ```text
-flood-fill-current   filter: ["==", ["get", "step"], <step>]
-flood-fill-outgoing  filter: ["==", ["get", "step"], <previousStep>]
+flood-raster-current   image source: the current step PNG, coordinates = frame-index bbox corners
+flood-raster-outgoing  image source: the previous step PNG, same coordinates
 ```
 
 On a step change:
 
-1. Set the outgoing filter to the old step and the current filter to the new step. No source
-   data changes, no `setData`, no source removal/re-add, and therefore no GeoJSON re-parse or
-   tile rebuild.
-2. Animate `fill-opacity` on the two layers with a single `requestAnimationFrame` loop over
-   220 ms: outgoing `0.62 × (1 − t)`, current `0.62 × t`. `setPaintProperty` only changes a
-   uniform; it does not touch geometry.
-3. At `t = 1`, the outgoing layer is left at opacity 0 and the current layer at 0.62.
+1. Set the outgoing source to the PNG still displayed and the current source to the new step's
+   PNG. Both images are already decoded or preloaded; no GeoJSON parse, no source removal/re-add,
+   no tile rebuild, and no re-tiling of a vector source.
+2. Animate `raster-opacity` on the two raster layers with a single `requestAnimationFrame` loop
+   over 220 ms: outgoing `0.62 × (1 − t)`, current `0.62 × t`. `setPaintProperty` only changes a
+   uniform; it does not touch pixels or geometry.
+3. At `t = 1`, the outgoing layer is left at opacity 0 and the current layer at 0.62. The next
+   step's PNG is prefetched while the current one is visible, so the two-image working set never
+   grows to 12.
 
-Depth band colours are a `match` expression on `depth_band`, so a step change never recolours
-features. The outline layer switches filter immediately at the start of the crossfade.
+The app loads `frame-index.json` once, then only the current and next PNG. That is the whole
+load contract: `bbox`, `width`, `height`, the 5-class palette and each step's `file`/`area_km2`.
+Camera movement still causes normal raster-tile requests; that is not the animation path. The
+crossfade is a uniform-only paint change, so it satisfies the "no re-tiling, no source rebuild"
+rule.
 
-Why this satisfies the no-re-tiling requirement: MapLibre’s GeoJSON source is tiled internally
-once when added. Filter and paint changes re-evaluate features already in the source; they do
-not enqueue source/tile work. The app preloads the source before enabling Play, so the first
-press of Play cannot trigger a fetch. Camera movement still causes normal raster tile requests;
-that is not the animation path.
-
-The trade-off is memory: all frames are resident (≤6.5 MB raw, ≤1.5 MB gzip). That is accepted and
-budgeted in §8. If a frame still exceeds the cap **after V-A9 speckle control**, the recorded
-fallback is a two-class depth rendering (shallow 0–1 m / deep ≥1 m), documented here and in the
-manifest; reducing the depth-band count silently or streaming frames during playback is not
-permitted (REVIEW-03 B4).
+The budget trade-off is gone: at half resolution the 12 PNGs are ≈2–3 MB raw, not the 21 MB
+vector band set. No two-class fallback and no per-step vector outline is shipped in M0; a
+peak-extent outline remains a P1 item with its own cap.
 
 ### 7.5 Hotspots, gauges, facilities
 
@@ -709,9 +716,9 @@ Target machine: 2020-class 4-core laptop, integrated GPU, 1440×900, Chromium 12
 | JS initial | — | ≤ 350 KB |
 | CSS | — | ≤ 25 KB |
 | Critical data (scenario, districts, state, rivers, risk summary, series, manifest) | ≤ 3.5 MB | ≤ 1.2 MB |
-| Animation data (flood frames, summary, risk zones) | ≤ 6.5 MB | ≤ 1.5 MB |
+| Animation data (12 frame PNGs, frame-index, summary, risk zones) | ≤ 4.0 MB | JSON gated on gzip; PNG already compressed |
 | Optional/fallback (hillshade, cross-sections, hotspots, assets, gauges) | ≤ 3.0 MB | ≤ 0.9 MB |
-| Total committed data | ≤ 14 MB | ≤ 4.5 MB |
+| Total committed data | ≤ 9.0 MB | ≤ 4.5 MB |
 
 First meaningful paint is well under the reference’s ~8 MB because the animation bucket is
 fetched after the shell and terrain render. The Play button stays disabled with a progress
@@ -722,7 +729,9 @@ Per-file hard caps enforced by `scripts/check-data.mjs` and pipeline validation:
 
 | File | Cap |
 |---|---|
-| `flood/flood-frames.geojson` | 6.5 MB raw and 1.5 MB gzip |
+| `flood/frames/step-XX.png` (each) | 400 KB raw |
+| `flood/frame-index.json` | 64 KB raw / 32 KB gzip |
+| `flood/flood-summary.json` | 64 KB gzip |
 | `admin/assam-districts.geojson` | 1.2 MB |
 | `admin/assam-state.geojson` | 0.15 MB |
 | `hydro/assam-rivers.geojson` | 1.0 MB |
@@ -738,19 +747,20 @@ Per-file hard caps enforced by `scripts/check-data.mjs` and pipeline validation:
 
 ### 8.3 Geometry and rendering tactics
 
-- Analysis grid 90 m; flood polygons simplified at 75 m tolerance, minimum ring area 0.02 km²,
-  coordinates quantised to 5 decimal places (~1 m). Risk zones simplified at 100 m, minimum
-  0.05 km². Districts simplified at 150 m; state at 200 m; rivers at 50 m.
-- Depth bands: four (`0–0.5`, `0.5–1.5`, `1.5–3.0`, `3.0+` m). If the flood frame cap is
-  exceeded **after V-A9 speckle control**, the recorded fallback is two classes (shallow 0–1 m /
-  deep ≥1 m), not a silent three-band reduction and not coarser geography.
-- No `fill-antialias` on the outgoing layer; no symbols; no extrusions; no shadows beyond
-  hillshade. `maxzoom` on raster sources prevents over-fetching.
+- Analysis grid 90 m; flood frames are rendered at half resolution (≈180 m/px) as paletted PNGs,
+  so there is no flood polygon simplification, ring floor or 5-decimal coordinate quantisation.
+  Risk zones simplified at 100 m, minimum 0.05 km². Districts simplified at 150 m; state at
+  200 m; rivers at 50 m. <!-- amended: REVIEW-04 -->
+- Depth classes: five, including transparent/dry (`0`) and four wet classes (`0–0.5`, `0.5–1.5`,
+  `1.5–3.0`, `3.0+` m). The palette is baked into the PNG and mirrored by `frame-index.json`; no
+  two-class fallback is needed at the measured 65–334 KB per frame.
+- No flood outline layer in M0. No `fill-antialias` on the outgoing layer; no symbols; no
+  extrusions; no shadows beyond hillshade. `maxzoom` on raster sources prevents over-fetching.
 - DPR capped at 2; on `devicePixelRatio > 2` the app renders at 2 and lets CSS upscale.
 - Panels are code-split; uPlot is imported only when the dock mounts.
-- Frames are parsed in a worker-free path because 6.5 MB at 12 steps is acceptable; if parsing
-  exceeds 400 ms, the loader chunks features by step and adds them in two batches before
-  `framesReady` (still one source before Play). This is a builder fallback, not the default.
+- The app preloads the next PNG while the current one is displayed; the index is parsed once and
+  the 12 frames are never all resident. Play is enabled once the index and current frame are
+  ready.
 
 ### 8.4 Load milestones and degradation
 

@@ -34,27 +34,32 @@
     "version": "hand-v2",
     "burn_depth_m": 3.0,
     "max_channel_distance_m": 12000,
-    "connectivity": "8-connected; component must touch a channel cell",
+    "connectivity": {
+      "enabled": true,
+      "max_channel_distance_m": 90,
+      "note": "REVIEW-04: the >=9-cell component-area filter replaces the 3x3 opening and is the only wet-mask component test; morphological opening is forbidden."
+    },
     "depth_formula": "depth_m = stage_m - max(HAND, 0)",
     "depth_bias": "Conservative-shallow: a cell below the burnt channel datum reports the full stage, because no levee or bathymetry data exists to give it a deeper surface.",
-    "speckle_control": {
-      "opening_cells": 3,
-      "min_part_area_km2": 0.10,
-      "applied_before_polygonisation": true
+    "component_filter": {
+      "method": "component_area_filter",
+      "min_cells": 9,
+      "min_area_km2": 0.073,
+      "opening": "none",
+      "applied_before_statistics": true
     },
-    "min_polygon_area_km2": 0.02,
-    "simplify_tolerance_m": 75,
     "depth_bands_m": [0.0, 0.5, 1.5, 3.0, null],
-    "min_component_cells": 3
+    "min_component_cells": 9,
+    "frame_resolution_scale": 2
   },
   "assumptions": [
     "Rainfall, main-stem stage, backwater allowance, stage values, step dates and the 2.0 m threshold are synthetic; no gauge record, official warning or predictive claim is represented. Stages are the phase-A curve rescaled by x1.48 (REVIEW-03 B1); the peak value is the calibration-selected 3.70 m.",
     "The analysis domain is AOI v2: inside Assam and DEM <= 120 m, with a 2 km edge buffer used only for continuity. Flood/risk metrics count only AOI v2 core cells (REVIEW-02 A1).",
     "Only OSM waterway=river is burned; ways are clipped to AOI v2 + 5 km, kept if their midpoint is inside that buffer and their clipped length is >= 2 km; only the Brahmaputra main stem is dilated to 2 cells (REVIEW-02 A2).",
     "Stage is applied uniformly to every mapped channel; the water surface is flat within a step.",
-    "Inundation is a HAND threshold with 8-connected component filtering; a component must touch a channel cell or a cell within one cell of a channel.",
+    "Inundation is a HAND threshold with a component-area filter; wet components smaller than 9 cells (0.073 km² at 90 m) are dropped before statistics, geometry and rendering (REVIEW-04 C2). The filter is an 8-connected component-area rule, not a morphological opening and not a separate channel-proximity test.",
     "Depth is the bathtub convention depth = stage - max(HAND, 0), so depth <= stage; cells below the burnt datum report the full stage and are conservatively shallow (REVIEW-03 B2).",
-    "Speckle control is applied to the wet mask before polygonisation: a 3x3 binary opening, then wet parts below 0.10 km2 are dropped and counted (REVIEW-03 B3, V-A9).",
+    "Depth-band frames are rendered as a 5-class paletted PNG at half the analysis resolution (about 180 m/px) plus frame-index.json; no per-band GeoJSON and no per-step vector outline are produced in M0 (REVIEW-04 C1).",
     "The model is not calibrated to a gauge, satellite extent or event statistic.",
     "The hydrograph is a declared synthetic shape: rainfall peaks at S04 and stage peaks at S07."
   ],

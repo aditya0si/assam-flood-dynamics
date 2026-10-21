@@ -37,14 +37,14 @@ def run(
     cfg: Config,
     masks_dir: Path,
     hand_path: Path,
-    frames_path: Path,
+    frame_index_path: Path,
     districts_path: Path,
     out_path: Path,
     refresh: bool = False,
 ) -> dict | None:
     ensure_dirs()
     stage = StageRecord(
-        "12", "build-assets", inputs=[masks_dir, hand_path, frames_path, districts_path]
+        "12", "build-assets", inputs=[masks_dir, hand_path, frame_index_path, districts_path]
     )
     cache = cfg.root / "pipeline" / "cache" / "assets"
     cache.mkdir(parents=True, exist_ok=True)

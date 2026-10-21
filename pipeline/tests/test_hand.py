@@ -5,7 +5,7 @@ import numpy as np
 from rasterio.transform import from_origin
 
 from baanh_pipeline.geo import row_cell_areas_km2
-from baanh_pipeline.inundation import _band_index, _component_filter
+from baanh_pipeline.inundation import _band_index, _component_area_filter
 
 
 def test_band_index_boundaries():
@@ -14,21 +14,20 @@ def test_band_index_boundaries():
     assert bands.tolist() == [[0, 1, 1, 2, 2, 3, 3, 4]]
 
 
-def test_component_filter_drops_isolated_speck():
+def test_component_area_filter_drops_isolated_speck():
     wet = np.zeros((9, 9), dtype=bool)
-    wet[4, 4] = True  # channel cell
-    wet[4, 5] = True
-    wet[3, 5] = True
-    wet[0, 0] = True  # isolated speck, no channel within one cell
-    distance = np.full((9, 9), 1000.0, dtype=np.float32)
-    distance[4, 4] = 0.0
-    distance[4, 5] = 90.0
-    distance[3, 5] = 90.0
-    distance[0, 0] = 5000.0
-    filtered, count, dropped = _component_filter(wet, distance, 3, 90.0)
-    assert count >= 2
-    assert dropped >= 1
-    assert filtered[4, 4] and filtered[4, 5] and filtered[3, 5]
+    wet[3:6, 3:6] = True  # nine-cell component, retained
+    wet[0, 0] = True  # isolated one-cell speck, dropped
+    distance = np.full((9, 9), 5000.0, dtype=np.float32)
+    distance[3:6, 3:6] = 0.0
+    area_2d = np.full((9, 9), 0.0081, dtype=np.float64)
+    filtered, audit = _component_area_filter(
+        wet, distance, area_2d, 0.0081, 9, False, 90.0
+    )
+    assert audit["components_before"] == 2
+    assert audit["components_after"] == 1
+    assert audit["dropped_area_km2"] > 0
+    assert filtered[3, 3] and filtered[5, 5]
     assert not filtered[0, 0]
 
 

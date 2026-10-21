@@ -1,10 +1,10 @@
-"""Stage 09 — AOI-v2 HAND inundation, written one step at a time.
+"""Stage 09 — HAND inundation, area filter and half-resolution PNG frames.
 
-REVIEW-02 A5: build a per-step uint8 wet mask, never a float stack of all
-steps; threshold inside AOI v2 (inside Assam, DEM <= 120 m) before any
-polygonisation; write one GeoJSON per step and combine those into
-``flood-frames.geojson``; do not write ``inundation-stack.npz``.  Stage 10
-and stage 12 read the per-step masks instead.
+REVIEW-04 C1/C2 replaces the A3 per-band GeoJSON contract with a raster frame
+contract: one 5-class paletted PNG per step at half the analysis resolution,
+plus ``frame-index.json``.  The wet mask receives a >=9-cell connected-component
+area filter before statistics, rendering and mask output.  Morphological opening
+is forbidden and is not imported anywhere in this module.
 """
 from __future__ import annotations
 
@@ -12,31 +12,19 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
-from rasterio.features import shapes as raster_shapes
-from rasterio.transform import Affine
-from scipy.ndimage import binary_opening, label
-from shapely.geometry import MultiPolygon, Polygon, shape
-from shapely.ops import unary_union
+from PIL import Image
+from rasterio.warp import transform_bounds
+from scipy.ndimage import label
+from shapely.geometry import shape
 
 from . import aoi_domain
 from .config import Config
-from .geo import (
-    feature,
-    feature_collection,
-    geodesic_area_km2,
-    load_geojson,
-    polygon_parts,
-    project_geom,
-    row_cell_areas_km2,
-    valid,
-)
+from .geo import load_geojson, project_geom, row_cell_areas_km2
 from .util import (
     StageRecord,
     atomic_write_bytes,
     atomic_write_json,
     ensure_dirs,
-    gzip_bytes,
-    json_bytes,
     path_size,
 )
 
@@ -46,6 +34,15 @@ BAND_LABELS = [
     ("0.5-1.5", 0.5, 1.5),
     ("1.5-3.0", 1.5, 3.0),
     ("3.0+", 3.0, None),
+]
+
+# id, label, RGBA, lower edge, upper edge.  Class 0 is dry and fully transparent.
+CLASS_PALETTE = [
+    (0, "dry", (0, 0, 0, 0), None, 0.0),
+    (1, "0.0-0.5", (158, 202, 225, 235), 0.0, 0.5),
+    (2, "0.5-1.5", (66, 146, 198, 235), 0.5, 1.5),
+    (3, "1.5-3.0", (8, 81, 156, 240), 1.5, 3.0),
+    (4, "3.0+", (3, 19, 94, 245), 3.0, None),
 ]
 
 
@@ -60,121 +57,101 @@ def _row_area(areas: np.ndarray, mask: np.ndarray) -> float:
     return float(areas[:, 0].dot(mask.sum(axis=1)))
 
 
-def _component_filter(wet_raw: np.ndarray, distance: np.ndarray, min_cells: int, res: float):
-    labels, count = label(wet_raw, structure=np.ones((3, 3), dtype=np.int8))
-    if count == 0:
-        return wet_raw.copy(), 0, 0
-    near = wet_raw & (distance <= res)
-    component_has_channel = np.zeros(count + 1, dtype=bool)
-    if near.any():
-        component_has_channel[np.unique(labels[near])] = True
-    sizes = np.bincount(labels.ravel(), minlength=count + 1)
-    keep = component_has_channel & (sizes >= min_cells)
-    keep[0] = False
-    wet = keep[labels]
-    dropped = int((~keep[1:]).sum())
-    return wet, int(count), dropped
-
-
-def _speckle_control(
-    wet: np.ndarray,
+def _component_area_filter(
+    wet_raw: np.ndarray,
     distance: np.ndarray,
     area_2d: np.ndarray,
-    res: float,
-    opening_cells: int,
-    min_part_area_km2: float,
+    mean_cell_area: float,
+    min_cells: int,
+    connectivity_enabled: bool,
+    max_channel_distance_m: float,
 ):
-    """V-A9: 3x3 opening, then drop wet parts below the area floor.
+    """Apply the REVIEW-04 component-area filter and return an audit record.
 
-    ``parts_before`` and ``parts_after`` are connected-component counts of the
-    connectivity-filtered wet mask and of the retained mask, both recorded in
-    ``flood-summary.json``.  Applied before polygonisation, never after it.
+    When connectivity is enabled it is applied first and recorded separately;
+    the >=9-cell area filter is always the last wet-mask operation before
+    statistics and rendering.  Morphological opening is never used.
     """
-    structure = np.ones((opening_cells, opening_cells), dtype=bool)
-    opened = binary_opening(wet, structure=structure, border_value=0)
-    _, parts_before = label(wet, structure=np.ones((3, 3), dtype=np.int8))
-    labels, count = label(opened, structure=np.ones((3, 3), dtype=np.int8))
-    if count == 0:
-        return opened, int(parts_before), 0, 0, 0.0
-    part_area = np.bincount(labels.ravel(), weights=area_2d.ravel(), minlength=count + 1)
-    # V-A9 drops parts by area only.  Connectivity was already enforced on the
-    # pre-opening mask; re-testing channel proximity here would delete large
-    # components merely because the opening moved their edge cells.
-    keep = part_area >= min_part_area_km2
+    structure = np.ones((3, 3), dtype=np.int8)
+    labels_raw, raw_count = label(wet_raw, structure=structure)
+    raw_area = float(area_2d[wet_raw].sum())
+
+    if connectivity_enabled and raw_count:
+        near = wet_raw & (distance <= max_channel_distance_m)
+        has_channel = np.zeros(raw_count + 1, dtype=bool)
+        if near.any():
+            has_channel[np.unique(labels_raw[near])] = True
+        has_channel[0] = False
+        wet_connected = has_channel[labels_raw]
+    else:
+        wet_connected = wet_raw
+
+    labels, before_count = label(wet_connected, structure=structure)
+    connected_area = float(area_2d[wet_connected].sum())
+    if before_count == 0:
+        audit = {
+            "method": "component_area_filter",
+            "min_cells": int(min_cells),
+            "min_area_km2": round(mean_cell_area * min_cells, 6),
+            "opening": "none",
+            "connectivity": bool(connectivity_enabled),
+            "connectivity_max_distance_m": float(max_channel_distance_m) if connectivity_enabled else None,
+            "raw_components": int(raw_count),
+            "connectivity_components": int(before_count),
+            "components_before": int(before_count),
+            "components_after": 0,
+            "dropped_components": int(before_count),
+            "area_before_km2": round(connected_area, 4),
+            "dropped_area_km2": round(connected_area, 4),
+            "raw_area_km2": round(raw_area, 4),
+        }
+        return wet_connected.copy(), audit
+
+    sizes = np.bincount(labels.ravel(), minlength=before_count + 1)
+    keep = sizes >= min_cells
     keep[0] = False
-    kept = keep[labels]
-    removed_area = float(area_2d[opened].sum() - area_2d[kept].sum())
-    dropped = int((~keep[1:]).sum())
-    return kept, int(parts_before), int(keep[1:].sum()), dropped, removed_area
+    wet = keep[labels]
+    after_count = int(keep[1:].sum())
+    kept_area = float(area_2d[wet].sum())
+    audit = {
+        "method": "component_area_filter",
+        "min_cells": int(min_cells),
+        "min_area_km2": round(mean_cell_area * min_cells, 6),
+        "opening": "none",
+        "connectivity": bool(connectivity_enabled),
+        "connectivity_max_distance_m": float(max_channel_distance_m) if connectivity_enabled else None,
+        "raw_components": int(raw_count),
+        "connectivity_components": int(before_count),
+        "components_before": int(before_count),
+        "components_after": after_count,
+        "dropped_components": int(before_count - after_count),
+        "area_before_km2": round(connected_area, 4),
+        "dropped_area_km2": round(connected_area - kept_area, 4),
+        "raw_area_km2": round(raw_area, 4),
+    }
+    return wet, audit
 
 
-def _polygonise_band(
-    band: np.ndarray,
-    value: int,
-    step_transform: Affine,
-    cfg: Config,
-    tolerance_m: float,
-    min_area_km2: float,
-):
-    mask = band == value
-    if not mask.any():
-        return None, 0.0, 0
-    parts = []
-    for geom_mapping, _ in raster_shapes(
-        band, mask=mask, connectivity=8, transform=step_transform
-    ):
-        geom = shape(geom_mapping)
-        if geom.is_empty:
-            continue
-        parts.extend(polygon_parts(geom))
-    if not parts:
-        return None, 0.0, 0
-    # The connected components of one band are disjoint.  Build a MultiPolygon
-    # directly instead of unioning thousands of parts per step.
-    multi = MultiPolygon(parts)
-    if not multi.is_valid:
-        multi = valid(unary_union(parts))
-    if multi is None or multi.is_empty:
-        return None, 0.0, 0
-    wgs = project_geom(multi, cfg.aoi.analysis_crs, cfg.aoi.output_crs)
-    wgs = valid(wgs)
-    if wgs is None or wgs.is_empty:
-        return None, 0.0, 0
-    # Simplifying one MultiPolygon with tens of thousands of parts is very
-    # expensive.  Simplify each disjoint part in WGS84 with an equivalent
-    # ground tolerance (~75 m in latitude).
-    tolerance_deg = tolerance_m / 111320.0
-    kept = []
-    for part in polygon_parts(wgs):
-        if geodesic_area_km2(part) < min_area_km2:
-            continue
-        simplified_part = part.simplify(tolerance_deg, preserve_topology=True)
-        simplified_part = valid(simplified_part)
-        if simplified_part is None or simplified_part.is_empty:
-            continue
-        for clean_part in polygon_parts(simplified_part):
-            if geodesic_area_km2(clean_part) < min_area_km2:
-                continue
-            if clean_part.interiors:
-                holes = [
-                    interior
-                    for interior in clean_part.interiors
-                    if geodesic_area_km2(Polygon(interior)) >= min_area_km2
-                ]
-                clean_part = Polygon(clean_part.exterior, holes)
-            kept.append(clean_part)
-    if not kept:
-        return None, 0.0, 0
-    result = MultiPolygon(kept)
-    if not result.is_valid:
-        result = valid(unary_union(kept))
-    if result is None or result.is_empty:
-        return None, 0.0, 0
-    parts = polygon_parts(result)
-    area = sum(geodesic_area_km2(part) for part in parts)
-    if area <= 0:
-        return None, 0.0, 0
-    return result, area, len(parts)
+def _frame_bbox(transform, crs: str, width: int, height: int) -> list[float]:
+    left, top = transform * (0, 0)
+    right, bottom = transform * (width, height)
+    west, south, east, north = transform_bounds(crs, "EPSG:4326", left, bottom, right, top)
+    return [round(west, 6), round(south, 6), round(east, 6), round(north, 6)]
+
+
+def _write_frame_png(band: np.ndarray, path: Path, scale: int) -> tuple[int, int, int]:
+    """Downsample a class raster by ``scale`` and write an optimised P-mode PNG."""
+    height = band.shape[0] - band.shape[0] % scale
+    width = band.shape[1] - band.shape[1] % scale
+    reduced = band[:height, :width][::scale, ::scale]
+    image = Image.fromarray(reduced, mode="P")
+    palette: list[int] = []
+    for _, _, (red, green, blue, _), _, _ in CLASS_PALETTE:
+        palette.extend([red, green, blue])
+    image.putpalette(palette)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(path, format="PNG", optimize=True, transparency=0)
+    return int(reduced.shape[1]), int(reduced.shape[0]), int((reduced > 0).sum())
 
 
 def _district_raster(cfg: Config, transform, height: int, width: int):
@@ -187,7 +164,9 @@ def _district_raster(cfg: Config, transform, height: int, width: int):
     for index, district_feature in enumerate(data.get("features", []), start=1):
         ids.append(district_feature["properties"]["district_id"])
         district_geom = project_geom(
-            shape(district_feature["geometry"]), cfg.aoi.output_crs, cfg.aoi.analysis_crs
+            shape(district_feature["geometry"]),
+            cfg.aoi.output_crs,
+            cfg.aoi.analysis_crs,
         )
         shapes_list.append((district_geom, index))
     if not shapes_list:
@@ -213,7 +192,7 @@ def run(
     channels_path: Path,
     state_path: Path,
     scenario_path: Path,
-    out_frames: Path,
+    out_frame_index: Path,
     out_summary: Path,
     out_masks_dir: Path,
     out_frames_dir: Path,
@@ -238,18 +217,32 @@ def run(
     res = float(cfg.aoi.resolution_m)
     nodata = float(cfg.aoi.nodata)
     edges = list(model["depth_bands_m"])
-    min_component_cells = int(model.get("min_component_cells", 3))
-    tolerance = float(model["simplify_tolerance_m"])
-    min_band_area = float(model["min_polygon_area_km2"])
-    speckle = dict(model.get("speckle_control") or {})
-    if not speckle.get("applied_before_polygonisation"):
+    component_cfg = dict(model.get("component_filter") or {})
+    if component_cfg.get("method") != "component_area_filter":
         raise RuntimeError(
-            "stage 09: V-A9 requires the documented speckle control before "
-            "polygonisation (model.speckle_control)"
+            "stage 09: REVIEW-04 C2 requires model.component_filter.method = "
+            "'component_area_filter'"
         )
-    opening_cells = int(speckle.get("opening_cells", 3))
-    min_part_area = float(speckle.get("min_part_area_km2", 0.10))
+    if not component_cfg.get("applied_before_statistics"):
+        raise RuntimeError(
+            "stage 09: the component-area filter must be applied before statistics "
+            "and rendering (model.component_filter.applied_before_statistics)"
+        )
+    if component_cfg.get("opening") not in ("none", None, False):
+        raise RuntimeError("stage 09: morphological opening is forbidden (REVIEW-04 C2)")
+    min_cells = int(component_cfg.get("min_cells", 9))
+    if min_cells < 9:
+        raise RuntimeError(f"stage 09: component-area filter {min_cells} cells < 9")
+    connectivity_cfg = dict(model.get("connectivity") or {})
+    connectivity_enabled = bool(connectivity_cfg.get("enabled", False))
+    connectivity_distance = float(connectivity_cfg.get("max_channel_distance_m", res))
+    scale = int(model.get("frame_resolution_scale", 2))
+    if scale != 2:
+        raise RuntimeError(f"stage 09: frame resolution scale {scale} != 2 (half resolution)")
     version = cfg.pipeline["dataset_version"]
+    frame_cap = int(
+        cfg.pipeline["validation"].get("max_frame_png_bytes", 409600)
+    )
 
     aoi = aoi_domain.load_saved(cfg)
     with rasterio.open(hand_path) as src:
@@ -257,7 +250,7 @@ def run(
         transform = src.transform
         width = src.width
         height = src.height
-        crs = src.crs
+        crs = str(src.crs)
     if hand.shape != aoi.core.shape:
         raise RuntimeError("stage 09: HAND raster shape does not match AOI v2 mask")
     with rasterio.open(distance_path) as src:
@@ -292,6 +285,7 @@ def run(
     valid_cell_share = float(domain.sum()) / core_cells if core_cells else 0.0
     areas = row_cell_areas_km2(transform, height, width, cfg.aoi.analysis_crs)
     area_2d = np.broadcast_to(areas, (height, width))
+    mean_cell_area = float(areas.mean())
     # B2/V-A6: a cell is "clamped" when the burned ground lies below its
     # nearest channel elevation, so HAND is reported as 0 and depth = stage.
     clamped_domain = domain & (dem < nearest_z)
@@ -306,13 +300,17 @@ def run(
         stage.inputs.append(districts_path)
 
     out_masks_dir.mkdir(parents=True, exist_ok=True)
-    out_frames_dir.mkdir(parents=True, exist_ok=True)
+    staging_dir = cfg.root / "pipeline" / "work" / "flood-frames"
+    staging_dir.mkdir(parents=True, exist_ok=True)
     for stale in out_masks_dir.glob("step-*-wet.tif"):
         stale.unlink()
-    for stale in out_frames_dir.glob("step-*.geojson"):
+    for stale in staging_dir.glob("step-*.*"):
+        stale.unlink()
+    for stale in out_frames_dir.glob("step-*.*"):
         stale.unlink()
 
     step_summaries: list[dict] = []
+    frame_steps: list[dict] = []
     prev_wet = np.zeros((height, width), dtype=bool)
     district_ever_wet: set[int] = set()
     peak_area = 0.0
@@ -322,23 +320,27 @@ def run(
     peak_p95_depth = None
     peak_clamped_wet_share = None
     peak_clamped_aoi_share = None
-    total_features = 0
+    peak_filter_audit: dict = {}
+    total_dropped_area = 0.0
+    total_frame_bytes = 0
+    max_frame_bytes = 0
+    frame_bbox: list[float] | None = None
+    frame_width = 0
+    frame_height = 0
 
     for index, step in enumerate(scenario.steps):
         stage_m = float(step["stage_m"])
         step_label = str(step["label"])
         phase = str(step["phase"])
         wet_raw = domain & (hand <= stage_m)
-        wet_connected, component_count, dropped = _component_filter(
-            wet_raw, distance, min_component_cells, res
-        )
-        wet, parts_before, parts_after, speckle_dropped, speckle_removed = _speckle_control(
-            wet_connected,
+        wet, filter_audit = _component_area_filter(
+            wet_raw,
             distance,
             area_2d,
-            res,
-            opening_cells,
-            min_part_area,
+            mean_cell_area,
+            min_cells,
+            connectivity_enabled,
+            connectivity_distance,
         )
         depth = np.where(wet, stage_m - hand, np.float32(0.0)).astype(np.float32)
 
@@ -375,6 +377,28 @@ def run(
             affected = int(len(affected_ids))
             district_ever_wet.update(int(v) for v in affected_ids)
 
+        # Rasterise only the wet bounding window into a full-size class grid so
+        # the committed PNG keeps the analysis extent.
+        band = np.zeros((height, width), dtype=np.uint8)
+        if wet.any():
+            rows = np.flatnonzero(wet.any(axis=1))
+            cols = np.flatnonzero(wet.any(axis=0))
+            r0, r1 = int(rows[0]), int(rows[-1]) + 1
+            c0, c1 = int(cols[0]), int(cols[-1]) + 1
+            band[r0:r1, c0:c1] = _band_index(depth[r0:r1, c0:c1], edges)
+
+        frame_path = staging_dir / f"step-{index:02d}.png"
+        frame_width, frame_height, png_wet_cells = _write_frame_png(band, frame_path, scale)
+        frame_bytes = frame_path.stat().st_size
+        png_area_km2 = png_wet_cells * (scale * scale) * mean_cell_area
+        if frame_bbox is None:
+            frame_bbox = _frame_bbox(
+                transform,
+                crs,
+                (width // scale) * scale,
+                (height // scale) * scale,
+            )
+
         summary_step = {
             "step": index,
             "step_label": step_label,
@@ -396,14 +420,13 @@ def run(
                 round(clamped_wet_share, 6) if clamped_wet_share is not None else None
             ),
             "clamped_aoi_share": round(clamped_aoi_share, 6),
-            "speckle_control": {
-                "opening": f"{opening_cells}x{opening_cells}",
-                "min_part_area_km2": min_part_area,
-                "parts_before": parts_before,
-                "parts_after": parts_after,
-                "dropped_parts": speckle_dropped,
-                "removed_area_km2": round(speckle_removed, 4),
-            },
+            "component_filter": filter_audit,
+            "frame_file": f"frames/step-{index:02d}.png",
+            "frame_png_bytes": int(frame_bytes),
+            "frame_width": int(frame_width),
+            "frame_height": int(frame_height),
+            "png_wet_cells": int(png_wet_cells),
+            "png_area_km2": round(png_area_km2, 4),
             "affected_district_count": affected,
             "valid_cell_share": round(valid_cell_share, 6),
             "share_of_aoi_v2": round(area_km2 / core_area, 6) if core_area else None,
@@ -413,6 +436,25 @@ def run(
             ),
         }
         step_summaries.append(summary_step)
+        frame_steps.append(
+            {
+                "id": index,
+                "label": step_label,
+                "stage_m": stage_m,
+                "file": f"frames/step-{index:02d}.png",
+                "area_km2": round(area_km2, 4),
+                "png_bytes": int(frame_bytes),
+                "png_wet_cells": int(png_wet_cells),
+                "png_area_km2": round(png_area_km2, 4),
+            }
+        )
+        total_dropped_area += float(filter_audit["dropped_area_km2"])
+        total_frame_bytes += int(frame_bytes)
+        max_frame_bytes = max(max_frame_bytes, int(frame_bytes))
+        if frame_bytes > frame_cap:
+            raise RuntimeError(
+                f"stage 09: step {index} PNG {frame_bytes} bytes exceeds V09 cap {frame_cap}"
+            )
         if area_km2 > peak_area:
             peak_area = area_km2
             peak_index = index
@@ -421,69 +463,8 @@ def run(
             peak_p95_depth = p95_depth
             peak_clamped_wet_share = clamped_wet_share
             peak_clamped_aoi_share = clamped_aoi_share
+            peak_filter_audit = dict(filter_audit)
         prev_wet = wet
-
-        # Polygonise only the wet bounding window; every cell is already inside
-        # AOI v2, so no full-state grid is ever polygonised.
-        step_features: list[dict] = []
-        if wet.any():
-            rows = np.flatnonzero(wet.any(axis=1))
-            cols = np.flatnonzero(wet.any(axis=0))
-            r0, r1 = int(rows[0]), int(rows[-1]) + 1
-            c0, c1 = int(cols[0]), int(cols[-1]) + 1
-            depth_window = depth[r0:r1, c0:c1]
-            band = _band_index(depth_window, edges)
-            window_transform = transform * Affine.translation(c0, r0)
-            frame_parts = 0
-            for band_value in range(1, 5):
-                band_label, lo, hi = BAND_LABELS[band_value - 1]
-                geom_wgs, band_area, band_parts = _polygonise_band(
-                    band, band_value, window_transform, cfg, tolerance, min_band_area
-                )
-                if geom_wgs is None:
-                    continue
-                frame_parts += band_parts
-                props = {
-                    "step": index,
-                    "step_label": step_label,
-                    "phase": phase,
-                    "depth_band": band_label,
-                    "depth_m_lo": lo,
-                    "depth_m_hi": hi,
-                    "band_area_km2": round(band_area, 4),
-                    "step_area_km2": round(area_km2, 4),
-                    "class": "scenario",
-                    "model_version": scenario.model_version,
-                    "label": f"Scenario inundation · {step_label} · {band_label} m",
-                }
-                feat = feature(geom_wgs, props, cfg.aoi.decimals)
-                if feat is not None:
-                    step_features.append(feat)
-        step_features.sort(
-            key=lambda f: (
-                BAND_LABELS.index(
-                    next(b for b in BAND_LABELS if b[0] == f["properties"]["depth_band"])
-                ),
-                -f["properties"]["band_area_km2"],
-                json_bytes(f["geometry"]).decode("utf-8")[:120],
-            )
-        )
-        if not step_features:
-            raise RuntimeError(
-                f"stage 09: step {index} has no flood feature after AOI v2 clipping"
-            )
-        step_payload = feature_collection(
-            f"Scenario inundation depth bands · step {index:02d}",
-            "scenario",
-            step_features,
-            version,
-        )
-        step_payload_bytes = json_bytes(step_payload, indent=None)
-        summary_step["frame_polygon_parts"] = frame_parts
-        summary_step["frame_raw_bytes"] = len(step_payload_bytes)
-        summary_step["frame_gzip_bytes"] = gzip_bytes(step_payload_bytes)
-        atomic_write_json(out_frames_dir / f"step-{index:02d}.geojson", step_payload, indent=None)
-        total_features += len(step_features)
 
         print(
             f"[09] S{index:02d} {step_label} {phase:8s} stage {stage_m:.2f} m: "
@@ -492,11 +473,10 @@ def run(
             f"{area_km2 / flood_prone_area:.1%} of flood-prone), "
             f"median {median_depth if median_depth is None else round(median_depth, 2)}, "
             f"p95 {p95_depth if p95_depth is None else round(p95_depth, 2)}, "
-            f"clamped {clamped_wet_share if clamped_wet_share is None else round(clamped_wet_share, 1)}, "
-            f"max {max_depth if max_depth is None else round(max_depth, 2)}, "
-            f"parts {parts_before}->{parts_after}/{frame_parts}, "
-            f"frame {len(step_payload_bytes) / 1024 / 1024:.2f} MB raw / "
-            f"{summary_step['frame_gzip_bytes'] / 1024 / 1024:.2f} MB gzip"
+            f"clamped {clamped_wet_share if clamped_wet_share is None else round(clamped_wet_share, 3)}, "
+            f"components {filter_audit['components_before']}->{filter_audit['components_after']}, "
+            f"dropped {filter_audit['dropped_area_km2']:.1f} km², "
+            f"PNG {frame_width}x{frame_height} {frame_bytes / 1024:.1f} KB"
         )
 
     # Hydrograph shape — exact, not a widened tolerance.
@@ -540,7 +520,7 @@ def run(
             f"{max_flood_prone_share:.0%}"
         )
 
-    # V-A5 / V-A6 — measured on the same wet masks that are written out.
+    # V-A5 / V-A6 — measured on the same area-filtered wet masks that are written.
     peak_step_summary = step_summaries[scenario.peak_step]
     peak_stage_m = float(peak_step_summary["stage_m"])
     v_a5_failures: list[str] = []
@@ -568,6 +548,27 @@ def run(
         "status": "blocked" if v_a5_failures else "ok",
         "peak_step": peak_index,
         "steps": step_summaries,
+        "component_filter_audit": {
+            "method": "component_area_filter",
+            "min_cells": min_cells,
+            "opening": "none",
+            "connectivity": bool(connectivity_enabled),
+            "connectivity_max_distance_m": connectivity_distance if connectivity_enabled else None,
+            "peak_components_before": peak_filter_audit.get("components_before"),
+            "peak_components_after": peak_filter_audit.get("components_after"),
+            "peak_dropped_components": peak_filter_audit.get("dropped_components"),
+            "peak_dropped_area_km2": peak_filter_audit.get("dropped_area_km2"),
+            "total_dropped_area_km2": round(total_dropped_area, 4),
+        },
+        "frame_audit": {
+            "frame_count": len(frame_steps),
+            "frame_width": frame_width,
+            "frame_height": frame_height,
+            "frame_scale": scale,
+            "total_png_bytes": int(total_frame_bytes),
+            "max_png_bytes": int(max_frame_bytes),
+            "bbox": frame_bbox,
+        },
         "totals": {
             "max_area_km2": round(peak_area, 4),
             "peak_stage_m": peak_stage_m,
@@ -594,54 +595,33 @@ def run(
             "stage 09: V-A5/V-A6 failed on the measured peak: " + "; ".join(v_a5_failures)
         )
 
-    # Combine the per-step files (A5.3).  The staging directory is removed after
-    # the combined file is written; the committed load contract stays one file.
-    frame_features: list[dict] = []
-    for index in range(scenario.step_count):
-        step_path = out_frames_dir / f"step-{index:02d}.geojson"
-        if not step_path.exists():
-            raise RuntimeError(f"stage 09: missing incremental frame {step_path.name}")
-        frame_features.extend(load_geojson(step_path)["features"])
-    frame_features.sort(
-        key=lambda f: (
-            f["properties"]["step"],
-            BAND_LABELS.index(
-                next(b for b in BAND_LABELS if b[0] == f["properties"]["depth_band"])
-            ),
-            -f["properties"]["band_area_km2"],
-            json_bytes(f["geometry"]).decode("utf-8")[:120],
-        )
-    )
-    frames = feature_collection(
-        "Scenario inundation depth bands", "scenario", frame_features, version
-    )
-    out_frames.parent.mkdir(parents=True, exist_ok=True)
-    frames_payload = json_bytes(frames, indent=None)
-    frame_cap = int(
-        cfg.pipeline["validation"]["file_caps_bytes"]["data/flood/flood-frames.geojson"]
-    )
-    if len(frames_payload) > frame_cap:
-        raise RuntimeError(
-            f"stage 09: flood frames {len(frames_payload)} bytes exceed cap {frame_cap}; "
-            "reduce bands only as a last resort and record the deviation"
-        )
-    gzip_cap = int(
-        cfg.pipeline["validation"]["gzip_caps_bytes"]["data/flood/flood-frames.geojson"]
-    )
-    frames_gzip = gzip_bytes(frames_payload)
-    if frames_gzip > gzip_cap:
-        raise RuntimeError(
-            f"stage 09: flood frames gzip {frames_gzip} bytes exceed cap {gzip_cap}; "
-            "record the two-class fallback instead of dropping polygons"
-        )
-    atomic_write_bytes(out_frames, frames_payload)
-    for step_path in out_frames_dir.glob("step-*.geojson"):
-        step_path.unlink()
-    try:
-        out_frames_dir.rmdir()
-    except OSError:
-        pass
-
+    classes = [
+        {
+            "id": int(class_id),
+            "label": label,
+            "color": f"#{red:02x}{green:02x}{blue:02x}",
+            "alpha": int(alpha),
+            "min_m": low,
+            "max_m": high,
+        }
+        for class_id, label, (red, green, blue, alpha), low, high in CLASS_PALETTE
+    ]
+    frame_index = {
+        "schema_version": "1.0.0",
+        "dataset_version": version,
+        "scenario_id": scenario.scenario_id,
+        "class": "scenario",
+        "bbox": frame_bbox,
+        "width": int(frame_width),
+        "height": int(frame_height),
+        "crs": "EPSG:4326",
+        "source_crs": "EPSG:32646",
+        "source_resolution_m": res,
+        "frame_resolution_m": res * scale,
+        "frame_scale": scale,
+        "classes": classes,
+        "steps": frame_steps,
+    }
     summary = {
         "schema_version": "1.0.0",
         "scenario_id": scenario.scenario_id,
@@ -654,6 +634,19 @@ def run(
             "inundated_area": "scenario",
         },
         "steps": step_summaries,
+        "component_filter_audit": attempt["component_filter_audit"],
+        "frame_contract": {
+            "format": "png",
+            "scale": scale,
+            "frame_width": int(frame_width),
+            "frame_height": int(frame_height),
+            "frame_resolution_m": res * scale,
+            "bbox": frame_bbox,
+            "frame_count": len(frame_steps),
+            "total_png_bytes": int(total_frame_bytes),
+            "max_png_bytes": int(max_frame_bytes),
+            "index": "frame-index.json",
+        },
         "totals": {
             "max_area_km2": round(peak_area, 4),
             "peak_stage_m": max(float(s["stage_m"]) for s in step_summaries),
@@ -691,6 +684,16 @@ def run(
             },
         },
     }
+
+    # Publish only after every stage-09 gate has passed.
+    out_frames_dir.mkdir(parents=True, exist_ok=True)
+    for stale in out_frames_dir.glob("step-*.*"):
+        stale.unlink()
+    for index in range(scenario.step_count):
+        source = staging_dir / f"step-{index:02d}.png"
+        atomic_write_bytes(out_frames_dir / source.name, source.read_bytes())
+    out_frame_index.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(out_frame_index, frame_index, indent=2, sort_keys=False)
     out_summary.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(out_summary, summary, indent=2, sort_keys=False)
 
@@ -698,16 +701,21 @@ def run(
     atomic_write_json(public_scenario_path, scenario.raw, indent=2, sort_keys=False)
 
     mask_bytes = path_size(out_masks_dir)
-    stage.out(out_frames, out_summary, out_masks_dir, public_scenario_path)
-    stage.metric("frames_features", total_features)
-    stage.metric("frames_bytes", len(frames_payload))
-    stage.metric("frames_gzip_bytes", frames_gzip)
+    stage.out(out_frame_index, out_frames_dir, out_summary, out_masks_dir, public_scenario_path)
+    stage.metric("frame_count", len(frame_steps))
+    stage.metric("frame_width", frame_width)
+    stage.metric("frame_height", frame_height)
+    stage.metric("frame_total_png_bytes", total_frame_bytes)
+    stage.metric("frame_max_png_bytes", max_frame_bytes)
     stage.metric("mask_cache_bytes", mask_bytes)
     stage.metric("peak_p95_depth_m", round(peak_p95_depth, 4))
     stage.metric("peak_clamped_wet_share", round(peak_clamped_wet_share, 6))
     stage.metric("clamped_aoi_share", round(clamped_aoi_share, 6))
-    stage.metric("speckle_opening", f"{opening_cells}x{opening_cells}")
-    stage.metric("speckle_min_part_area_km2", min_part_area)
+    stage.metric("component_filter_min_cells", min_cells)
+    stage.metric("component_filter_opening", "none")
+    stage.metric("peak_components_before", peak_filter_audit.get("components_before"))
+    stage.metric("peak_components_after", peak_filter_audit.get("components_after"))
+    stage.metric("peak_dropped_area_km2", peak_filter_audit.get("dropped_area_km2"))
     stage.metric("peak_area_km2", round(peak_area, 4))
     stage.metric("aoi_v2_area_km2", round(core_area, 4))
     stage.metric("assam_area_km2", round(assam_area, 4))
@@ -719,17 +727,20 @@ def run(
     stage.metric("median_depth_at_peak_m", summary["totals"]["median_depth_at_peak_m"])
     stage.metric("max_depth_at_peak_m", summary["totals"]["max_depth_at_peak_m"])
     stage.finish(
-        f"Connectivity {model['connectivity']}; depth bands {edges}; AOI v2 core "
-        f"{core_area:,.1f} km²; per-step uint8 wet masks written to "
-        f"{out_masks_dir.name}/; one GeoJSON per step written then combined into "
-        f"{out_frames.name} and the staging files removed; no inundation-stack.npz. "
-        "Bands polygonised separately, simplified at "
-        f"{tolerance:.0f} m, converted to WGS84; only AOI v2 cells are counted."
+        f"REVIEW-04 C1/C2: component-area filter >= {min_cells} cells (no opening, no "
+        f"morphological operation); half-resolution {frame_width}x{frame_height} 5-class "
+        f"PNGs plus frame-index.json; no per-band GeoJSON and no polygonisation. AOI v2 "
+        f"core {core_area:,.1f} km²; per-step uint8 wet masks in {out_masks_dir.name}/; "
+        "no inundation-stack.npz."
     )
     print(
-        f"[09] ok: {total_features} band features, peak {peak_area:,.0f} km² at "
-        f"S{peak_index:02d} ({peak_area / core_area:.1%} of AOI v2, "
-        f"{peak_area / flood_prone_area:.1%} of flood-prone), frames "
-        f"{len(frames_payload) / 1024 / 1024:.2f} MB, masks {mask_bytes / 1024 / 1024:.1f} MB"
+        f"[09] ok: peak {peak_area:,.0f} km² at S{peak_index:02d} "
+        f"({peak_area / core_area:.1%} of AOI v2, "
+        f"{peak_area / flood_prone_area:.1%} of flood-prone), median "
+        f"{peak_median_depth:.3f} m, p95 {peak_p95_depth:.3f} m, clamp "
+        f"{peak_clamped_wet_share:.1%}; components "
+        f"{peak_filter_audit['components_before']}->{peak_filter_audit['components_after']}, "
+        f"dropped {peak_filter_audit['dropped_area_km2']:.1f} km²; frames "
+        f"{total_frame_bytes / 1024 / 1024:.2f} MB (max {max_frame_bytes / 1024:.1f} KB)"
     )
     return summary
