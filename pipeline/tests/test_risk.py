@@ -23,3 +23,14 @@ def test_scenario_stage_arithmetic():
             float(step["stage_m"])
             - (float(step["mainstem_stage_m"]) + float(step["backwater_m"]))
         ) < 1e-9
+
+
+def test_district_weights_are_two_live_drivers():
+    cfg = load_config()
+    district = cfg.pipeline["risk"]["district"]
+    weights = district["weights"]
+    assert set(weights) == {"area_share", "duration"}
+    assert abs(float(weights["area_share"]) - 0.5625) < 1e-12
+    assert abs(float(weights["duration"]) - 0.4375) < 1e-12
+    assert abs(sum(float(value) for value in weights.values()) - 1.0) < 1e-12
+    assert district["weights_version"] == "area-duration-v1"

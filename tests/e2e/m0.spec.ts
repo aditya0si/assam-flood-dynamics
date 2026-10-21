@@ -50,7 +50,7 @@ test.describe('M0 acceptance', () => {
         : null;
     });
     expect(top?.name).toBe('Sivasagar');
-    expect(top?.score).toBe(71.9);
+    expect(top?.score).toBe(66.8);
     expect(top?.riskClass).toBe('very_high');
     expect(top?.rank).toBe(1);
     expect(top?.areaShare).toBeGreaterThan(0.4);
@@ -223,8 +223,10 @@ test.describe('M0 acceptance', () => {
     const rows = page.getByRole('button', { name: /risk [\d.]+ of 100/i });
     await expect(rows).toHaveCount(33);
     await expect(rows.first()).toContainText('Sivasagar');
-    await expect(rows.first()).toContainText('71.9');
+    await expect(rows.first()).toContainText('66.8');
     await expect(rows.first()).toContainText('Very high');
+    await expect(rows.first().locator('[data-depth-share]')).toBeVisible();
+    await expect(rows.first()).toContainText('Depth context');
 
     // Second skip link -> rail -> active Risk tab -> first risk row.
     await page.keyboard.press('Tab');
@@ -246,6 +248,31 @@ test.describe('M0 acceptance', () => {
 
     await page.keyboard.press('Escape');
     await expect(page.locator(':focus')).toHaveId('panel-tab-risk');
+
+    expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
+  test('coverage badge and row annotation appear for the lowest-coverage district', async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await openApp(page);
+
+    const rows = page.locator('[data-district-id]');
+    await expect(rows).toHaveCount(33);
+    const coverages = await rows.evaluateAll((nodes) =>
+      nodes.map((node) => Number(node.getAttribute('data-coverage'))),
+    );
+    const lowest = Math.min(...coverages);
+    expect(lowest, 'expected a district below the 75% coverage threshold').toBeLessThan(0.75);
+    const lowestRow = rows.nth(coverages.indexOf(lowest));
+    const badge = lowestRow.locator('[data-coverage-badge="true"]');
+    await expect(badge).toHaveCount(1);
+    await expect(badge).toContainText(/coverage \d+\.\d%/i);
+    await expect(badge).toBeVisible();
+    const note = lowestRow.locator('[data-coverage-note="true"]');
+    await expect(note).toHaveCount(1);
+    await expect(note).toHaveText('Scored on the AOI-covered share only');
 
     expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
   });

@@ -2,16 +2,21 @@
   "schema_version": "1.0.0",
   "scenario_id": "assam-monsoon-composite-v1",
   "class": "derived",
-  "generated_at": "2026-10-21T02:47:00Z",
+  "generated_at": "2026-10-21T15:47:50Z",
+  "weights_version": "area-duration-v1",
   "weights": {
-    "area_share": 0.45,
-    "duration": 0.35,
-    "depth": 0.2
+    "area_share": 0.5625,
+    "duration": 0.4375
   },
   "reference_values": {
     "area_share_saturation": 0.6,
-    "duration_saturation_days": 90.0,
-    "depth_reference_m": 4.0
+    "duration_saturation_days": 90.0
+  },
+  "risk_class_area_share": {
+    "low": 0.276617,
+    "moderate": 0.19308,
+    "high": 0.204742,
+    "very_high": 0.325561
   },
   "districts": [
     {
@@ -22,7 +27,9 @@
       "area_share": 0.401059,
       "mean_duration_days": 60.0806,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 71.944,
+      "depth_over_1_5m_share": 0.741898,
+      "median_depth_m": 3.0859,
+      "risk_score": 66.805,
       "risk_class": "very_high",
       "drivers": [
         "area",
@@ -40,8 +47,10 @@
       "area_share": 0.290703,
       "mean_duration_days": 55.4217,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 61.856,
-      "risk_class": "very_high",
+      "depth_over_1_5m_share": 0.610453,
+      "median_depth_m": 2.2222,
+      "risk_score": 54.195,
+      "risk_class": "high",
       "drivers": [
         "area",
         "duration"
@@ -58,11 +67,13 @@
       "area_share": 0.153421,
       "mean_duration_days": 81.0301,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 61.518,
-      "risk_class": "very_high",
+      "depth_over_1_5m_share": 0.751921,
+      "median_depth_m": 3.3359,
+      "risk_score": 53.773,
+      "risk_class": "high",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.930237,
       "class": "derived",
@@ -76,11 +87,13 @@
       "area_share": 0.359705,
       "mean_duration_days": 35.8888,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 59.435,
+      "depth_over_1_5m_share": 0.593972,
+      "median_depth_m": 1.8871,
+      "risk_score": 51.168,
       "risk_class": "high",
       "drivers": [
         "area",
-        "depth"
+        "duration"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -94,11 +107,13 @@
       "area_share": 0.308838,
       "mean_duration_days": 42.51,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 58.195,
+      "depth_over_1_5m_share": 0.715594,
+      "median_depth_m": 2.7823,
+      "risk_score": 49.618,
       "risk_class": "high",
       "drivers": [
         "area",
-        "depth"
+        "duration"
       ],
       "valid_area_share": 0.997395,
       "class": "derived",
@@ -112,11 +127,13 @@
       "area_share": 0.200378,
       "mean_duration_days": 63.364,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 58.17,
+      "depth_over_1_5m_share": 0.762815,
+      "median_depth_m": 3.3009,
+      "risk_score": 49.587,
       "risk_class": "high",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -130,7 +147,9 @@
       "area_share": 0.268571,
       "mean_duration_days": 48.0246,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 57.319,
+      "depth_over_1_5m_share": 0.572662,
+      "median_depth_m": 1.8969,
+      "risk_score": 48.524,
       "risk_class": "high",
       "drivers": [
         "area",
@@ -148,7 +167,9 @@
       "area_share": 0.252058,
       "mean_duration_days": 49.3127,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 56.582,
+      "depth_over_1_5m_share": 0.537408,
+      "median_depth_m": 1.7027,
+      "risk_score": 47.602,
       "risk_class": "high",
       "drivers": [
         "duration",
@@ -166,11 +187,13 @@
       "area_share": 0.105121,
       "mean_duration_days": 74.6534,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 55.416,
+      "depth_over_1_5m_share": 0.708349,
+      "median_depth_m": 3.2324,
+      "risk_score": 46.145,
       "risk_class": "high",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.914181,
       "class": "derived",
@@ -184,11 +207,13 @@
       "area_share": 0.225154,
       "mean_duration_days": 50.3749,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 54.977,
+      "depth_over_1_5m_share": 0.617523,
+      "median_depth_m": 2.1734,
+      "risk_score": 45.596,
       "risk_class": "high",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.999782,
       "class": "derived",
@@ -202,11 +227,13 @@
       "area_share": 0.111308,
       "mean_duration_days": 72.1287,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 54.898,
+      "depth_over_1_5m_share": 0.712634,
+      "median_depth_m": 3.2015,
+      "risk_score": 45.498,
       "risk_class": "high",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -220,11 +247,13 @@
       "area_share": 0.003634,
       "mean_duration_days": 114.6664,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 53.773,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.882086,
+      "median_depth_m": 3.7,
+      "risk_score": 44.091,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.466131,
       "class": "derived",
@@ -238,11 +267,13 @@
       "area_share": 0.048647,
       "mean_duration_days": 78.9461,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 52.85,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.646986,
+      "median_depth_m": 3.7,
+      "risk_score": 42.937,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.970667,
       "class": "derived",
@@ -256,11 +287,13 @@
       "area_share": 0.108568,
       "mean_duration_days": 65.8003,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 52.232,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.604416,
+      "median_depth_m": 2.5674,
+      "risk_score": 42.165,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -274,11 +307,13 @@
       "area_share": 0.202615,
       "mean_duration_days": 47.3321,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 52.103,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.671681,
+      "median_depth_m": 2.4578,
+      "risk_score": 42.004,
+      "risk_class": "moderate",
       "drivers": [
-        "depth",
-        "duration"
+        "duration",
+        "area"
       ],
       "valid_area_share": 0.964356,
       "class": "derived",
@@ -292,11 +327,13 @@
       "area_share": 0.22904,
       "mean_duration_days": 40.1948,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 51.309,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.473199,
+      "median_depth_m": 1.3874,
+      "risk_score": 41.012,
+      "risk_class": "moderate",
       "drivers": [
-        "depth",
-        "area"
+        "area",
+        "duration"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -310,11 +347,13 @@
       "area_share": 0.011114,
       "mean_duration_days": 80.3494,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 50.581,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.786585,
+      "median_depth_m": 3.7,
+      "risk_score": 40.101,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.580479,
       "class": "derived",
@@ -328,11 +367,13 @@
       "area_share": 0.139392,
       "mean_duration_days": 55.2088,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 50.424,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.632268,
+      "median_depth_m": 2.5132,
+      "risk_score": 39.906,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.999679,
       "class": "derived",
@@ -346,11 +387,13 @@
       "area_share": 0.222573,
       "mean_duration_days": 38.0268,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 49.981,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.535006,
+      "median_depth_m": 1.7114,
+      "risk_score": 39.352,
+      "risk_class": "moderate",
       "drivers": [
-        "depth",
-        "area"
+        "area",
+        "duration"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -364,11 +407,13 @@
       "area_share": 0.125875,
       "mean_duration_days": 56.0937,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 49.755,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.604692,
+      "median_depth_m": 2.0292,
+      "risk_score": 39.069,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -382,11 +427,13 @@
       "area_share": 0.172063,
       "mean_duration_days": 47.0691,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 49.709,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.651267,
+      "median_depth_m": 2.4723,
+      "risk_score": 39.012,
+      "risk_class": "moderate",
       "drivers": [
-        "depth",
-        "duration"
+        "duration",
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -400,11 +447,13 @@
       "area_share": 0.136152,
       "mean_duration_days": 52.8101,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 49.249,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.577825,
+      "median_depth_m": 1.9857,
+      "risk_score": 38.436,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -418,11 +467,13 @@
       "area_share": 0.145681,
       "mean_duration_days": 49.0241,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 48.491,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.689929,
+      "median_depth_m": 3.6537,
+      "risk_score": 37.489,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.996007,
       "class": "derived",
@@ -436,11 +487,13 @@
       "area_share": 0.120395,
       "mean_duration_days": 53.1117,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 48.184,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.569295,
+      "median_depth_m": 1.9063,
+      "risk_score": 37.105,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -454,11 +507,13 @@
       "area_share": 0.119001,
       "mean_duration_days": 52.7498,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 47.939,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.470452,
+      "median_depth_m": 1.307,
+      "risk_score": 36.799,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -472,11 +527,13 @@
       "area_share": 0.159479,
       "mean_duration_days": 43.8857,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 47.528,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.486326,
+      "median_depth_m": 1.4168,
+      "risk_score": 36.284,
+      "risk_class": "moderate",
       "drivers": [
-        "depth",
-        "duration"
+        "duration",
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -490,11 +547,13 @@
       "area_share": 0.117088,
       "mean_duration_days": 51.9175,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 47.472,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.671686,
+      "median_depth_m": 2.7959,
+      "risk_score": 36.215,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -508,11 +567,13 @@
       "area_share": 0.166967,
       "mean_duration_days": 40.4042,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 46.735,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.631722,
+      "median_depth_m": 2.3931,
+      "risk_score": 35.294,
+      "risk_class": "moderate",
       "drivers": [
-        "depth",
-        "duration"
+        "duration",
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -526,11 +587,13 @@
       "area_share": 0.069208,
       "mean_duration_days": 55.3977,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 45.234,
-      "risk_class": "high",
+      "depth_over_1_5m_share": 0.720932,
+      "median_depth_m": 3.7,
+      "risk_score": 33.418,
+      "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 1.0,
       "class": "derived",
@@ -544,11 +607,13 @@
       "area_share": 0.049062,
       "mean_duration_days": 56.2357,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 44.049,
+      "depth_over_1_5m_share": 0.583982,
+      "median_depth_m": 2.0818,
+      "risk_score": 31.936,
       "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.995167,
       "class": "derived",
@@ -562,11 +627,13 @@
       "area_share": 0.014875,
       "mean_duration_days": 60.2263,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 43.037,
+      "depth_over_1_5m_share": 0.665897,
+      "median_depth_m": 2.6639,
+      "risk_score": 30.671,
       "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.557618,
       "class": "derived",
@@ -580,11 +647,13 @@
       "area_share": 0.072102,
       "mean_duration_days": 48.1748,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 42.642,
+      "depth_over_1_5m_share": 0.670206,
+      "median_depth_m": 2.7678,
+      "risk_score": 30.178,
       "risk_class": "moderate",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.977483,
       "class": "derived",
@@ -598,11 +667,13 @@
       "area_share": 0.01031,
       "mean_duration_days": 52.2634,
       "p90_peak_depth_m": 3.7,
-      "risk_score": 39.598,
-      "risk_class": "moderate",
+      "depth_over_1_5m_share": 0.658286,
+      "median_depth_m": 2.6828,
+      "risk_score": 26.372,
+      "risk_class": "low",
       "drivers": [
         "duration",
-        "depth"
+        "area"
       ],
       "valid_area_share": 0.744241,
       "class": "derived",
@@ -611,10 +682,10 @@
   ],
   "counts": {
     "total": 33,
-    "very_high": 3,
-    "high": 26,
-    "moderate": 4,
-    "low": 0,
+    "very_high": 1,
+    "high": 10,
+    "moderate": 21,
+    "low": 1,
     "no_data": 0
   }
 }

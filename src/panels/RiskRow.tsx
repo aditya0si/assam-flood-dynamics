@@ -6,18 +6,31 @@ import styles from './panels.module.css';
 interface RiskRowProps {
   district: DistrictRiskEntry;
   selected: boolean;
+  depthShareMax: number;
+  medianDepthMax: number;
   onSelect: (districtId: string) => void;
 }
 
-const DRIVER_ORDER = ['area', 'duration', 'depth'] as const;
+const SCORED_DRIVERS = ['area', 'duration'] as const;
+const COVERAGE_BADGE_THRESHOLD = 0.75;
 
-export function RiskRow({ district, selected, onSelect }: RiskRowProps) {
-  const driverValues: Record<(typeof DRIVER_ORDER)[number], string> = {
+export function RiskRow({
+  district,
+  selected,
+  depthShareMax,
+  medianDepthMax,
+  onSelect,
+}: RiskRowProps) {
+  const driverValues: Record<(typeof SCORED_DRIVERS)[number], string> = {
     area: `${formatArea(district.peak_flooded_area_km2)} km²`,
     duration: `${formatDays(district.mean_duration_days)} d`,
-    depth: `${formatDepthValue(district.p90_peak_depth_m)} m`,
   };
   const color = riskClassColor(district.risk_class);
+  // P0.3: below 75% valid coverage the score is computed on a minority of the
+  // district and must say so next to the score and on the row.
+  const lowCoverage = district.valid_area_share < COVERAGE_BADGE_THRESHOLD;
+  const depthShareWidth = Math.min(100, (district.depth_over_1_5m_share / depthShareMax) * 100);
+  const medianDepthWidth = Math.min(100, (district.median_depth_m / medianDepthMax) * 100);
 
   return (
     <button
@@ -31,12 +44,24 @@ export function RiskRow({ district, selected, onSelect }: RiskRowProps) {
       data-district-id={district.district_id}
       data-rank={district.rank}
       data-score={formatScore(district.risk_score)}
+      data-coverage={district.valid_area_share}
     >
       <span className={styles.riskRank}>{district.rank}</span>
       <span className={styles.riskBody}>
         <span className={styles.riskTitleRow}>
           <span className={styles.riskName}>{district.name}</span>
-          <span className={styles.riskScore}>{formatScore(district.risk_score)}</span>
+          <span className={styles.riskScoreGroup}>
+            <span className={styles.riskScore}>{formatScore(district.risk_score)}</span>
+            {lowCoverage ? (
+              <span
+                className={styles.riskCoverageBadge}
+                data-coverage-badge="true"
+                title="Share of district area with valid analysis cells"
+              >
+                coverage {formatPercent(district.valid_area_share)}
+              </span>
+            ) : null}
+          </span>
         </span>
         <span className={styles.riskClassRow}>
           <span className={styles.riskClassDot} style={{ background: color }} aria-hidden="true" />
@@ -44,14 +69,14 @@ export function RiskRow({ district, selected, onSelect }: RiskRowProps) {
           <span className={styles.riskAreaShare}>
             {formatPercent(district.area_share)} of district area
           </span>
-          {district.valid_area_share < 1 ? (
-            <span className={styles.riskCoverage} title="Share of district area with valid analysis cells">
-              {formatPercent(district.valid_area_share)} coverage
+          {lowCoverage ? (
+            <span className={styles.riskCoverageNote} data-coverage-note="true">
+              Scored on the AOI-covered share only
             </span>
           ) : null}
         </span>
         <span className={styles.driverGrid}>
-          {DRIVER_ORDER.map((driver) => (
+          {SCORED_DRIVERS.map((driver) => (
             <span
               key={driver}
               className={styles.driver}
@@ -62,6 +87,30 @@ export function RiskRow({ district, selected, onSelect }: RiskRowProps) {
               <span className={styles.driverValue}>{driverValues[driver]}</span>
             </span>
           ))}
+        </span>
+        <span
+          className={styles.depthContext}
+          aria-label={`Depth context for ${district.name}, reported but not scored`}
+          data-depth-share={district.depth_over_1_5m_share}
+          data-median-depth={district.median_depth_m}
+        >
+          <span className={styles.depthContextLabel}>Depth context · reported, not scored</span>
+          <span className={styles.contextMetric}>
+            <span className={styles.contextMetricLabel}>Depth &gt;1.5 m</span>
+            <span className={styles.contextTrack} aria-hidden="true">
+              <span className={styles.contextFill} style={{ width: `${depthShareWidth}%` }} />
+            </span>
+            <span className={styles.contextValue}>
+              {formatPercent(district.depth_over_1_5m_share)}
+            </span>
+          </span>
+          <span className={styles.contextMetric}>
+            <span className={styles.contextMetricLabel}>Median depth</span>
+            <span className={styles.contextTrack} aria-hidden="true">
+              <span className={styles.contextFill} style={{ width: `${medianDepthWidth}%` }} />
+            </span>
+            <span className={styles.contextValue}>{formatDepthValue(district.median_depth_m)} m</span>
+          </span>
         </span>
       </span>
     </button>

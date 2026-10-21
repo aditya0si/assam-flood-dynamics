@@ -74,10 +74,10 @@
       "vector_min_wet_fraction": 0.45
     },
     "district": {
+      "weights_version": "area-duration-v1",
       "area_share_saturation": 0.60,
       "duration_saturation_days": 90,
-      "depth_reference_m": 4.0,
-      "weights": { "area_share": 0.45, "duration": 0.35, "depth": 0.20 },
+      "weights": { "area_share": 0.5625, "duration": 0.4375 },
       "thresholds": { "very_high": 60, "high": 45, "moderate": 30 }
     },
     "hotspots": {

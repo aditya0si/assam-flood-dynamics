@@ -14,6 +14,10 @@ export function RiskPanel({ risk }: RiskPanelProps) {
   const selectedDistrictId = useSelectionStore((state) => state.selectedDistrictId);
   const selectDistrict = useSelectionStore((state) => state.selectDistrict);
   const districts = rankedDistricts(risk);
+  // Context bars are relative to the strongest district for each metric, so
+  // they never imply a scoring reference value.
+  const depthShareMax = Math.max(...districts.map((district) => district.depth_over_1_5m_share), 1e-9);
+  const medianDepthMax = Math.max(...districts.map((district) => district.median_depth_m), 1e-9);
 
   return (
     <div className={styles.panelBody}>
@@ -30,10 +34,11 @@ export function RiskPanel({ risk }: RiskPanelProps) {
         </p>
         <p className={styles.formulaNote}>
           Score = {formatPercent(risk.weights.area_share)} area share +{' '}
-          {formatPercent(risk.weights.duration)} duration + {formatPercent(risk.weights.depth)} peak
-          depth. Area saturates at {formatPercent(risk.reference_values.area_share_saturation)}; duration
-          at {risk.reference_values.duration_saturation_days} days; depth at{' '}
-          {risk.reference_values.depth_reference_m} m.
+          {formatPercent(risk.weights.duration)} duration. Area saturates at{' '}
+          {formatPercent(risk.reference_values.area_share_saturation)}; duration at{' '}
+          {risk.reference_values.duration_saturation_days} days. Two drivers are scored: peak depth
+          is reported below as context, not scored, because bathtub depth saturates at the stage.
+          Weights {risk.weights_version}.
         </p>
       </div>
 
@@ -58,6 +63,8 @@ export function RiskPanel({ risk }: RiskPanelProps) {
             <RiskRow
               district={district}
               selected={selectedDistrictId === district.district_id}
+              depthShareMax={depthShareMax}
+              medianDepthMax={medianDepthMax}
               onSelect={(districtId) =>
                 selectDistrict(selectedDistrictId === districtId ? null : districtId)
               }

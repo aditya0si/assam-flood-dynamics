@@ -75,7 +75,7 @@ Priorities: **P0** = required for the vertical slice, **P1** = parity build afte
 | P0-03 | Fire perimeter / burn scar (dNBR) | Scenario flood extent per step, filled by **depth band** (`0–0.5`, `0.5–1.5`, `1.5–3`, `3+ m`) | **P0** | Direct stand-in for the perimeter/scar pair; depth is the analogue of burn severity. |
 | P0-04 | Date scrubber, play/pause/step | 12-step scenario timeline with play/pause, step, scrub, speed 0.5×/1×/2× | **P0** | The causal story is temporal; this is the spine of the app. |
 | P0-05 | Weather & fire behaviour + area/RoS charts | Monsoon rainfall, scenario stage above local drainage vs scenario threshold, inundated area (km²) — three synced charts | **P0** | Makes the rainfall→stage→area lag legible, not merely decorative. |
-| P0-06 | Fire spread probability (DEM-derived) | HAND/duration risk zones + district risk ranking, with drivers | **P0** | The “where is it going / where does it hurt” question, answered from terrain with no invented demographics. |
+| P0-06 | Fire spread probability (DEM-derived) | HAND/duration risk zones + district risk ranking on two scored drivers (area share 0.5625, duration 0.4375), with peak depth reported as context; coverage badge below 75% valid area | **P0** | The “where is it going / where does it hurt” question, answered from terrain with no invented demographics. |
 | P0-07 | Layers rail with opacity and base-mode switch | Layer registry + visibility/opacity for flood, risk, rivers, districts, hillshade/imagery; no map re-init | **P0** | Reviewers test layer controls first; it also proves the registry is real. |
 | P0-08 | Incident overview (name, agency id, size, containment) | **Model & provenance overview**: scenario id, step, stage, area, source→stage→file, assumptions, `NOT A FORECAST` | **P0** | The honesty rules require provenance and labels; there is no agency/incident id to show. |
 | P0-09 | Graceful operation when tiles fail | Committed hillshade + all vector overlays; terrain/imagery degraded states in status bar | **P0** | Hard constraint: meaningful render when tile servers are unreachable. |
@@ -98,6 +98,14 @@ Priorities: **P0** = required for the vertical slice, **P1** = parity build afte
 **P0 feature count: 9.** The vertical slice M0 implements eight of the nine (all except P0-07,
 the full layer control rail); M1 closes P0-07 and adds P1. This split is defined in
 `docs/MILESTONES.md`.
+
+<!-- amended: PHASE-0 -->
+P0-06 is amended by Phase 0: the district score has **two** scored drivers, area share 0.5625 and
+duration 0.4375 (`weights_version: area-duration-v1`). Bathtub peak depth saturates at the
+scenario stage, so `p90_peak_depth_m` is constant across districts and is reported as context
+(median depth and share >1.5 m) rather than scored. `risk_class_area_share` publishes per-cell
+class shares over wet-at-peak area, and the Risk panel annotates districts below 75% valid
+coverage.
 
 ---
 
@@ -877,6 +885,19 @@ These are product requirements, not documentation decoration.
    that no gauge record was used.
 7. **No real-person data** of any kind. OSM facility names (P1) are organisational/place names
    from a public map, not personal data, and are attributed.
+8. **No inert driver is presented as scored.** The district risk formula has two scored drivers
+   (area share 0.5625 and duration 0.4375, `weights_version: area-duration-v1`). Phase 0 removed
+   the 20% depth weight because bathtub peak depth is capped by the scenario stage and was 3.7 m
+   for every district; depth is now reported as context bars (`median_depth_m`,
+   `depth_over_1_5m_share`) and the UI says why it is not scored. The published `weights` are the
+   values the code applies. A district below 75% valid coverage carries a `coverage …%` badge and
+   the annotation `Scored on the AOI-covered share only`; `risk_class_area_share` documents its
+   wet-at-peak denominator so class-width claims are answerable from committed data.
+
+<!-- amended: PHASE-0 -->
+Item 8 above and the P0-06 amendment in §3 are the Phase 0 honesty changes: two live drivers, an
+explicit non-scored depth context, and a coverage caveat that is visible before a district can be
+read as a complete-area score.
 
 ---
 

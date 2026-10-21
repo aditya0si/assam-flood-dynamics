@@ -154,7 +154,7 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
             "id": "risk",
             "dataset": "Scenario-conditional risk zones and district ranking",
             "class": "derived",
-            "source_name": "Derived from HAND, scenario duration/depth and Assam districts",
+            "source_name": "Derived from HAND, scenario duration and peak-depth context, and Assam districts",
             "source_url": boundaries["api_url"],
             "licence": "Derived output; source licences as recorded for terrain, boundaries and rivers",
             "fetched_at": _fetched_at(fragments, "10"),
@@ -162,7 +162,7 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
             "output_paths": present(
                 "data/risk/risk-zones.geojson", "data/risk/district-risk.json"
             ),
-            "notes": "Cell risk weights HAND 0.60 and duration 0.40; district score weights area share 0.45, duration 0.35, p90 peak depth 0.20. No population, asset loss, agency or incident field exists.",
+            "notes": "Cell risk weights HAND 0.60 and duration 0.40; district score weights area share 0.5625 and duration 0.4375 (weights_version area-duration-v1, two drivers). Bathtub peak depth is limited by the stage, so it is reported as context (median depth and share >1.5 m) but not scored. risk_class_area_share is the per-cell class area share over all cells wet at peak S07. No population, asset loss, agency or incident field exists.",
         },
         {
             "id": "series",

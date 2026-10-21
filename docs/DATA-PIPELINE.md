@@ -446,6 +446,7 @@ python -m baanh_pipeline.cli build-inundation `
 ### Stage 10 — risk zones, district ranking, hotspots
 
 <!-- amended: REVIEW-02 -->
+<!-- amended: PHASE-0 -->
 
 ```powershell
 python -m baanh_pipeline.cli build-risk `
@@ -464,13 +465,17 @@ python -m baanh_pipeline.cli build-risk `
 - **Input:** per-step uint8 wet masks; HAND/distance/channel mask; district polygons; scenario.
 - **Process:** read each step’s mask, reconstruct depth as `stage_m - HAND` only where wet,
   accumulate duration and peak depth, classify risk zones, aggregate district metrics and score,
-  join risk fields into the district GeoJSON, extract low-HAND distant pockets for hotspots. Full
-  formulas in §9. No float stack is read.
+  join risk fields into the district GeoJSON, extract low-HAND distant pockets for hotspots. The
+  Phase 0 pass also computes per-district peak depth context (`depth_over_1_5m_share`,
+  `median_depth_m`) and `risk_class_area_share` over wet-at-peak area. Full formulas in §9. No
+  float stack is read.
 - **Output:** `risk-zones.geojson` (≤0.9 MB), `district-risk.json` (≤0.15 MB),
   `assam-districts.geojson` (≤1.2 MB), `hotspots.geojson` (≤0.10 MB).
 - **Validation:** all scores 0–100; every district appears once in the ranking; `rank` is a
   dense descending ranking; no population/asset-loss field; hotspots inside Assam; zone classes
-  match the score thresholds.
+  match the score thresholds; district weights sum to 1.0 and are the values the score actually
+  multiplies; `depth_over_1_5m_share` is not constant; the four `risk_class_area_share` values
+  sum to 1.0 ± 0.01.
 
 ### Stage 11 — monsoon series and cross-sections
 
@@ -975,17 +980,25 @@ cartographic generalisation required by the size cap, not a change to the risk f
 
 ### 6.10 `risk/district-risk.json`
 
+<!-- amended: PHASE-0 -->
+
 ```json
 {
   "schema_version": "1.0.0",
   "scenario_id": "assam-monsoon-composite-v1",
   "class": "derived",
   "generated_at": "2026-10-21T00:00:00Z",
-  "weights": { "area_share": 0.45, "duration": 0.35, "depth": 0.20 },
+  "weights_version": "area-duration-v1",
+  "weights": { "area_share": 0.5625, "duration": 0.4375 },
   "reference_values": {
     "area_share_saturation": 0.60,
-    "duration_saturation_days": 90,
-    "depth_reference_m": 4.0
+    "duration_saturation_days": 90
+  },
+  "risk_class_area_share": {
+    "low": 0.0,
+    "moderate": 0.0,
+    "high": 0.0,
+    "very_high": 0.0
   },
   "districts": [
     {
@@ -997,6 +1010,8 @@ cartographic generalisation required by the size cap, not a change to the risk f
       "area_share": 0.0,
       "mean_duration_days": 0.0,
       "p90_peak_depth_m": 0.0,
+      "depth_over_1_5m_share": 0.0,
+      "median_depth_m": 0.0,
       "risk_score": 0.0,
       "risk_class": "very_high",
       "drivers": ["area", "duration"],
@@ -1008,8 +1023,23 @@ cartographic generalisation required by the size cap, not a change to the risk f
 }
 ```
 
-`drivers` is a deterministic array of the top two weighted contributions, labels `area`,
-`duration`, `depth`. No demographic field exists.
+- `weights_version` names the applied weight set. `weights` contains exactly the two scored
+  drivers and sums to 1.0. The depth weight is absent: bathtub peak depth saturates at the stage,
+  so it is reported as context and never multiplied into the score.
+- `risk_class_area_share` is the **area share of the four per-cell risk classes over all analysis
+  cells wet at the peak step (S07) with valid HAND inside AOI v2**. The denominator is peak wet
+  area, not district polygon area and not all wet cells from every step; the four values therefore
+  sum to 1.0. This is the explicit denominator the panel review asked for.
+- `depth_over_1_5m_share` is the count share of the district's cells wet at peak whose bathtub
+  depth is strictly greater than 1.5 m. `median_depth_m` is the plain median depth over the same
+  wet cells. Both are reported context bars in the Risk panel; neither is scored.
+- `p90_peak_depth_m` remains published for continuity, but it is 3.7 m for every district at the
+  peak step because the bathtub surface is capped by the 3.7 m stage.
+- `drivers` is a deterministic array of the top two weighted contributions, labels `area`,
+  `duration`. No demographic field exists.
+- `valid_area_share` is the share of the district's raster cells with valid HAND. The UI shows a
+  `coverage …%` badge and the row annotation `Scored on the AOI-covered share only` when it is
+  below 0.75.
 
 ### 6.11 `risk/hotspots.geojson` (P1)
 
@@ -1504,6 +1534,8 @@ conflated in the UI.
 
 ### 9.1 Per-cell hazard → risk zones
 
+<!-- amended: PHASE-0 -->
+
 Only cells wet in at least one step are classified. For a cell:
 
 ```text
@@ -1526,6 +1558,14 @@ Class thresholds:
 | `moderate` | 40 – <55 |
 | `low` | < 40 |
 
+<!-- amended: PHASE-0 -->
+
+The same per-cell classes are summarised in `district-risk.json` as
+`risk_class_area_share`. Its denominator is the **area of all analysis cells wet at the peak step
+(S07) with valid HAND**, not the district polygon area and not the union of every step. The four
+shares (`low`, `moderate`, `high`, `very_high`) cover that denominator and sum to 1.0. This
+publishes the denominator the panel review found missing; it is not a district score.
+
 Polygonise the classified raster, simplify at 100 m, drop polygons < 0.05 km². A polygon’s
 `risk_score` is the area-weighted mean cell score; its class is the class of that mean, and
 because polygonisation is per class the mean stays inside the class band. If a merged polygon
@@ -1537,24 +1577,33 @@ coverage are reported in `docs/PIPELINE-REPORT.md`.
 
 ### 9.2 District aggregation → ranking
 
+<!-- amended: PHASE-0 -->
+
 For district `d`:
 
 ```text
 area_share = min(peak_flooded_area_km2 / district_area_km2, 1.0)
 A = min(area_share / 0.60, 1)
 D = min(mean_duration_days / 90, 1)
-H = min(p90_peak_depth_m / 4.0, 1)
 
-risk_score = 100 × (0.45×A + 0.35×D + 0.20×H)
+risk_score = 100 × (0.5625×A + 0.4375×D)
 ```
 
 - `peak_flooded_area_km2` is the maximum wet area within the district over the 12 steps.
 - `district_area_km2` is the geodesic source-polygon area, not the raster cell count.
 - `mean_duration_days` is area-weighted over cells ever wet; dry cells are excluded from the
   mean (otherwise large dry districts would look safer than they are).
-- `p90_peak_depth_m` is the area-weighted 90th percentile of depth at the peak step (S07).
+- `p90_peak_depth_m` is the area-weighted 90th percentile of depth at the peak step (S07). It is
+  **reported but not scored**: in the bathtub convention the peak depth is capped by the 3.7 m
+  scenario stage, so every district records the same value. The two scored weights are the
+  previous 45% and 35% weights re-normalised over their 80% live total (`0.45 / 0.80 = 0.5625`,
+  `0.35 / 0.80 = 0.4375`); `weights_version` is `area-duration-v1`.
+- `depth_over_1_5m_share` is the count share of the district’s cells wet at peak with depth
+  strictly greater than 1.5 m; `median_depth_m` is the plain median depth over those wet cells.
+  Both are reported context, not score inputs.
 - `valid_area_share` is the share of the district’s raster cells with valid HAND; it is a
-  coverage caveat, **not** part of the score.
+  coverage caveat, **not** part of the score. The Risk panel shows a `coverage …%` badge and the
+  row annotation `Scored on the AOI-covered share only` when it is below 0.75.
 
 Why different weights from §9.1: the cell score is a terrain-hazard index (HAND dominates); the
 district score is an aggregate exposure index where the share of district area actually wet is
@@ -1572,8 +1621,10 @@ Class thresholds:
 Ranking: sort by `risk_score` descending, then `name` ascending for ties. `rank` is dense
 (1..N); districts with no valid cells or zero peak area get `risk_score: null`, `rank: null`,
 `risk_class: null`, and are omitted from the ranked positions. They are counted in
-`counts.no_data` so the total is still auditable. `drivers` is the two largest of `0.45A`,
-`0.35D`, `0.20H`; ties break in the order area, duration, depth.
+`counts.no_data` so the total is still auditable. `drivers` is the two largest of `0.5625A`,
+`0.4375D`; ties break in the order area, duration. Removing the constant depth term shifts every
+score but cannot reorder the ranking; the Phase 0 regeneration preserved the order and the class
+thresholds above.
 
 No demographics, population, buildings, roads, crop value, or casualty data enters the formula.
 The output is explicitly “scenario-conditional terrain risk”, not expected loss.
@@ -1659,8 +1710,17 @@ Additional assertions inside stages:
 - `build-inundation`: rising-limb and recession areas exact non-decreasing/non-increasing; peak
   at S07; peak extent inside V-A4; peak depth inside V-A5; per-step masks and PNGs written; no
   float stack, no `inundation-stack.npz` and no per-band GeoJSON.
-- `build-risk`: districts with zero valid cells do not receive a score; hotspot count ≤20.
+- `build-risk`: districts with zero valid cells do not receive a score; hotspot count ≤20;
+  published district weights sum to 1.0 and are the values applied to every score;
+  `depth_over_1_5m_share` has more than one distinct value; `risk_class_area_share` sums to 1.0.
 - `publish`: refuses on a dirty/partial data directory or missing report.
+
+<!-- amended: PHASE-0 -->
+
+`node scripts/check-data.mjs` repeats the three Phase 0 assertions against the committed file:
+the published `weights` sum to 1.0 and reproduce every `risk_score`; the 33
+`depth_over_1_5m_share` values are not constant; and the four `risk_class_area_share` values sum
+to 1.0 ± 0.01.
 
 `validation-report.json` itself is validated (status, checks array, counts) and is committed so
 the provenance panel can show the last run. Warnings are displayed in the panel; they are not

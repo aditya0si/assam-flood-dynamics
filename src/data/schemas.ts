@@ -212,6 +212,10 @@ export const districtRiskEntrySchema = z.object({
   area_share: z.number(),
   mean_duration_days: z.number(),
   p90_peak_depth_m: z.number(),
+  /** P0.2: share of the district's cells wet at peak whose depth exceeds 1.5 m. */
+  depth_over_1_5m_share: z.number(),
+  /** P0.2: median depth over the district's cells wet at peak, in metres. */
+  median_depth_m: z.number(),
   risk_score: z.number(),
   risk_class: z.string(),
   drivers: z.array(z.string()),
@@ -225,15 +229,25 @@ export const districtRiskSchema = z.object({
   scenario_id: z.string(),
   class: z.string(),
   generated_at: z.string(),
+  weights_version: z.string(),
   weights: z.object({
     area_share: z.number(),
     duration: z.number(),
-    depth: z.number(),
   }),
   reference_values: z.object({
     area_share_saturation: z.number(),
     duration_saturation_days: z.number(),
-    depth_reference_m: z.number(),
+  }),
+  /**
+   * P0.4: area share per per-cell risk class over all cells wet at the peak
+   * step (S07) with valid HAND. The denominator is peak wet area, not
+   * district polygon area, so the four shares sum to 1.
+   */
+  risk_class_area_share: z.object({
+    low: z.number(),
+    moderate: z.number(),
+    high: z.number(),
+    very_high: z.number(),
   }),
   districts: z.array(districtRiskEntrySchema),
   counts: z.record(z.string(), z.number()),

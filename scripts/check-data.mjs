@@ -282,7 +282,57 @@ check('risk ranking: 33 dense ranks, finite scores 0-100, counts agree', () => {
   }
   const top = [...risk.districts].sort((a, b) => a.rank - b.rank)[0];
   assert(top.name === 'Sivasagar', `top district is ${top.name}, expected Sivasagar`);
-  close(top.risk_score, 71.944, 1e-9, 'top district score');
+  close(top.risk_score, 66.805, 1e-9, 'top district score');
+});
+
+check('P0.1 risk weights: two drivers sum to 1.0 and are the applied weights', () => {
+  assert(
+    typeof risk.weights_version === 'string' && risk.weights_version.length > 0,
+    'weights_version is missing',
+  );
+  assert(!('depth' in risk.weights), 'risk.weights must not contain a depth driver');
+  close(risk.weights.area_share, 0.5625, 1e-12, 'area weight');
+  close(risk.weights.duration, 0.4375, 1e-12, 'duration weight');
+  close(risk.weights.area_share + risk.weights.duration, 1.0, 1e-12, 'weights sum');
+
+  const references = risk.reference_values;
+  for (const district of risk.districts) {
+    const areaTerm = Math.min(district.area_share / references.area_share_saturation, 1);
+    const durationTerm = Math.min(
+      district.mean_duration_days / references.duration_saturation_days,
+      1,
+    );
+    const expected = 100 * (risk.weights.area_share * areaTerm + risk.weights.duration * durationTerm);
+    close(district.risk_score, expected, 1e-3, `${district.name} applied score`);
+  }
+});
+
+check('P0.2 depth context varies across the 33 districts', () => {
+  const shares = risk.districts.map((district) => district.depth_over_1_5m_share);
+  const distinct = new Set(shares.map((value) => value.toFixed(6)));
+  assert(distinct.size > 1, `depth_over_1_5m_share is constant at ${shares[0]}`);
+  for (const district of risk.districts) {
+    assert(
+      Number.isFinite(district.depth_over_1_5m_share) &&
+        district.depth_over_1_5m_share >= 0 &&
+        district.depth_over_1_5m_share <= 1,
+      `${district.name}: invalid depth_over_1_5m_share`,
+    );
+    assert(
+      Number.isFinite(district.median_depth_m) && district.median_depth_m >= 0,
+      `${district.name}: invalid median_depth_m`,
+    );
+  }
+});
+
+check('P0.4 risk class area shares over wet-at-peak cells sum to 1.0', () => {
+  const shares = risk.risk_class_area_share;
+  let sum = 0;
+  for (const key of ['low', 'moderate', 'high', 'very_high']) {
+    assert(Number.isFinite(shares[key]) && shares[key] >= 0 && shares[key] <= 1, `invalid ${key} share`);
+    sum += shares[key];
+  }
+  close(sum, 1.0, 0.01, 'risk class area share sum');
 });
 
 check('V-A1 AOI v2 area inside the 45,000-56,000 km2 band', () => {

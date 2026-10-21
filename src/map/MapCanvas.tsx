@@ -146,8 +146,8 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     const topDistrictProbe = top
       ? Object.freeze({
           name: top.name,
-          // The hook carries the display score the rail shows (71.9) plus the
-          // committed value (71.944) so either assertion is possible.
+          // The hook carries the display score the rail shows (66.8) plus the
+          // committed value (66.805) so either assertion is possible.
           score: Number(formatScore(top.risk_score)),
           riskScore: top.risk_score,
           scoreLabel: formatScore(top.risk_score),
@@ -585,7 +585,7 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
             : 'Flood extent hidden in Layers; depth classes still from frame-index.json.'}
         </p>
         <p className={styles.markerKey}>
-          District markers: <strong>#1 · 71.9</strong> = rank · district risk score 0–100; rank
+          District markers: <strong>#1 · 66.8</strong> = rank · district risk score 0–100; rank
           matches the Risk panel.
         </p>
       </div>

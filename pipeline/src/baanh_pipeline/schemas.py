@@ -445,8 +445,10 @@ DISTRICT_RISK_SCHEMA = {
         "scenario_id",
         "class",
         "generated_at",
+        "weights_version",
         "weights",
         "reference_values",
+        "risk_class_area_share",
         "districts",
         "counts",
     ],
@@ -455,8 +457,41 @@ DISTRICT_RISK_SCHEMA = {
         "scenario_id": {"type": "string"},
         "class": {"const": "derived"},
         "generated_at": {"type": "string"},
-        "weights": {"type": "object"},
-        "reference_values": {"type": "object"},
+        "weights_version": {"type": "string", "minLength": 1},
+        "weights": {
+            "type": "object",
+            "required": ["area_share", "duration"],
+            "properties": {
+                "area_share": {"type": "number", "minimum": 0, "maximum": 1},
+                "duration": {"type": "number", "minimum": 0, "maximum": 1},
+            },
+            "additionalProperties": False,
+        },
+        "reference_values": {
+            "type": "object",
+            "required": ["area_share_saturation", "duration_saturation_days"],
+            "properties": {
+                "area_share_saturation": {"type": "number", "minimum": 0},
+                "duration_saturation_days": {"type": "number", "minimum": 0},
+            },
+        },
+        "risk_class_area_share": {
+            "type": "object",
+            "description": (
+                "Area share of the four per-cell risk classes over all analysis cells "
+                "wet at the scenario peak step (S07) with valid HAND in AOI v2. The "
+                "denominator is peak wet area, not district polygon area; the four "
+                "shares sum to 1."
+            ),
+            "required": ["low", "moderate", "high", "very_high"],
+            "properties": {
+                "low": {"type": "number", "minimum": 0, "maximum": 1},
+                "moderate": {"type": "number", "minimum": 0, "maximum": 1},
+                "high": {"type": "number", "minimum": 0, "maximum": 1},
+                "very_high": {"type": "number", "minimum": 0, "maximum": 1},
+            },
+            "additionalProperties": False,
+        },
         "districts": {
             "type": "array",
             "minItems": 1,
@@ -471,6 +506,8 @@ DISTRICT_RISK_SCHEMA = {
                     "area_share",
                     "mean_duration_days",
                     "p90_peak_depth_m",
+                    "depth_over_1_5m_share",
+                    "median_depth_m",
                     "risk_score",
                     "risk_class",
                     "drivers",
@@ -486,9 +523,11 @@ DISTRICT_RISK_SCHEMA = {
                     "area_share": {"type": "number", "minimum": 0, "maximum": 1},
                     "mean_duration_days": {"type": "number"},
                     "p90_peak_depth_m": {"type": "number"},
+                    "depth_over_1_5m_share": {"type": "number", "minimum": 0, "maximum": 1},
+                    "median_depth_m": {"type": "number", "minimum": 0},
                     "risk_score": {"type": "number", "minimum": 0, "maximum": 100},
                     "risk_class": {"enum": RISK_CLASSES},
-                    "drivers": {"type": "array", "maxItems": 2, "items": {"enum": ["area", "duration", "depth"]}},
+                    "drivers": {"type": "array", "maxItems": 2, "items": {"enum": ["area", "duration"]}},
                     "valid_area_share": {"type": "number", "minimum": 0, "maximum": 1},
                     "class": {"const": "derived"},
                 },

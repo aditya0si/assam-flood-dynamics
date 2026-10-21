@@ -61,6 +61,20 @@ def _class_from_thresholds(score: float, thresholds: dict[str, float]) -> str:
     return "low"
 
 
+def _cell_class_codes(score: np.ndarray, thresholds: dict[str, float]) -> np.ndarray:
+    """Map a cell score to the same class bands as ``_class_from_thresholds``.
+
+    Code 1 is very high and code 4 is low, matching ``CLASS_NAMES``. Unlike
+    ``_classify_cells`` this keeps the low class instead of leaving it at the
+    dry sentinel, because the class-area share explicitly counts low cells.
+    """
+    out = np.full(score.shape, 4, dtype=np.uint8)
+    out[score >= thresholds["moderate"]] = 3
+    out[score >= thresholds["high"]] = 2
+    out[score >= thresholds["very_high"]] = 1
+    return out
+
+
 def _district_class(score: float, cfg: Config) -> str:
     return _class_from_thresholds(score, cfg.pipeline["risk"]["district"]["thresholds"])
 
@@ -445,15 +459,39 @@ def run(
         peak_step_wet, peak_stage - hand, np.float32(0.0)
     ).astype(np.float32)
     p90_depth = np.zeros(n_districts, dtype=np.float64)
+    depth_over_1_5m_share = np.zeros(n_districts, dtype=np.float64)
+    median_depth = np.zeros(n_districts, dtype=np.float64)
     for index in range(n_districts):
-        mask = (district_raster == index + 1) & peak_step_wet
+        mask = (district_raster == index + 1) & peak_step_wet & valid_hand
         if not mask.any():
             continue
         values = peak_step_depth[mask].astype(np.float64)
         weights_cells = area_2d[mask].astype(np.float64)
         p90_depth[index] = _weighted_percentile(values, weights_cells, 0.90)
+        # P0.2: reported depth context. Count share over the district's wet
+        # cells at peak; median is the plain median over the same cells.
+        depth_over_1_5m_share[index] = float(np.mean(values > 1.5))
+        median_depth[index] = float(np.median(values))
+
+    # P0.4: area share of per-cell risk classes over cells wet at the peak step.
+    # The denominator is the peak wet area with valid HAND in AOI v2, not the
+    # district polygon area; the four shares therefore sum to 1.
+    peak_valid = peak_step_wet & valid_hand
+    peak_area_total = float(area_2d[peak_valid].sum())
+    if peak_area_total <= 0:
+        raise RuntimeError("stage 10: no valid wet-at-peak area for class shares")
+    peak_class_codes = _cell_class_codes(cell_risk, cell_cfg["thresholds"])
+    risk_class_area_share = {}
+    for name, code in (("low", 4), ("moderate", 3), ("high", 2), ("very_high", 1)):
+        class_area = float(area_2d[peak_valid & (peak_class_codes == code)].sum())
+        risk_class_area_share[name] = round(class_area / peak_area_total, 6)
 
     district_cfg = risk_cfg["district"]
+    district_weight_sum = sum(float(value) for value in district_cfg["weights"].values())
+    if abs(district_weight_sum - 1.0) > 1e-9:
+        raise RuntimeError(
+            f"stage 10: district weights sum to {district_weight_sum}, expected 1.0"
+        )
     scores = np.full(n_districts, np.nan)
     classes = [None] * n_districts
     drivers: list[list[str]] = [[] for _ in range(n_districts)]
@@ -465,20 +503,17 @@ def run(
         area_share_arr[index] = area_share
         a_term = min(area_share / float(district_cfg["area_share_saturation"]), 1.0)
         d_term = min(mean_duration[index] / float(district_cfg["duration_saturation_days"]), 1.0)
-        h_term = min(p90_depth[index] / float(district_cfg["depth_reference_m"]), 1.0)
         score = 100.0 * (
             float(district_cfg["weights"]["area_share"]) * a_term
             + float(district_cfg["weights"]["duration"]) * d_term
-            + float(district_cfg["weights"]["depth"]) * h_term
         )
         scores[index] = min(100.0, max(0.0, score))
         classes[index] = _class_from_thresholds(scores[index], district_cfg["thresholds"])
         contributions = [
             ("area", float(district_cfg["weights"]["area_share"]) * a_term),
             ("duration", float(district_cfg["weights"]["duration"]) * d_term),
-            ("depth", float(district_cfg["weights"]["depth"]) * h_term),
         ]
-        contributions.sort(key=lambda item: (-item[1], ["area", "duration", "depth"].index(item[0])))
+        contributions.sort(key=lambda item: (-item[1], ["area", "duration"].index(item[0])))
         drivers[index] = [name for name, value in contributions[:2] if value > 0]
 
     ranked = [
@@ -509,6 +544,8 @@ def run(
                 "area_share": round(float(area_share_arr[index]), 6),
                 "mean_duration_days": round(float(mean_duration[index]), 4),
                 "p90_peak_depth_m": round(float(p90_depth[index]), 4),
+                "depth_over_1_5m_share": round(float(depth_over_1_5m_share[index]), 6),
+                "median_depth_m": round(float(median_depth[index]), 4),
                 "risk_score": risk_score,
                 "risk_class": risk_class,
                 "drivers": drivers[index],
@@ -537,12 +574,13 @@ def run(
         "scenario_id": scenario.scenario_id,
         "class": "derived",
         "generated_at": utc_now(),
+        "weights_version": str(district_cfg["weights_version"]),
         "weights": dict(district_cfg["weights"]),
         "reference_values": {
             "area_share_saturation": float(district_cfg["area_share_saturation"]),
             "duration_saturation_days": float(district_cfg["duration_saturation_days"]),
-            "depth_reference_m": float(district_cfg["depth_reference_m"]),
         },
+        "risk_class_area_share": risk_class_area_share,
         "districts": [{**d, "rank": rank_by_id[d["district_id"]]} for d in ranked_out],
         "counts": counts,
     }
@@ -688,6 +726,11 @@ def run(
             )
     if len(hotspot_features) > int(hotspot_cfg["max_count"]):
         raise RuntimeError("stage 10: too many hotspots")
+    share_sum = sum(risk_class_area_share.values())
+    if abs(share_sum - 1.0) > 0.01:
+        raise RuntimeError(f"stage 10: risk class area shares sum to {share_sum}, expected 1.0")
+    if len({round(float(value), 6) for value in depth_over_1_5m_share}) < 2:
+        raise RuntimeError("stage 10: depth_over_1_5m_share is constant across districts")
 
     stage.out(out_zones, out_ranking, out_districts, out_hotspots)
     stage.metric("zone_count", len(zone_features))
@@ -696,6 +739,8 @@ def run(
     stage.metric("ranked_districts", len(ranked))
     stage.metric("hotspot_count", len(hotspot_features))
     stage.metric("max_district_score", round(float(np.nanmax(scores)), 3))
+    stage.metric("depth_over_1_5m_share_distinct", len({round(float(value), 6) for value in depth_over_1_5m_share}))
+    stage.metric("risk_class_area_share", risk_class_area_share)
     stage.metric("zone_simplify_m", zone_tolerance)
     stage.metric("zone_block_factor", block_factor)
     stage.metric("zone_grid_m", zone_grid_m)
@@ -704,9 +749,12 @@ def run(
         "in >=1 step; risk zones vectorised on a block-majority grid "
         f"({zone_grid_m:.0f} m, factor {block_factor}) with 90 m cell statistics, "
         f"simplified at {zone_tolerance:.0f} m to satisfy the fixed 0.9 MB raw cap; "
-        "district score = 0.45 area share + 0.35 duration + 0.20 p90 peak depth; "
-        "hotspots are low-HAND distant pockets, not breaches. Wet masks and depth are "
-        "read from the stage-09 uint8 per-step cache, not a float stack. No demographics."
+        "district score = 0.5625 area share + 0.4375 duration (two drivers, "
+        f"weights_version {district_cfg['weights_version']}); bathtub peak depth is "
+        "reported as context (median depth, share >1.5 m) but not scored because it "
+        "saturates at the stage; hotspots are low-HAND distant pockets, not breaches. "
+        "Wet masks and depth are read from the stage-09 uint8 per-step cache, not a "
+        "float stack. No demographics."
     )
     print(
         f"[10] ok: {len(zone_features)} zones ({len(payload) / 1024:.0f} KB), "

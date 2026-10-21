@@ -263,12 +263,31 @@
   color: var(--text);
 }
 
+.riskScoreGroup {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
 .riskScore {
   font-family: var(--mono);
   font-size: 14px;
   font-weight: 620;
   color: var(--amber-strong);
   font-variant-numeric: tabular-nums;
+}
+
+.riskCoverageBadge {
+  padding: 1px 4px;
+  border: 1px solid rgba(242, 184, 75, 0.34);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 560;
+  color: var(--amber-strong);
+  white-space: nowrap;
 }
 
 .riskClassRow {
@@ -291,16 +310,14 @@
   color: var(--faint);
 }
 
-.riskCoverage {
-  padding: 1px 4px;
-  border: 1px solid rgba(242, 184, 75, 0.3);
-  border-radius: 2px;
+.riskCoverageNote {
   color: var(--amber-strong);
+  font-size: 10.5px;
 }
 
 .driverGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   padding-top: 3px;
 }
@@ -337,6 +354,61 @@
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text-soft);
+}
+
+.depthContext {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 3px;
+}
+
+.depthContextLabel {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.contextMetric {
+  display: grid;
+  grid-template-columns: 66px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.contextMetricLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextTrack {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(124, 199, 232, 0.12);
+  overflow: hidden;
+}
+
+.contextFill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(124, 199, 232, 0.7), rgba(217, 95, 155, 0.82));
+}
+
+.contextValue {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
 }
 
 .honestyStatement {

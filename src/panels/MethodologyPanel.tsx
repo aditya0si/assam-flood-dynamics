@@ -73,6 +73,12 @@ export function MethodologyPanel({ dataset }: MethodologyPanelProps) {
           intentional and is not corrected by an unobserved depth field.
         </p>
         <p className={styles.quote}>{model.depth_bias}</p>
+        <p>
+          At the peak step the bathtub surface is capped by the scenario stage (3.7 m), so
+          <code> p90_peak_depth_m</code> is the same for every district. Peak depth is therefore
+          reported as context — median depth and the share of wet cells deeper than 1.5 m — but it is
+          not a scored driver.
+        </p>
       </section>
 
       <section className={styles.methodCard}>
@@ -104,9 +110,10 @@ export function MethodologyPanel({ dataset }: MethodologyPanelProps) {
             <span className={styles.classBadge}>{badgeFor(districtRisk.class)}</span>
             <span>
               Risk zones and district ranking: {districtRisk.class}, weighted{' '}
-              {formatPercent(districtRisk.weights.area_share)} area,{' '}
-              {formatPercent(districtRisk.weights.duration)} duration,{' '}
-              {formatPercent(districtRisk.weights.depth)} peak depth.
+              {formatPercent(districtRisk.weights.area_share)} area share and{' '}
+              {formatPercent(districtRisk.weights.duration)} duration (two drivers, weights{' '}
+              {districtRisk.weights_version}). Peak depth saturates at the stage, so it is reported
+              as context but not scored. Districts below 75% valid coverage carry a coverage badge.
             </span>
           </li>
         </ul>
