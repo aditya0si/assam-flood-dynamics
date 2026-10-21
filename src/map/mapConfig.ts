@@ -7,6 +7,8 @@ export const FLOOD_OUTGOING_SOURCE_ID = 'flood-raster-outgoing';
 export const DISTRICTS_SOURCE_ID = 'assam-districts';
 export const STATE_SOURCE_ID = 'assam-state';
 export const RIVERS_SOURCE_ID = 'assam-rivers';
+export const RISK_ZONES_SOURCE_ID = 'risk-zones';
+export const HOTSPOTS_SOURCE_ID = 'inundation-hotspots';
 
 export const BACKGROUND_LAYER_ID = 'background';
 export const FALLBACK_LAYER_ID = 'fallback-relief';
@@ -14,9 +16,12 @@ export const IMAGERY_LAYER_ID = 'satellite';
 export const TERRAIN_HILLSHADE_LAYER_ID = 'terrain-hillshade';
 export const FLOOD_OUTGOING_LAYER_ID = 'flood-raster-outgoing-layer';
 export const FLOOD_CURRENT_LAYER_ID = 'flood-raster-current-layer';
+export const RISK_ZONE_FILL_LAYER_ID = 'risk-zones-fill';
+export const RISK_ZONE_LINE_LAYER_ID = 'risk-zones-line';
 export const RIVERS_LAYER_ID = 'rivers';
 export const DISTRICT_LAYER_ID = 'district-line';
 export const STATE_LAYER_ID = 'state-outline';
+export const HOTSPOTS_LAYER_ID = 'hotspots';
 
 export const TERRARIUM_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
 export const ESRI_IMAGERY_TILES =
@@ -45,6 +50,19 @@ export const MAX_PITCH = 75;
 export const FLOOD_OPACITY = 0.8;
 export const CROSSFADE_MS = 220;
 export const TILE_HEALTH_TIMEOUT_MS = 6000;
+
+/**
+ * Palette separation (REVIEW-07 B2):
+ * - The shallow flood class is baked into the committed PNG (#9ecae1). It stays blue.
+ * - Rivers are warm sand, not cyan, so a mapped channel can never be confused with water.
+ * - Hillshade is lower-contrast and desaturated so it does not compete at valley scale.
+ */
+export const RIVER_COLOR = '#cbb58a';
+export const HILLSHADE_SHADOW = '#051412';
+export const HILLSHADE_HIGHLIGHT = '#b9c7c8';
+export const HILLSHADE_ACCENT = '#3b4d50';
+export const DISTRICT_LABEL_MIN_ZOOM = 6;
+export const DISTRICT_LABEL_LIMIT = 10;
 
 export function bboxCoordinates(
   bbox: [number, number, number, number],

@@ -1,8 +1,13 @@
 import type {
+  DistrictRisk,
   FeatureCollection,
   FloodSummary,
   FrameIndex,
+  HotspotCollection,
   Manifest,
+  MonsoonSeries,
+  Provenance,
+  RiskZoneCollection,
   Scenario,
   SummaryStep,
 } from './schemas';
@@ -15,6 +20,11 @@ export interface Dataset {
   districts: FeatureCollection;
   state: FeatureCollection;
   rivers: FeatureCollection;
+  provenance: Provenance;
+  districtRisk: DistrictRisk;
+  series: MonsoonSeries;
+  riskZones: RiskZoneCollection;
+  hotspots: HotspotCollection;
 }
 
 export interface DataSetMeta {

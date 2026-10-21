@@ -15,11 +15,15 @@ interface FloodHooks {
   onFrameError?: (step: number) => void;
   /** Fires when a frame has actually been handed to both image sources. */
   onFrameApplied?: (step: number, file: string) => void;
+  /** Live opacity from the layer store, so a slider survives crossfades. */
+  getOpacity?: () => number;
 }
 
 export interface FloodController {
   start: (initialStep: number) => Promise<boolean>;
   goToStep: (step: number) => void;
+  /** Re-apply the current opacity after a layer-panel change. */
+  refreshOpacity: () => void;
   destroy: () => void;
 }
 
@@ -43,6 +47,13 @@ export function createFloodController(
   let destroyed = false;
 
   const frameCount = frameIndex.steps.length;
+
+  const currentOpacity = (): number => {
+    const value = hooks.getOpacity?.();
+    return typeof value === 'number' && Number.isFinite(value)
+      ? Math.min(1, Math.max(0, value))
+      : FLOOD_OPACITY;
+  };
 
   const frameUrl = (step: number): string => dataUrl(`flood/${frameIndex.steps[step].file}`);
 
@@ -91,31 +102,32 @@ export function createFloodController(
 
   const applyOpacity = (): void => {
     setRasterOpacity(FLOOD_OUTGOING_LAYER_ID, 0);
-    setRasterOpacity(FLOOD_CURRENT_LAYER_ID, FLOOD_OPACITY);
+    setRasterOpacity(FLOOD_CURRENT_LAYER_ID, currentOpacity());
   };
 
   const crossfade = (): void => {
     stopAnimation();
+    const opacity = currentOpacity();
     if (prefersReducedMotion()) {
       applyOpacity();
       return;
     }
 
-    setRasterOpacity(FLOOD_OUTGOING_LAYER_ID, FLOOD_OPACITY);
+    setRasterOpacity(FLOOD_OUTGOING_LAYER_ID, opacity);
     setRasterOpacity(FLOOD_CURRENT_LAYER_ID, 0);
     const startedAt = performance.now();
 
     const frame = (now: number) => {
       if (destroyed) return;
       const progress = Math.min(1, (now - startedAt) / CROSSFADE_MS);
-      setRasterOpacity(FLOOD_OUTGOING_LAYER_ID, FLOOD_OPACITY * (1 - progress));
-      setRasterOpacity(FLOOD_CURRENT_LAYER_ID, FLOOD_OPACITY * progress);
+      setRasterOpacity(FLOOD_OUTGOING_LAYER_ID, opacity * (1 - progress));
+      setRasterOpacity(FLOOD_CURRENT_LAYER_ID, opacity * progress);
       if (progress < 1) {
         animationFrame = requestAnimationFrame(frame);
       } else {
         animationFrame = 0;
         setRasterOpacity(FLOOD_OUTGOING_LAYER_ID, 0);
-        setRasterOpacity(FLOOD_CURRENT_LAYER_ID, FLOOD_OPACITY);
+        setRasterOpacity(FLOOD_CURRENT_LAYER_ID, opacity);
       }
     };
     animationFrame = requestAnimationFrame(frame);
@@ -181,6 +193,10 @@ export function createFloodController(
       return applied;
     },
     goToStep,
+    refreshOpacity: () => {
+      stopAnimation();
+      applyOpacity();
+    },
     destroy: () => {
       destroyed = true;
       requestId += 1;

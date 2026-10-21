@@ -1,14 +1,24 @@
 import type { ZodType } from 'zod';
 import {
+  districtRiskSchema,
   featureCollectionSchema,
   floodSummarySchema,
   frameIndexSchema,
+  hotspotFeatureCollectionSchema,
   manifestSchema,
+  monsoonSeriesSchema,
+  provenanceSchema,
+  riskZoneFeatureCollectionSchema,
   scenarioSchema,
+  type DistrictRisk,
   type FeatureCollection,
   type FloodSummary,
   type FrameIndex,
+  type HotspotCollection,
   type Manifest,
+  type MonsoonSeries,
+  type Provenance,
+  type RiskZoneCollection,
   type Scenario,
 } from './schemas';
 import type { Dataset } from './types';
@@ -92,22 +102,68 @@ function assertSteps(label: string, steps: Array<{ step: number }>, expectedCoun
 export async function loadDataset(): Promise<Dataset> {
   const manifest: Manifest = await getJson(manifestSchema, 'manifest.json');
 
-  const [scenario, summary, frameIndex, districts, state, rivers] = await Promise.all([
+  const [
+    scenario,
+    summary,
+    frameIndex,
+    districts,
+    state,
+    rivers,
+    provenance,
+    districtRisk,
+    series,
+    riskZones,
+    hotspots,
+  ] = await Promise.all([
     getJson(scenarioSchema, 'scenario.json'),
     getJson(floodSummarySchema, 'flood/flood-summary.json'),
     getJson(frameIndexSchema, 'flood/frame-index.json'),
     getJson(featureCollectionSchema, 'admin/assam-districts.geojson'),
     getJson(featureCollectionSchema, 'admin/assam-state.geojson'),
     getJson(featureCollectionSchema, 'hydro/assam-rivers.geojson'),
+    getJson(provenanceSchema, 'provenance.json'),
+    getJson(districtRiskSchema, 'risk/district-risk.json'),
+    getJson(monsoonSeriesSchema, 'series/monsoon-series.json'),
+    getJson(riskZoneFeatureCollectionSchema, 'risk/risk-zones.geojson'),
+    getJson(hotspotFeatureCollectionSchema, 'risk/hotspots.geojson'),
   ]);
 
   assertSameDataset('flood/frame-index.json', frameIndex.dataset_version, manifest.dataset_version);
+  assertSameDataset('provenance.json', provenance.dataset_version, manifest.dataset_version);
+  assertSameDataset('series/monsoon-series.json', series.dataset_version, manifest.dataset_version);
+  assertSameDataset('risk/risk-zones.geojson', riskZones.dataset_version, manifest.dataset_version);
+  assertSameDataset('risk/hotspots.geojson', hotspots.dataset_version, manifest.dataset_version);
 
   if (scenario.scenario_id !== manifest.scenario_id || summary.scenario_id !== manifest.scenario_id) {
     throw new DataContractError('manifest.json', 'scenario_id does not match the committed scenario and summary');
   }
   if (frameIndex.scenario_id !== manifest.scenario_id) {
     throw new DataContractError('flood/frame-index.json', 'scenario_id does not match the manifest');
+  }
+  if (districtRisk.scenario_id !== manifest.scenario_id || series.scenario_id !== manifest.scenario_id) {
+    throw new DataContractError('manifest.json', 'scenario_id does not match the committed risk and series files');
+  }
+
+  if (districtRisk.districts.length !== districtRisk.counts.total) {
+    throw new DataContractError(
+      'risk/district-risk.json',
+      `counts.total ${districtRisk.counts.total} does not match ${districtRisk.districts.length} districts`,
+    );
+  }
+  const ranks = new Set<number>();
+  for (const district of districtRisk.districts) {
+    if (!Number.isFinite(district.risk_score)) {
+      throw new DataContractError('risk/district-risk.json', `${district.name} has a non-finite risk_score`);
+    }
+    if (ranks.has(district.rank)) {
+      throw new DataContractError('risk/district-risk.json', `rank ${district.rank} is duplicated`);
+    }
+    ranks.add(district.rank);
+  }
+  for (const entry of provenance.entries) {
+    if (entry.class === 'source' && entry.pipeline.length === 0) {
+      throw new DataContractError('provenance.json', `${entry.id} has no processing stage`);
+    }
   }
 
   assertSteps('scenario.json', scenario.steps, manifest.step_count, 'scenario steps');
@@ -134,7 +190,31 @@ export async function loadDataset(): Promise<Dataset> {
     }
   });
 
-  return { manifest, scenario, summary, frameIndex, districts, state, rivers };
+  return {
+    manifest,
+    scenario,
+    summary,
+    frameIndex,
+    districts,
+    state,
+    rivers,
+    provenance,
+    districtRisk,
+    series,
+    riskZones,
+    hotspots,
+  };
 }
 
-export type { FeatureCollection, FloodSummary, FrameIndex, Manifest, Scenario };
+export type {
+  DistrictRisk,
+  FeatureCollection,
+  FloodSummary,
+  FrameIndex,
+  HotspotCollection,
+  Manifest,
+  MonsoonSeries,
+  Provenance,
+  RiskZoneCollection,
+  Scenario,
+};

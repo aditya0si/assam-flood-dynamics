@@ -6,6 +6,7 @@ import { TopBar } from './shell/TopBar';
 import { StatusBar } from './shell/StatusBar';
 import { ErrorBoundary } from './shell/ErrorBoundary';
 import { MapCanvas } from './map/MapCanvas';
+import { RightRail } from './shell/RightRail';
 import { TimelineDock } from './timeline/TimelineDock';
 import styles from './shell/shell.module.css';
 
@@ -78,8 +79,11 @@ function AppShell() {
 
         {phase === 'ready' && dataset ? (
           <>
-            <MapCanvas dataset={dataset} />
-            <StatusBar />
+            <div className={styles.mapArea}>
+              <MapCanvas dataset={dataset} />
+              <StatusBar />
+            </div>
+            <RightRail dataset={dataset} />
           </>
         ) : null}
       </main>

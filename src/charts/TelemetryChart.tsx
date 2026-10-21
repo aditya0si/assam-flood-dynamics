@@ -1,20 +1,44 @@
 import { useEffect, useRef, useState } from 'react';
 import uPlot from 'uplot';
-import type { FloodSummary } from '../data/schemas';
-import { formatArea, formatStage, formatStepCode } from '../data/format';
+import { formatStepCode } from '../data/format';
 import { useTimelineStore } from '../state/timelineStore';
 import styles from '../timeline/timeline.module.css';
 
-interface TelemetryChartProps {
-  summary: FloodSummary;
+export interface TelemetryChartProps {
+  xs: number[];
+  values: number[];
+  step: number;
+  color: string;
+  label: string;
+  unit: string;
+  formatValue: (value: number) => string;
+  fill?: boolean;
+  showXLabels?: boolean;
+  syncKey: string;
+  threshold?: number;
+  thresholdLabel?: string;
+  height?: number;
 }
 
-const CHART_HEIGHT = 126;
+const DEFAULT_HEIGHT = 62;
 
-export function TelemetryChart({ summary }: TelemetryChartProps) {
+export function TelemetryChart({
+  xs,
+  values,
+  step,
+  color,
+  label,
+  unit,
+  formatValue,
+  fill = false,
+  showXLabels = false,
+  syncKey,
+  threshold,
+  thresholdLabel,
+  height = DEFAULT_HEIGHT,
+}: TelemetryChartProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<uPlot | null>(null);
-  const step = useTimelineStore((state) => state.step);
   const stepRef = useRef(step);
   const updatePlayheadRef = useRef<() => void>(() => undefined);
   const [playheadPercent, setPlayheadPercent] = useState(0);
@@ -23,10 +47,8 @@ export function TelemetryChart({ summary }: TelemetryChartProps) {
     const host = hostRef.current;
     if (!host) return;
 
-    const xs = summary.steps.map((entry) => entry.step);
-    const ys = summary.steps.map((entry) => entry.inundated_area_km2);
-    const labels = summary.steps.map((entry) => formatStepCode(entry.step));
-    const maxY = Math.max(...ys, 1);
+    const maxY = Math.max(...values, threshold ?? 0, 1);
+    const labels = xs.map((value) => formatStepCode(value));
 
     const makePlayhead = (plot: uPlot) => {
       const x = plot.valToPos(stepRef.current, 'x');
@@ -39,9 +61,9 @@ export function TelemetryChart({ summary }: TelemetryChartProps) {
 
     const plot = new uPlot(
       {
-        width: Math.max(320, host.clientWidth),
-        height: CHART_HEIGHT,
-        padding: [10, 8, 0, 0],
+        width: Math.max(260, host.clientWidth),
+        height,
+        padding: [4, 4, 0, 0],
         legend: { show: false },
         cursor: {
           show: true,
@@ -49,6 +71,26 @@ export function TelemetryChart({ summary }: TelemetryChartProps) {
           y: false,
           drag: { x: false, y: false },
           points: { show: false },
+          sync: { key: syncKey, setSeries: false, scales: ['x', null] },
+        },
+        hooks: {
+          draw: [
+            (self) => {
+              if (threshold === undefined) return;
+              const y = self.valToPos(threshold, 'y');
+              if (!Number.isFinite(y)) return;
+              const { ctx } = self;
+              ctx.save();
+              ctx.strokeStyle = 'rgba(242, 184, 75, 0.55)';
+              ctx.lineWidth = 1;
+              ctx.setLineDash([3, 3]);
+              ctx.beginPath();
+              ctx.moveTo(self.bbox.left, y);
+              ctx.lineTo(self.bbox.left + self.bbox.width, y);
+              ctx.stroke();
+              ctx.restore();
+            },
+          ],
         },
         scales: {
           x: { time: false, range: [0, Math.max(1, xs.length - 1)] },
@@ -56,39 +98,54 @@ export function TelemetryChart({ summary }: TelemetryChartProps) {
         },
         axes: [
           {
-            stroke: '#7d95a0',
-            font: '10px ui-monospace, "Cascadia Mono", Consolas, monospace',
-            ticks: { show: true, stroke: '#27414c', width: 1 },
+            stroke: '#6f8893',
+            font: '8px ui-monospace, "Cascadia Mono", Consolas, monospace',
+            ticks: { show: true, stroke: '#27414c', width: 1, size: 3 },
             grid: { show: false },
-            size: 20,
-            values: (_u, splits) => splits.map((value) => labels[Math.round(value)] ?? ''),
+            size: 15,
+            values: (_u, splits) =>
+              splits.map((value) => {
+                const index = Math.round(value);
+                if (!showXLabels || index < 0 || index >= xs.length || Math.abs(value - index) > 0.01) {
+                  return '';
+                }
+                return labels[index] ?? '';
+              }),
           },
           {
-            stroke: '#7d95a0',
-            font: '10px ui-monospace, "Cascadia Mono", Consolas, monospace',
+            stroke: '#6f8893',
+            font: '8px ui-monospace, "Cascadia Mono", Consolas, monospace',
             ticks: { show: false },
             grid: { stroke: '#1e3440', width: 1 },
-            size: 52,
-            values: (_u, splits) => splits.map((value) => String(Math.round(value))),
+            size: 42,
+            values: (_u, splits) =>
+              splits.map((value) => (maxY >= 1000 ? String(Math.round(value)) : formatValue(value))),
           },
         ],
         series: [
           {},
           {
-            label: 'Inundated area (km²)',
-            stroke: '#7cc7e8',
+            label,
+            stroke: color,
             width: 1.6,
             points: { show: false },
-            fill: (u: uPlot) => {
-              const gradient = u.ctx.createLinearGradient(0, u.bbox.top, 0, u.bbox.top + u.bbox.height);
-              gradient.addColorStop(0, 'rgba(124, 199, 232, 0.34)');
-              gradient.addColorStop(1, 'rgba(124, 199, 232, 0.02)');
-              return gradient;
-            },
+            fill: fill
+              ? (self: uPlot) => {
+                  const gradient = self.ctx.createLinearGradient(
+                    0,
+                    self.bbox.top,
+                    0,
+                    self.bbox.top + self.bbox.height,
+                  );
+                  gradient.addColorStop(0, withAlpha(color, 0.34));
+                  gradient.addColorStop(1, withAlpha(color, 0.02));
+                  return gradient;
+                }
+              : undefined,
           },
         ],
       },
-      [xs, ys],
+      [xs, values],
       host,
     );
 
@@ -107,7 +164,7 @@ export function TelemetryChart({ summary }: TelemetryChartProps) {
     const resizeObserver = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? host.clientWidth;
       if (width <= 0) return;
-      plot.setSize({ width: Math.floor(width), height: CHART_HEIGHT });
+      plot.setSize({ width: Math.floor(width), height });
       makePlayhead(plot);
     });
     resizeObserver.observe(host);
@@ -119,64 +176,30 @@ export function TelemetryChart({ summary }: TelemetryChartProps) {
       plotRef.current = null;
       updatePlayheadRef.current = () => undefined;
     };
-  }, [summary]);
+  }, [color, fill, formatValue, height, label, showXLabels, syncKey, threshold, values, xs]);
 
   useEffect(() => {
     stepRef.current = step;
     updatePlayheadRef.current();
   }, [step]);
 
-  const current = summary.steps[step];
-
   return (
-    <figure className={styles.chartFigure}>
-      <figcaption className={styles.chartCaption}>
-        <span>
-          Inundated area <span className={styles.chartMuted}>(scenario)</span>
+    <div className={styles.chartStack}>
+      <div ref={hostRef} className={styles.chartHost} aria-hidden="true" />
+      {threshold !== undefined ? (
+        <span className={styles.thresholdKey} aria-hidden="true">
+          {thresholdLabel ?? `threshold ${formatValue(threshold)} ${unit}`}
         </span>
-        <span className={styles.chartUnit}>km² · {summary.steps.length}-step series</span>
-      </figcaption>
-
-      <div className={styles.chartStack}>
-        <div ref={hostRef} className={styles.chartHost} aria-hidden="true" />
-        <div
-          className={styles.playhead}
-          style={{ left: `${playheadPercent}%` }}
-          aria-hidden="true"
-        />
-      </div>
-
-      <div className={styles.chartFooter}>
-        <span>
-          {current ? `${formatStepCode(step)} · ${current.step_label}` : ''} —{' '}
-          {current ? `${formatArea(current.inundated_area_km2)} km²` : ''}
-        </span>
-        <span className={styles.chartMuted}>click chart to step</span>
-      </div>
-
-      <table className={styles.srOnly}>
-        <caption>Inundated area and scenario stage by step</caption>
-        <thead>
-          <tr>
-            <th scope="col">Step</th>
-            <th scope="col">Date</th>
-            <th scope="col">Scenario stage (m)</th>
-            <th scope="col">Inundated area (km²)</th>
-            <th scope="col">Share of Assam</th>
-          </tr>
-        </thead>
-        <tbody>
-          {summary.steps.map((entry) => (
-            <tr key={entry.step}>
-              <td>{formatStepCode(entry.step)}</td>
-              <td>{entry.step_label}</td>
-              <td>{formatStage(entry.stage_m)}</td>
-              <td>{formatArea(entry.inundated_area_km2)}</td>
-              <td>{(entry.share_of_assam * 100).toFixed(1)}%</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </figure>
+      ) : null}
+      <div className={styles.playhead} style={{ left: `${playheadPercent}%` }} aria-hidden="true" />
+    </div>
   );
+}
+
+function withAlpha(hex: string, alpha: number): string {
+  const value = hex.replace('#', '');
+  const red = parseInt(value.slice(0, 2), 16);
+  const green = parseInt(value.slice(2, 4), 16);
+  const blue = parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }

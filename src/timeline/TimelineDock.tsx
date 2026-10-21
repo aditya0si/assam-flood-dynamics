@@ -3,7 +3,7 @@ import { SYNTHETIC_SERIES_NOTE } from '../data/attribution';
 import { formatArea, formatPercent, formatPhase, formatStage, formatStepCode, stepAriaText } from '../data/format';
 import { badgeFor } from '../data/labels';
 import { useTimelineStore } from '../state/timelineStore';
-import { TelemetryChart } from '../charts/TelemetryChart';
+import { ChartGrid } from '../charts/ChartGrid';
 import { PlaybackControls } from './PlaybackControls';
 import { TimelineScrubber } from './TimelineScrubber';
 import { usePlayback } from './usePlayback';
@@ -73,7 +73,7 @@ export function TimelineDock({ dataset }: TimelineDockProps) {
           <span className={styles.paneKicker}>Timeline analytics</span>
           <span className={styles.syntheticBadge}>{badgeFor(dataset.summary.series_class.rainfall)}</span>
         </div>
-        <TelemetryChart summary={dataset.summary} />
+        <ChartGrid summary={dataset.summary} series={dataset.series} />
         <p className={styles.seriesNote}>{SYNTHETIC_SERIES_NOTE} · area is scenario-derived.</p>
       </div>
 

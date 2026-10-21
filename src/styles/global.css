@@ -65,6 +65,25 @@ p {
   font-size: 9px;
 }
 
+/*
+ * REVIEW-07 B2: the attribution must not sit under the tile-health pill.
+ * The pill is bottom-centre in the viewport; keep attribution pinned to the
+ * bottom-right corner with a reserved gutter and let expanded text wrap.
+ */
+.maplibregl-ctrl-bottom-right {
+  right: 0;
+  bottom: 0;
+  max-width: min(70%, 720px);
+}
+
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl {
+  margin: 0 7px 5px 0;
+}
+
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  max-width: 100%;
+}
+
 .maplibregl-ctrl-attrib.maplibregl-compact {
   min-height: 22px;
 }

@@ -39,6 +39,24 @@ export function formatShareValue(share: number): string {
   return formatPercent(share);
 }
 
+/** Risk scores and ranks are presentation values from district-risk.json. */
+export function formatScore(score: number): string {
+  return score.toFixed(1);
+}
+
+export function formatDays(days: number): string {
+  return days.toFixed(1);
+}
+
+/** Keep the committed depth precision, but do not print binary-float noise. */
+export function formatDepthValue(metres: number): string {
+  return String(Number(metres.toFixed(4)));
+}
+
+export function formatMmDay(value: number): string {
+  return value.toFixed(0);
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;

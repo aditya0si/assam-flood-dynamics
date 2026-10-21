@@ -1,4 +1,5 @@
 import type {
+  ExpressionSpecification,
   LayerSpecification,
   Map as MapLibreMap,
   StyleSpecification,
@@ -6,6 +7,7 @@ import type {
 import type { Dataset } from '../data/types';
 import { dataUrl } from '../data/loadData';
 import { MAP_ATTRIBUTION } from '../data/attribution';
+import { RISK_CLASS_COLORS } from '../data/risk';
 import { fallbackHillshadeSource } from './fallbackRaster';
 import {
   BACKGROUND_LAYER_ID,
@@ -19,10 +21,19 @@ import {
   FLOOD_OPACITY,
   FLOOD_OUTGOING_LAYER_ID,
   FLOOD_OUTGOING_SOURCE_ID,
+  HILLSHADE_ACCENT,
+  HILLSHADE_HIGHLIGHT,
+  HILLSHADE_SHADOW,
+  HOTSPOTS_LAYER_ID,
+  HOTSPOTS_SOURCE_ID,
   IMAGERY_LAYER_ID,
   IMAGERY_SOURCE_ID,
+  RIVER_COLOR,
   RIVERS_LAYER_ID,
   RIVERS_SOURCE_ID,
+  RISK_ZONES_SOURCE_ID,
+  RISK_ZONE_FILL_LAYER_ID,
+  RISK_ZONE_LINE_LAYER_ID,
   STATE_LAYER_ID,
   STATE_SOURCE_ID,
   TERRAIN_EXAGGERATION,
@@ -32,6 +43,34 @@ import {
   TERRARIUM_TILES,
   bboxCoordinates,
 } from './mapConfig';
+
+const RISK_COLOR_EXPRESSION = [
+  'match',
+  ['get', 'risk_class'],
+  'low',
+  RISK_CLASS_COLORS.low,
+  'moderate',
+  RISK_CLASS_COLORS.moderate,
+  'high',
+  RISK_CLASS_COLORS.high,
+  'very_high',
+  RISK_CLASS_COLORS.very_high,
+  '#93a8b1',
+] as unknown as ExpressionSpecification;
+
+const DISTRICT_RISK_TINT = [
+  'match',
+  ['get', 'risk_class'],
+  'low',
+  RISK_CLASS_COLORS.low,
+  'moderate',
+  RISK_CLASS_COLORS.moderate,
+  'high',
+  RISK_CLASS_COLORS.high,
+  'very_high',
+  RISK_CLASS_COLORS.very_high,
+  '#c8d6db',
+] as unknown as ExpressionSpecification;
 
 export function buildMapStyle(dataset: Dataset): StyleSpecification {
   const frameBbox = dataset.frameIndex.bbox;
@@ -67,12 +106,34 @@ export function buildMapStyle(dataset: Dataset): StyleSpecification {
       type: 'hillshade',
       source: TERRAIN_HILLSHADE_SOURCE_ID,
       paint: {
-        'hillshade-exaggeration': 0.34,
+        // Deliberately quiet: relief contextualises the flood, it does not compete.
+        'hillshade-exaggeration': 0.22,
         'hillshade-illumination-direction': 315,
         'hillshade-illumination-altitude': 45,
-        'hillshade-shadow-color': '#04121a',
-        'hillshade-highlight-color': '#e9f2f5',
-        'hillshade-accent-color': '#68818c',
+        'hillshade-shadow-color': HILLSHADE_SHADOW,
+        'hillshade-highlight-color': HILLSHADE_HIGHLIGHT,
+        'hillshade-accent-color': HILLSHADE_ACCENT,
+      },
+    },
+    {
+      id: RISK_ZONE_FILL_LAYER_ID,
+      type: 'fill',
+      source: RISK_ZONES_SOURCE_ID,
+      paint: {
+        'fill-color': RISK_COLOR_EXPRESSION,
+        'fill-opacity': 0.34,
+        'fill-antialias': false,
+      },
+    },
+    {
+      id: RISK_ZONE_LINE_LAYER_ID,
+      type: 'line',
+      source: RISK_ZONES_SOURCE_ID,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': RISK_COLOR_EXPRESSION,
+        'line-width': 0.55,
+        'line-opacity': 0.82,
       },
     },
     {
@@ -83,6 +144,8 @@ export function buildMapStyle(dataset: Dataset): StyleSpecification {
         'raster-opacity': 0,
         'raster-opacity-transition': { duration: 0 },
         'raster-fade-duration': 0,
+        'raster-saturation': 0.24,
+        'raster-contrast': 0.08,
         'raster-resampling': 'linear',
       },
     },
@@ -94,6 +157,8 @@ export function buildMapStyle(dataset: Dataset): StyleSpecification {
         'raster-opacity': FLOOD_OPACITY,
         'raster-opacity-transition': { duration: 0 },
         'raster-fade-duration': 0,
+        'raster-saturation': 0.24,
+        'raster-contrast': 0.08,
         'raster-resampling': 'linear',
       },
     },
@@ -103,9 +168,10 @@ export function buildMapStyle(dataset: Dataset): StyleSpecification {
       source: RIVERS_SOURCE_ID,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': '#7cc7e8',
-        'line-width': ['match', ['get', 'order'], 1, 1.8, 2, 1.05, 0.6],
-        'line-opacity': 0.82,
+        'line-color': RIVER_COLOR,
+        'line-width': ['match', ['get', 'order'], 1, 1.9, 2, 1.1, 0.65],
+        'line-opacity': 0.78,
+        'line-blur': 0.2,
       },
     },
     {
@@ -114,8 +180,8 @@ export function buildMapStyle(dataset: Dataset): StyleSpecification {
       source: DISTRICTS_SOURCE_ID,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': '#9db4bf',
-        'line-width': 0.7,
+        'line-color': DISTRICT_RISK_TINT,
+        'line-width': 0.72,
         'line-opacity': 0.72,
       },
     },
@@ -128,6 +194,19 @@ export function buildMapStyle(dataset: Dataset): StyleSpecification {
         'line-color': '#e2edf1',
         'line-width': 1.35,
         'line-opacity': 0.72,
+      },
+    },
+    {
+      id: HOTSPOTS_LAYER_ID,
+      type: 'circle',
+      source: HOTSPOTS_SOURCE_ID,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['get', 'area_km2'], 18, 3.8, 81, 9],
+        'circle-color': '#f0a93f',
+        'circle-opacity': 1,
+        'circle-stroke-color': '#1a1207',
+        'circle-stroke-width': 1.2,
+        'circle-pitch-alignment': 'map',
       },
     },
   ];
@@ -169,6 +248,16 @@ export function buildMapStyle(dataset: Dataset): StyleSpecification {
         url: firstFrame,
         coordinates: frameCoordinates,
       },
+      [RISK_ZONES_SOURCE_ID]: {
+        type: 'geojson',
+        data: dataset.riskZones,
+        attribution: 'Risk zones: derived from committed scenario',
+      },
+      [HOTSPOTS_SOURCE_ID]: {
+        type: 'geojson',
+        data: dataset.hotspots,
+        attribution: 'Hotspots: derived, not breaches',
+      },
       [DISTRICTS_SOURCE_ID]: {
         type: 'geojson',
         data: dataset.districts,
@@ -201,4 +290,86 @@ export function setTerrain(map: MapLibreMap, enabled: boolean): void {
   } else {
     map.setTerrain(null);
   }
+}
+
+/**
+ * Shared layer-state application (used by MapCanvas at scene start and on every
+ * layer-store change). Kept next to the style so paint property names cannot
+ * drift from the layer definitions.
+ */
+export function applyLayerPaint(
+  map: MapLibreMap,
+  state: {
+    visible: Record<string, boolean>;
+    opacity: Record<string, number>;
+    baseMode: 'imagery' | 'hillshade';
+  },
+): void {
+  if (!map.getLayer(BACKGROUND_LAYER_ID)) return;
+
+  const setVisibility = (layerId: string, visible: boolean) => {
+    if (!map.getLayer(layerId)) return;
+    map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+  };
+
+  setVisibility(FLOOD_OUTGOING_LAYER_ID, state.visible.flood);
+  setVisibility(FLOOD_CURRENT_LAYER_ID, state.visible.flood);
+  setVisibility(RISK_ZONE_FILL_LAYER_ID, state.visible['risk-zones']);
+  setVisibility(RISK_ZONE_LINE_LAYER_ID, state.visible['risk-zones']);
+  setVisibility(RIVERS_LAYER_ID, state.visible.rivers);
+  setVisibility(DISTRICT_LAYER_ID, state.visible.districts);
+  setVisibility(TERRAIN_HILLSHADE_LAYER_ID, state.visible.hillshade);
+  setVisibility(HOTSPOTS_LAYER_ID, state.visible.hotspots);
+  setVisibility(IMAGERY_LAYER_ID, state.baseMode === 'imagery');
+
+  if (map.getLayer(RISK_ZONE_FILL_LAYER_ID)) {
+    map.setPaintProperty(RISK_ZONE_FILL_LAYER_ID, 'fill-opacity', state.opacity['risk-zones']);
+  }
+  if (map.getLayer(RISK_ZONE_LINE_LAYER_ID)) {
+    map.setPaintProperty(
+      RISK_ZONE_LINE_LAYER_ID,
+      'line-opacity',
+      Math.min(1, 0.45 + state.opacity['risk-zones']),
+    );
+  }
+  if (map.getLayer(RIVERS_LAYER_ID)) {
+    map.setPaintProperty(RIVERS_LAYER_ID, 'line-opacity', state.opacity.rivers);
+  }
+  if (map.getLayer(DISTRICT_LAYER_ID)) {
+    map.setPaintProperty(DISTRICT_LAYER_ID, 'line-opacity', state.opacity.districts);
+  }
+  if (map.getLayer(HOTSPOTS_LAYER_ID)) {
+    map.setPaintProperty(HOTSPOTS_LAYER_ID, 'circle-opacity', state.opacity.hotspots);
+  }
+  if (map.getLayer(FALLBACK_LAYER_ID)) {
+    map.setPaintProperty(FALLBACK_LAYER_ID, 'raster-opacity', state.baseMode === 'hillshade' ? 0.92 : 1);
+  }
+  if (map.getLayer(TERRAIN_HILLSHADE_LAYER_ID)) {
+    const opacity = state.opacity.hillshade;
+    map.setPaintProperty(TERRAIN_HILLSHADE_LAYER_ID, 'hillshade-exaggeration', 0.1 + opacity * 0.65);
+    // MapLibre's hillshade layer has no dedicated opacity property. Alpha in
+    // the three shading colours is the opacity control that actually changes
+    // rendered pixels, while keeping one layer (no map re-init).
+    map.setPaintProperty(
+      TERRAIN_HILLSHADE_LAYER_ID,
+      'hillshade-shadow-color',
+      rgba(HILLSHADE_SHADOW, 0.82 * opacity),
+    );
+    map.setPaintProperty(
+      TERRAIN_HILLSHADE_LAYER_ID,
+      'hillshade-highlight-color',
+      rgba(HILLSHADE_HIGHLIGHT, 0.52 * opacity),
+    );
+  }
+  if (map.getLayer(IMAGERY_LAYER_ID)) {
+    map.setPaintProperty(IMAGERY_LAYER_ID, 'raster-opacity', state.baseMode === 'imagery' ? 1 : 0);
+  }
+}
+
+function rgba(hex: string, alpha: number): string {
+  const value = hex.replace('#', '');
+  const red = parseInt(value.slice(0, 2), 16);
+  const green = parseInt(value.slice(2, 4), 16);
+  const blue = parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${Math.min(1, Math.max(0, alpha))})`;
 }

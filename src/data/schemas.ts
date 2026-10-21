@@ -50,7 +50,42 @@ export const scenarioSchema = z.object({
   total_days: z.number().int().positive(),
   peak_step: z.number().int().nonnegative(),
   threshold_stage_m: z.number(),
+  grid: z.object({
+    crs: z.string(),
+    resolution_m: z.number(),
+    bbox: bboxSchema,
+    nodata: z.number(),
+  }),
+  model: z.object({
+    name: z.string(),
+    version: z.string(),
+    burn_depth_m: z.number(),
+    max_channel_distance_m: z.number(),
+    depth_formula: z.string(),
+    depth_bias: z.string(),
+    min_component_cells: z.number().int().nonnegative(),
+    frame_resolution_scale: z.number().int().positive(),
+    depth_bands_m: z.array(z.number().nullable()),
+    component_filter: z.object({
+      method: z.string(),
+      min_cells: z.number().int().nonnegative(),
+      min_area_km2: z.number(),
+      opening: z.string(),
+      applied_before_statistics: z.boolean(),
+    }),
+  }),
+  assumptions: z.array(z.string()),
+  limitations: z.array(z.string()),
   steps: z.array(scenarioStepSchema),
+});
+
+export const depthDecilesSchema = z.object({
+  p10: z.number(),
+  p25: z.number(),
+  p50: z.number(),
+  p75: z.number(),
+  p90: z.number(),
+  p95: z.number(),
 });
 
 export const summaryStepSchema = z.object({
@@ -64,6 +99,10 @@ export const summaryStepSchema = z.object({
   stage_m: z.number(),
   above_threshold: z.boolean(),
   inundated_area_km2: z.number(),
+  wet_cells: z.number().int().nonnegative(),
+  delay_deciles: depthDecilesSchema,
+  max_depth_m: z.number(),
+  mean_depth_m: z.number(),
   new_inundation_km2: z.number(),
   receded_area_km2: z.number(),
   median_depth_m: z.number(),
@@ -138,6 +177,157 @@ export const frameIndexSchema = z.object({
 
 export const featureCollectionSchema = geojsonSchema;
 
+export const provenanceStageSchema = z.object({
+  command: z.string(),
+  stage: z.string(),
+  version: z.string(),
+});
+
+export const provenanceEntrySchema = z.object({
+  id: z.string(),
+  class: z.string(),
+  dataset: z.string(),
+  source_name: z.string(),
+  source_url: z.string(),
+  licence: z.string(),
+  notes: z.string(),
+  fetched_at: z.string().nullable(),
+  output_paths: z.array(z.string()),
+  pipeline: z.array(provenanceStageSchema),
+});
+
+export const provenanceSchema = z.object({
+  schema_version: z.string(),
+  dataset_version: z.string(),
+  generated_at: z.string(),
+  versions: z.record(z.string(), z.string()),
+  entries: z.array(provenanceEntrySchema),
+});
+
+export const districtRiskEntrySchema = z.object({
+  district_id: z.string(),
+  name: z.string(),
+  area_km2: z.number(),
+  peak_flooded_area_km2: z.number(),
+  area_share: z.number(),
+  mean_duration_days: z.number(),
+  p90_peak_depth_m: z.number(),
+  risk_score: z.number(),
+  risk_class: z.string(),
+  drivers: z.array(z.string()),
+  valid_area_share: z.number(),
+  class: z.string(),
+  rank: z.number().int().positive(),
+});
+
+export const districtRiskSchema = z.object({
+  schema_version: z.string(),
+  scenario_id: z.string(),
+  class: z.string(),
+  generated_at: z.string(),
+  weights: z.object({
+    area_share: z.number(),
+    duration: z.number(),
+    depth: z.number(),
+  }),
+  reference_values: z.object({
+    area_share_saturation: z.number(),
+    duration_saturation_days: z.number(),
+    depth_reference_m: z.number(),
+  }),
+  districts: z.array(districtRiskEntrySchema),
+  counts: z.record(z.string(), z.number()),
+});
+
+export const seriesPointSchema = z.object({
+  step: z.number().int().nonnegative(),
+  day: z.number().int().nonnegative(),
+  value: z.number(),
+});
+
+export const seriesEntrySchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  unit: z.string(),
+  class: z.string(),
+  source_note: z.string(),
+  points: z.array(seriesPointSchema),
+});
+
+export const monsoonSeriesSchema = z.object({
+  schema_version: z.string(),
+  dataset_version: z.string(),
+  scenario_id: z.string(),
+  class: z.string(),
+  series: z.array(seriesEntrySchema),
+  threshold: z.object({
+    id: z.string(),
+    label: z.string(),
+    value: z.number(),
+    unit: z.string(),
+    class: z.string(),
+    note: z.string(),
+  }),
+});
+
+export const riskZoneFeatureCollectionSchema = z.object({
+  type: z.literal('FeatureCollection'),
+  name: z.string(),
+  schema_version: z.string(),
+  dataset_version: z.string(),
+  class: z.string(),
+  features: z.array(
+    z.object({
+      type: z.literal('Feature'),
+      geometry: z.any(),
+      properties: z.object({
+        zone_id: z.string(),
+        risk_class: z.string(),
+        risk_score: z.number(),
+        mean_hand_m: z.number(),
+        mean_duration_days: z.number(),
+        peak_depth_m: z.number(),
+        area_km2: z.number(),
+        class: z.string(),
+        model_version: z.string(),
+        label: z.string(),
+      }),
+    }),
+  ),
+});
+
+export const hotspotFeatureCollectionSchema = z.object({
+  type: z.literal('FeatureCollection'),
+  name: z.string(),
+  schema_version: z.string(),
+  dataset_version: z.string(),
+  class: z.string(),
+  features: z.array(
+    z.object({
+      type: z.literal('Feature'),
+      geometry: z.object({
+        type: z.literal('Point'),
+        coordinates: z.tuple([z.number(), z.number()]),
+      }),
+      properties: z.object({
+        hotspot_id: z.string(),
+        rank: z.number().int().positive(),
+        reason: z.string(),
+        area_km2: z.number(),
+        hand_mean_m: z.number(),
+        distance_to_channel_m: z.number(),
+        first_step: z.number().int().nonnegative(),
+        peak_depth_m: z.number(),
+        centroid_lon: z.number(),
+        centroid_lat: z.number(),
+        district_id: z.string(),
+        class: z.string(),
+        label: z.string(),
+      }),
+    }),
+  ),
+});
+
 export type Manifest = z.infer<typeof manifestSchema>;
 export type Scenario = z.infer<typeof scenarioSchema>;
 export type ScenarioStep = z.infer<typeof scenarioStepSchema>;
@@ -147,3 +337,15 @@ export type FrameIndex = z.infer<typeof frameIndexSchema>;
 export type FrameClass = z.infer<typeof frameClassSchema>;
 export type FrameStep = z.infer<typeof frameStepSchema>;
 export type FeatureCollection = z.infer<typeof featureCollectionSchema>;
+export type DepthDeciles = z.infer<typeof depthDecilesSchema>;
+export type Provenance = z.infer<typeof provenanceSchema>;
+export type ProvenanceEntry = z.infer<typeof provenanceEntrySchema>;
+export type ProvenanceStage = z.infer<typeof provenanceStageSchema>;
+export type DistrictRisk = z.infer<typeof districtRiskSchema>;
+export type DistrictRiskEntry = z.infer<typeof districtRiskEntrySchema>;
+export type MonsoonSeries = z.infer<typeof monsoonSeriesSchema>;
+export type SeriesEntry = z.infer<typeof seriesEntrySchema>;
+export type RiskZoneCollection = z.infer<typeof riskZoneFeatureCollectionSchema>;
+export type RiskZoneProperties = RiskZoneCollection['features'][number]['properties'];
+export type HotspotCollection = z.infer<typeof hotspotFeatureCollectionSchema>;
+export type HotspotProperties = HotspotCollection['features'][number]['properties'];

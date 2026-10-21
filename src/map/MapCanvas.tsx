@@ -3,38 +3,106 @@ import maplibregl, {
   AttributionControl,
   LngLatBounds,
   Map as MapLibreMap,
+  Marker,
   NavigationControl,
+  Popup,
   ScaleControl,
   type ErrorEvent as MapLibreErrorEvent,
+  type MapMouseEvent,
 } from 'maplibre-gl';
 import type { Dataset } from '../data/types';
+import type { HotspotProperties } from '../data/schemas';
 import { useTimelineStore } from '../state/timelineStore';
 import { useTileHealthStore } from '../state/tileHealthStore';
+import { useLayerStore } from '../state/layerStore';
+import { usePanelStore } from '../state/panelStore';
+import { useSelectionStore } from '../state/selectionStore';
 import { badgeFor } from '../data/labels';
-import { formatDepthBand, formatStage, formatStepNumber } from '../data/format';
+import { formatArea, formatDepthValue, formatScore, formatStage, formatStepNumber } from '../data/format';
+import { hotspotDisplayName, hotspotReasonLabel, topDistrict } from '../data/risk';
 import { dataUrl } from '../data/loadData';
+import { prefersReducedMotion } from '../lib/motion';
 import { createFloodController, type FloodController } from './flood';
 import {
   AOI_CORE_BOUNDS,
   BACKGROUND_LAYER_ID,
+  DISTRICT_LABEL_LIMIT,
+  DISTRICT_LABEL_MIN_ZOOM,
   FLOOD_CURRENT_SOURCE_ID,
   FLOOD_OUTGOING_SOURCE_ID,
   HOME_BEARING,
   HOME_PITCH,
   HOME_ZOOM,
+  HOTSPOTS_LAYER_ID,
   MAX_BOUNDS,
   MAX_PITCH,
   MAX_ZOOM,
   MIN_ZOOM,
   bboxCenter,
 } from './mapConfig';
-import { buildMapStyle, setTerrain } from './mapStyle';
+import { applyLayerPaint, buildMapStyle, setTerrain } from './mapStyle';
+import { LAYER_IDS } from './layerRegistry';
 import { createTileHealthTracker, type TileHealthTracker } from './tileHealth';
 import { tileHealthCopy } from './tileHealthState';
 import styles from './map.module.css';
 
 interface MapCanvasProps {
   dataset: Dataset;
+}
+
+interface DistrictFeatureProperties {
+  district_id: string;
+  name: string;
+  rank: number;
+  risk_score: number;
+  risk_class: string;
+  centroid_lon: number;
+  centroid_lat: number;
+}
+
+function buildHotspotPopup(
+  hotspot: HotspotProperties,
+  districtName: string | null,
+  districtRiskScore: number | null,
+): HTMLElement {
+  const card = document.createElement('div');
+  card.className = styles.hotspotCard;
+
+  const kicker = document.createElement('span');
+  kicker.className = styles.hotspotKicker;
+  kicker.textContent = `Derived hotspot ${hotspot.hotspot_id} · rank ${hotspot.rank} of 20`;
+
+  const title = document.createElement('strong');
+  title.className = styles.hotspotTitle;
+  title.textContent = hotspotDisplayName(hotspot, districtName);
+
+  const score = document.createElement('span');
+  score.className = styles.hotspotScore;
+  score.textContent =
+    districtRiskScore === null
+      ? `Rank ${hotspot.rank} of 20`
+      : `Rank ${hotspot.rank} of 20 · district risk ${formatScore(districtRiskScore)}`;
+  score.dataset.hotspotRank = String(hotspot.rank);
+  score.dataset.districtRisk = districtRiskScore === null ? '' : String(districtRiskScore);
+
+  const meta = document.createElement('span');
+  meta.className = styles.hotspotMeta;
+  meta.textContent = `${formatArea(hotspot.area_km2)} km² · HAND ${formatDepthValue(
+    hotspot.hand_mean_m,
+  )} m · ${(hotspot.distance_to_channel_m / 1000).toFixed(1)} km from a channel`;
+
+  const reason = document.createElement('span');
+  reason.className = styles.hotspotReason;
+  reason.textContent = `${hotspotReasonLabel(hotspot.reason)} · peak depth ${formatDepthValue(
+    hotspot.peak_depth_m,
+  )} m`;
+
+  const caveat = document.createElement('span');
+  caveat.className = styles.hotspotCaveat;
+  caveat.textContent = 'Backwater pocket, not an embankment breach.';
+
+  card.append(kicker, title, score, meta, reason, caveat);
+  return card;
 }
 
 export function MapCanvas({ dataset }: MapCanvasProps) {
@@ -47,11 +115,31 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
   const [frameError, setFrameError] = useState(false);
   const health = useTileHealthStore((state) => state.snapshot);
   const healthLevel = useTileHealthStore((state) => state.level);
+  const floodVisible = useLayerStore((state) => state.visible.flood);
   const status = tileHealthCopy(health);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    const top = topDistrict(dataset.districtRisk);
+    const topDistrictProbe = top
+      ? Object.freeze({
+          name: top.name,
+          // The hook carries the display score the rail shows (71.9) plus the
+          // committed value (71.944) so either assertion is possible.
+          score: Number(formatScore(top.risk_score)),
+          riskScore: top.risk_score,
+          scoreLabel: formatScore(top.risk_score),
+          riskClass: top.risk_class,
+          rank: top.rank,
+          districtId: top.district_id,
+          areaShare: top.area_share,
+          durationDays: top.mean_duration_days,
+          peakDepthM: top.p90_peak_depth_m,
+          toString: () => top.name,
+        })
+      : null;
 
     // Reset the single shared health record for this map instance.
     useTileHealthStore.getState().reset();
@@ -61,7 +149,7 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     container.setAttribute('data-step', String(useTimelineStore.getState().step));
     container.setAttribute('data-frame-file', '');
 
-    // The probe is a live view of the store, not a snapshot that can drift.
+    // The probe is a live view of the stores, not a snapshot that can drift.
     const probe = Object.freeze({
       get step(): number {
         return useTimelineStore.getState().step;
@@ -74,6 +162,20 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       },
       get tileHealth(): 'live' | 'degraded' | 'offline' {
         return useTileHealthStore.getState().level;
+      },
+      get panel(): string {
+        return usePanelStore.getState().activePanel;
+      },
+      get layers() {
+        const state = useLayerStore.getState();
+        return {
+          visible: LAYER_IDS.filter((id) => state.visible[id]),
+          opacity: { ...state.opacity },
+          baseMode: state.baseMode,
+        };
+      },
+      get districtTop() {
+        return topDistrictProbe;
       },
     });
     Object.defineProperty(window, '__baanh', {
@@ -148,6 +250,121 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       container.setAttribute('data-ready', 'true');
     };
 
+    const districts = dataset.districts.features as Array<{
+      properties: DistrictFeatureProperties;
+      geometry: unknown;
+    }>;
+    const districtById = new Map(
+      districts.map((feature) => [feature.properties.district_id, feature.properties]),
+    );
+    const riskById = new Map(
+      dataset.districtRisk.districts.map((district) => [district.district_id, district]),
+    );
+    const labelFeatures = [...districts]
+      .filter((feature) => {
+        const rank = Number(feature.properties.rank);
+        return Number.isFinite(rank) && rank >= 1 && rank <= DISTRICT_LABEL_LIMIT;
+      })
+      .sort((left, right) => left.properties.rank - right.properties.rank);
+
+    const labelMarkers: Marker[] = [];
+    const updateLabelVisibility = () => {
+      const layerVisible = useLayerStore.getState().visible.districts;
+      const visible = layerVisible && map.getZoom() >= DISTRICT_LABEL_MIN_ZOOM;
+      for (const marker of labelMarkers) {
+        const element = marker.getElement();
+        element.style.display = visible ? '' : 'none';
+        element.setAttribute('aria-hidden', visible ? 'false' : 'true');
+      }
+    };
+
+    const createDistrictLabels = () => {
+      if (labelMarkers.length > 0) return;
+      for (const feature of labelFeatures) {
+        const properties = feature.properties;
+        const element = document.createElement('div');
+        element.className = styles.districtLabel;
+        element.dataset.districtId = properties.district_id;
+
+        const name = document.createElement('span');
+        name.className = styles.districtLabelName;
+        name.textContent = properties.name;
+
+        const score = document.createElement('span');
+        score.className = styles.districtLabelScore;
+        score.textContent = formatScore(properties.risk_score);
+
+        element.append(name, score);
+        element.title = `${properties.name} · risk ${formatScore(properties.risk_score)}`;
+        const marker = new Marker({ element, anchor: 'center' })
+          .setLngLat([properties.centroid_lon, properties.centroid_lat])
+          .addTo(map);
+        labelMarkers.push(marker);
+      }
+      updateLabelVisibility();
+    };
+
+    let hotspotPopup: Popup | null = null;
+    const onHotspotClick = (event: MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
+      const feature = event.features?.[0];
+      if (!feature) return;
+      const hotspot = feature.properties as unknown as HotspotProperties;
+      const district = districtById.get(hotspot.district_id);
+      const risk = riskById.get(hotspot.district_id);
+      const element = buildHotspotPopup(
+        hotspot,
+        district?.name ?? null,
+        risk?.risk_score ?? null,
+      );
+      hotspotPopup?.remove();
+      hotspotPopup = new Popup({
+        closeButton: true,
+        closeOnClick: true,
+        offset: 12,
+        maxWidth: '310px',
+        className: styles.hotspotPopup,
+      })
+        .setLngLat([hotspot.centroid_lon, hotspot.centroid_lat])
+        .setDOMContent(element)
+        .addTo(map);
+    };
+    const onHotspotEnter = () => {
+      map.getCanvas().style.cursor = 'pointer';
+    };
+    const onHotspotLeave = () => {
+      map.getCanvas().style.cursor = '';
+    };
+
+    const applyLayers = () => {
+      applyLayerPaint(map, useLayerStore.getState());
+      updateLabelVisibility();
+      if (!useLayerStore.getState().visible.hotspots) hotspotPopup?.remove();
+      floodRef.current?.refreshOpacity();
+    };
+    const unsubscribeLayers = useLayerStore.subscribe(applyLayers);
+
+    const focusDistrict = (districtId: string | null) => {
+      if (!districtId) return;
+      const district = districtById.get(districtId);
+      if (!district) return;
+      const camera = {
+        center: [district.centroid_lon, district.centroid_lat] as [number, number],
+        zoom: Math.max(map.getZoom(), 8.1),
+        pitch: HOME_PITCH,
+        bearing: HOME_BEARING,
+      };
+      if (prefersReducedMotion()) {
+        map.jumpTo(camera);
+      } else {
+        map.flyTo({ ...camera, duration: 900, essential: true });
+      }
+    };
+    const unsubscribeSelection = useSelectionStore.subscribe((state, previous) => {
+      if (state.selectedDistrictId !== previous.selectedDistrictId) {
+        focusDistrict(state.selectedDistrictId);
+      }
+    });
+
     let sceneStarted = false;
     let readyFallback = 0;
 
@@ -185,6 +402,12 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       }
       updateAriaLabel(useTimelineStore.getState().step);
 
+      applyLayers();
+      createDistrictLabels();
+      map.on('click', HOTSPOTS_LAYER_ID, onHotspotClick);
+      map.on('mouseenter', HOTSPOTS_LAYER_ID, onHotspotEnter);
+      map.on('mouseleave', HOTSPOTS_LAYER_ID, onHotspotLeave);
+
       const controller = createFloodController(map, dataset.frameIndex, {
         onFrameError: () => setFrameError(true),
         onFrameApplied: (_step, file) => {
@@ -192,6 +415,7 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
           container.setAttribute('data-frame-file', file);
           markReady();
         },
+        getOpacity: () => useLayerStore.getState().opacity.flood,
       });
       floodRef.current = controller;
 
@@ -213,6 +437,8 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     // In case both events were already delivered before this listener.
     startScene();
 
+    map.on('zoom', updateLabelVisibility);
+
     const unsubscribe = useTimelineStore.subscribe((state, previous) => {
       if (state.step === previous.step) return;
       container.setAttribute('data-step', String(state.step));
@@ -226,13 +452,21 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     return () => {
       window.clearTimeout(readyFallback);
       unsubscribe();
+      unsubscribeLayers();
+      unsubscribeSelection();
       resizeObserver.disconnect();
       healthTracker.destroy();
       floodRef.current?.destroy();
       floodRef.current = null;
       map.off('styledata', startScene);
       map.off('style.load', startScene);
+      map.off('zoom', updateLabelVisibility);
+      map.off('click', HOTSPOTS_LAYER_ID, onHotspotClick);
+      map.off('mouseenter', HOTSPOTS_LAYER_ID, onHotspotEnter);
+      map.off('mouseleave', HOTSPOTS_LAYER_ID, onHotspotLeave);
       map.off('error', onMapError);
+      hotspotPopup?.remove();
+      for (const marker of labelMarkers) marker.remove();
       map.remove();
       mapRef.current = null;
       if (window.__baanh) Reflect.deleteProperty(window, '__baanh');
@@ -275,20 +509,25 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
           <span>Scenario depth</span>
           <span className={styles.legendBadge}>{badgeFor(dataset.frameIndex.class)}</span>
         </div>
-        <ul className={styles.legendList}>
+        <ul className={styles.legendList} data-flood-visible={floodVisible ? 'true' : 'false'}>
           {depthClasses.map((entry) => (
-            <li key={entry.id} className={styles.legendItem}>
+            <li
+              key={entry.id}
+              className={styles.legendItem}
+              style={{ opacity: floodVisible ? 1 : 0.35 }}
+            >
               <span
                 className={styles.swatch}
                 style={{ backgroundColor: entry.color, opacity: Math.max(0.55, entry.alpha / 255) }}
               />
-              <span>{formatDepthBand(entry.min_m, entry.max_m)}</span>
+              <span>{`${entry.label} m`}</span>
             </li>
           ))}
         </ul>
         <p className={styles.legendMeta}>
-          {frameWidth} × {frameHeight} px · {formatStage(frameResolution)} m/px · classes from
-          frame-index.json
+          {floodVisible
+            ? `${frameWidth} × ${frameHeight} px · ${formatStage(frameResolution)} m/px · classes from frame-index.json`
+            : 'Flood extent hidden in Layers; depth classes still from frame-index.json.'}
         </p>
       </div>
 
