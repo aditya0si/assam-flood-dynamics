@@ -176,3 +176,49 @@ docs/screenshot-m0.png, docs/M0-REPORT.md
 ```
 
 `public/data/**` and `pipeline/**` are byte-for-byte unchanged.
+
+
+---
+
+## Deployment and final acceptance (reviewer-verified, 2026-10-21)
+
+**Live:** https://aditya0si.github.io/assam-flood-dynamics/ · **repo:** `aditya0si/assam-flood-dynamics` (public)
+**Deployed commit:** `cf1a835` · **Pages:** `build_type=workflow`, deploy run `39591027361`/`39598488874` green.
+
+### CI is the E2E authority (supersedes the sandbox caveat above)
+
+Run [`39598488935`](https://github.com/aditya0si/assam-flood-dynamics/actions/runs/39598488935) on
+`ubuntu-latest`, commit `cf1a835`: **success, 10/10 Playwright tests**.
+Measured inside CI: A6 painted share `S00 4.44% < S04 9.48% < S07 25.37%`; R6 map height
+`559.0px = 64.33vh`, S07 flood `235,420 px = 21.93%` of the 1920×559 map viewport.
+
+### Reviewer-run gates on this machine
+
+| Gate | Result |
+|---|---|
+| `check-data.mjs` | 24/24 |
+| `check-budget.mjs` | PASS — 4.63 MB total, 248.8 KB max frame |
+| `check-honesty.mjs` (+) | PASS — and **independently falsified**: injected `casualties displaced incident_id` → exit 1, 3 violations |
+| `npm run test:unit` | 14/14 |
+| Clean clone `npm ci && npm run build` | exit 0 (portable; sandbox shim not required) |
+
+### Live-URL probe (reviewer, Chromium)
+
+`data-ready=true`, `tileHealth=live`, `styleLoaded=true`, `renderSeq` 25→85 during interaction,
+S00 `1/12 · 1833.9 km²`, S07 `8/12 · 10010.6 km² · 3.7 m · frames/step-07.png`, playback advances,
+`NOT A FORECAST` visible, **zero console errors**. Asset/data content types verified
+(`application/javascript`, `application/json`, `image/png`), bogus asset returns 404 (no SPA fallback 200).
+
+### Known issues (cosmetic, not gating)
+
+- The bottom-right attribution line clips at narrow rail widths (`… · Bo`); the expanded attribution
+  block is taller than the available bottom-right offset.
+- The flood raster shows its 180 m resolution at high zoom (by design; stated in the legend).
+- Machine-read "Bathub" typo reports were **false** — the rendered DOM contains `Bathtub` and not
+  `Bathub`; recorded here so the finding is not re-litigated.
+
+### Outside M0 (from `ARCHITECTURE.md` P2)
+
+Evacuation zones, relief/resource table, full drone HUD, multi-event comparison, 30 m analysis,
+export, live gauge adapter — each deliberately unbuilt because the probed sources cannot support it
+honestly.
