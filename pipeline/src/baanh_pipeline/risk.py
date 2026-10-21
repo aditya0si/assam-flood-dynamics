@@ -10,7 +10,6 @@ from rasterio.features import rasterize
 from rasterio.transform import Affine
 from scipy import ndimage
 from shapely.geometry import Point, shape
-from shapely.ops import unary_union
 
 from .config import Config
 from .geo import (
@@ -195,52 +194,125 @@ def run(
     areas = row_cell_areas_km2(transform, height, width, cfg.aoi.analysis_crs)
     area_window = np.broadcast_to(areas[r0:r1], (r1 - r0, c1 - c0))
 
-    def build_zones(tolerance_m: float):
-        records = []
+    from rasterio.features import shapes as raster_shapes
+
+    structure = np.ones((3, 3), dtype=np.int8)
+    min_zone_area = float(risk_cfg["zone"]["min_area_km2"])
+    zone_tolerance = float(risk_cfg["zone"]["simplify_tolerance_m"])
+    wet_window = wet_any[r0:r1, c0:c1]
+
+    def _blocks(array, bh, bw, factor, pad_h, pad_w):
+        padded = np.pad(array, ((0, pad_h), (0, pad_w)), mode="constant")
+        return padded.reshape(bh, factor, bw, factor)
+
+    def build_zones(block_factor: float, tolerance_m: float):
+        """Vectorise the classified wet mask on a block-majority grid.
+
+        The 0.9 MB raw cap cannot be met by one polygon per 8-connected 90 m
+        component: the peak mask has ~75k class components and 12k of them pass
+        the 0.05 km² floor, which is several MB even at coarse simplification.
+        Vectorising a block-majority grid preserves the class areas (a block is
+        kept when at least half of its cells are wet) while reducing the
+        boundary coordinate count.  Statistics are still computed from the
+        90 m cells under each zone.
+        """
+        factor = int(block_factor)
+        hh, ww = class_window.shape
+        bh = (hh + factor - 1) // factor
+        bw = (ww + factor - 1) // factor
+        pad_h = bh * factor - hh
+        pad_w = bw * factor - ww
+        class_blocks = _blocks(class_window, bh, bw, factor, pad_h, pad_w)
+        wet_blocks = _blocks(wet_window, bh, bw, factor, pad_h, pad_w)
+        class_counts = np.stack(
+            [(class_blocks == value).sum(axis=(1, 3)) for value in (1, 2, 3, 4)],
+            axis=0,
+        )
+        coarse = (np.argmax(class_counts, axis=0) + 1).astype(np.uint8)
+        coarse_wet_cells = wet_blocks.sum(axis=(1, 3))
+        coarse[coarse_wet_cells < (factor * factor + 1) // 2] = 0
+
+        def block_sum(array):
+            return _blocks(array, bh, bw, factor, pad_h, pad_w).sum(axis=(1, 3))
+
+        def block_max(array):
+            return _blocks(array, bh, bw, factor, pad_h, pad_w).max(axis=(1, 3))
+
+        block_wet_area = block_sum(area_window * wet_window)
+        block_score_area = block_sum(score_window * area_window)
+        block_hand_area = block_sum(hand_window * wet_window * area_window)
+        block_duration_area = block_sum(duration_window * wet_window * area_window)
+        block_peak_max = block_max(peak_window)
+        coarse_transform = window_transform * Affine.scale(factor, factor)
+
+        records: list[dict] = []
+        temp_raster = np.zeros(coarse.shape, dtype=np.int32)
         for class_value in (1, 2, 3, 4):
-            mask = class_window == class_value
+            mask = coarse == class_value
             if not mask.any():
                 continue
-            from rasterio.features import shapes as raster_shapes
-
-            geoms = [
-                shape(geom_mapping)
-                for geom_mapping, _ in raster_shapes(
-                    class_window, mask=mask, connectivity=8, transform=window_transform
+            labels, component_count = ndimage.label(mask, structure=structure)
+            if component_count == 0:
+                continue
+            ids = np.arange(1, component_count + 1, dtype=np.int32)
+            component_area = ndimage.sum(block_wet_area, labels=labels, index=ids)
+            keep_ids = ids[component_area >= min_zone_area - 0.01]
+            if keep_ids.size == 0:
+                continue
+            keep_lookup = np.zeros(component_count + 1, dtype=bool)
+            keep_lookup[keep_ids] = True
+            keep_mask = keep_lookup[labels]
+            mapping = np.zeros(component_count + 1, dtype=np.int32)
+            start = len(records)
+            for label_id in keep_ids:
+                temp_id = len(records) + 1
+                mapping[int(label_id)] = temp_id
+                records.append(
+                    {"temp": temp_id, "label": int(label_id), "class": class_value}
                 )
-            ]
-            if not geoms:
+            class_zone = mapping[labels]
+            temp_raster[class_zone > 0] = class_zone[class_zone > 0]
+            geoms = {
+                int(value): shape(geometry_mapping)
+                for geometry_mapping, value in raster_shapes(
+                    labels,
+                    mask=keep_mask,
+                    connectivity=8,
+                    transform=coarse_transform,
+                )
+            }
+            for record in records[start:]:
+                record["utm"] = geoms.get(record["label"])
+
+        if not records:
+            return [], 0
+        temp_max = max(record["temp"] for record in records)
+        kept = []
+        for record in records:
+            geom = record.get("utm")
+            if geom is None or geom.is_empty:
                 continue
-            merged = valid(unary_union(geoms))
-            if merged is None or merged.is_empty:
-                continue
-            simplified = valid(merged.simplify(tolerance_m, preserve_topology=True))
+            simplified = valid(geom.simplify(tolerance_m, preserve_topology=True))
             if simplified is None or simplified.is_empty:
                 continue
-            from .geo import polygon_parts
-
-            for part in polygon_parts(simplified):
-                if part.is_empty:
-                    continue
-                wgs = project_geom(part, cfg.aoi.analysis_crs, cfg.aoi.output_crs)
-                wgs = valid(wgs)
-                if wgs is None or wgs.is_empty:
-                    continue
-                area = geodesic_area_km2(wgs)
-                if area < float(risk_cfg["zone"]["min_area_km2"]):
-                    continue
-                centroid = wgs.representative_point()
-                records.append(
-                    {
-                        "utm": part,
-                        "wgs": wgs,
-                        "class": class_value,
-                        "area": area,
-                        "cx": float(centroid.x),
-                        "cy": float(centroid.y),
-                    }
-                )
-        records.sort(
+            wgs = valid(project_geom(simplified, cfg.aoi.analysis_crs, cfg.aoi.output_crs))
+            if wgs is None or wgs.is_empty:
+                continue
+            area = geodesic_area_km2(wgs)
+            if area < min_zone_area:
+                continue
+            centroid = wgs.representative_point()
+            kept.append(
+                {
+                    "temp": record["temp"],
+                    "wgs": wgs,
+                    "class": record["class"],
+                    "area": area,
+                    "cx": float(centroid.x),
+                    "cy": float(centroid.y),
+                }
+            )
+        kept.sort(
             key=lambda r: (
                 r["class"],
                 round(r["cy"], 5),
@@ -248,29 +320,20 @@ def run(
                 -r["area"],
             )
         )
-        if not records:
+        if not kept:
             return [], 0
-        zone_raster = np.zeros(class_window.shape, dtype=np.int32)
-        for index, record in enumerate(records, start=1):
-            zone_raster = np.maximum(
-                zone_raster,
-                rasterize(
-                    [(record["utm"], index)],
-                    out_shape=class_window.shape,
-                    transform=window_transform,
-                    fill=0,
-                    all_touched=False,
-                    dtype="int32",
-                ),
-            )
-        ids = np.arange(1, len(records) + 1, dtype=np.int32)
-        area_sum = ndimage.sum(area_window, labels=zone_raster, index=ids)
-        score_sum = ndimage.sum(score_window * area_window, labels=zone_raster, index=ids)
-        mean_hand = ndimage.mean(hand_window, labels=zone_raster, index=ids)
-        mean_duration = ndimage.mean(duration_window, labels=zone_raster, index=ids)
-        max_peak = ndimage.maximum(peak_window, labels=zone_raster, index=ids)
+        remap = np.zeros(temp_max + 1, dtype=np.int32)
+        for index, record in enumerate(kept, start=1):
+            remap[record["temp"]] = index
+        zone_raster = remap[temp_raster]
+        ids = np.arange(1, len(kept) + 1, dtype=np.int32)
+        area_sum = ndimage.sum(block_wet_area, labels=zone_raster, index=ids)
+        score_sum = ndimage.sum(block_score_area, labels=zone_raster, index=ids)
+        hand_sum = ndimage.sum(block_hand_area, labels=zone_raster, index=ids)
+        duration_sum = ndimage.sum(block_duration_area, labels=zone_raster, index=ids)
+        max_peak = ndimage.maximum(block_peak_max, labels=zone_raster, index=ids)
         features = []
-        for index, record in enumerate(records):
+        for index, record in enumerate(kept):
             if area_sum[index] <= 0:
                 continue
             mean_score = float(score_sum[index] / area_sum[index])
@@ -280,8 +343,10 @@ def run(
                 "zone_id": f"RZ-{len(features) + 1:04d}",
                 "risk_class": zone_class,
                 "risk_score": round(mean_score, 3),
-                "mean_hand_m": round(float(mean_hand[index]), 3),
-                "mean_duration_days": round(float(mean_duration[index]), 3),
+                "mean_hand_m": round(float(hand_sum[index] / area_sum[index]), 3),
+                "mean_duration_days": round(
+                    float(duration_sum[index] / area_sum[index]), 3
+                ),
                 "peak_depth_m": round(float(max_peak[index]), 3),
                 "area_km2": round(float(record["area"]), 4),
                 "class": "derived",
@@ -291,22 +356,31 @@ def run(
             item = feature(record["wgs"], feature_record, cfg.aoi.decimals)
             if item is not None:
                 features.append(item)
-        return features, len(zone_raster[zone_raster > 0])
+        return features, int((zone_raster > 0).sum())
 
-    tolerance = float(risk_cfg["zone"]["simplify_tolerance_m"])
-    zone_features, _ = build_zones(tolerance)
     cap = int(cfg.pipeline["validation"]["file_caps_bytes"]["data/risk/risk-zones.geojson"])
-    while True:
-        payload = json_bytes(feature_collection("Derived risk zones", "derived", zone_features, version), indent=None)
-        if len(payload) <= cap or tolerance >= 300:
-            break
-        tolerance += 50
-        print(f"[10] risk zones over cap; simplifying at {tolerance:.0f} m")
-        zone_features, _ = build_zones(tolerance)
-    if len(payload) > cap:
-        raise RuntimeError(
-            f"stage 10: risk zones {len(payload)} bytes exceed cap {cap} at {tolerance:.0f} m"
+    chosen = None
+    for block_factor in (4, 5, 6, 8, 10, 12):
+        zone_features, _ = build_zones(block_factor, zone_tolerance)
+        payload = json_bytes(
+            feature_collection("Derived risk zones", "derived", zone_features, version),
+            indent=None,
         )
+        grid_m = block_factor * res
+        print(
+            f"[10] risk zones on {grid_m:.0f} m block-majority grid: "
+            f"{len(zone_features)} features, {len(payload):,} B "
+            f"(cap {cap:,} B)"
+        )
+        if len(payload) <= cap:
+            chosen = (block_factor, zone_features, payload, grid_m)
+            break
+    if chosen is None:
+        raise RuntimeError(
+            f"stage 10: risk zones still exceed the {cap} byte cap at a "
+            "1,080 m block-majority grid"
+        )
+    block_factor, zone_features, payload, zone_grid_m = chosen
     out_zones.parent.mkdir(parents=True, exist_ok=True)
     from .util import atomic_write_bytes
 
@@ -615,12 +689,17 @@ def run(
     stage.metric("ranked_districts", len(ranked))
     stage.metric("hotspot_count", len(hotspot_features))
     stage.metric("max_district_score", round(float(np.nanmax(scores)), 3))
-    stage.metric("zone_simplify_m", tolerance)
+    stage.metric("zone_simplify_m", zone_tolerance)
+    stage.metric("zone_block_factor", block_factor)
+    stage.metric("zone_grid_m", zone_grid_m)
     stage.finish(
         "Cell risk = 100 x (0.60 x (1 - HAND/6) + 0.40 x duration/136), only cells wet "
-        "in >=1 step; district score = 0.45 area share + 0.35 duration + 0.20 p90 peak "
-        "depth; hotspots are low-HAND distant pockets, not breaches. Wet masks and depth "
-        "are read from the stage-09 uint8 per-step cache, not a float stack. No demographics."
+        "in >=1 step; risk zones vectorised on a block-majority grid "
+        f"({zone_grid_m:.0f} m, factor {block_factor}) with 90 m cell statistics, "
+        f"simplified at {zone_tolerance:.0f} m to satisfy the fixed 0.9 MB raw cap; "
+        "district score = 0.45 area share + 0.35 duration + 0.20 p90 peak depth; "
+        "hotspots are low-HAND distant pockets, not breaches. Wet masks and depth are "
+        "read from the stage-09 uint8 per-step cache, not a float stack. No demographics."
     )
     print(
         f"[10] ok: {len(zone_features)} zones ({len(payload) / 1024:.0f} KB), "
