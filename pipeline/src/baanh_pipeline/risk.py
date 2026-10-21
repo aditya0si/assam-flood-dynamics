@@ -199,6 +199,12 @@ def run(
     structure = np.ones((3, 3), dtype=np.int8)
     min_zone_area = float(risk_cfg["zone"]["min_area_km2"])
     zone_tolerance = float(risk_cfg["zone"]["simplify_tolerance_m"])
+    vector_block_factors = [
+        int(value) for value in risk_cfg["zone"].get("vector_block_factors", [4, 5, 6, 8, 10, 12])
+    ]
+    vector_min_wet_fraction = float(
+        risk_cfg["zone"].get("vector_min_wet_fraction", 0.45)
+    )
     wet_window = wet_any[r0:r1, c0:c1]
 
     def _blocks(array, bh, bw, factor, pad_h, pad_w):
@@ -212,9 +218,9 @@ def run(
         component: the peak mask has ~75k class components and 12k of them pass
         the 0.05 km² floor, which is several MB even at coarse simplification.
         Vectorising a block-majority grid preserves the class areas (a block is
-        kept when at least half of its cells are wet) while reducing the
-        boundary coordinate count.  Statistics are still computed from the
-        90 m cells under each zone.
+        kept when at least ``vector_min_wet_fraction`` of its cells are wet)
+        while reducing the boundary coordinate count.  Statistics are still
+        computed from the 90 m cells under each zone.
         """
         factor = int(block_factor)
         hh, ww = class_window.shape
@@ -230,7 +236,8 @@ def run(
         )
         coarse = (np.argmax(class_counts, axis=0) + 1).astype(np.uint8)
         coarse_wet_cells = wet_blocks.sum(axis=(1, 3))
-        coarse[coarse_wet_cells < (factor * factor + 1) // 2] = 0
+        wet_floor = int(np.ceil(factor * factor * vector_min_wet_fraction))
+        coarse[coarse_wet_cells < wet_floor] = 0
 
         def block_sum(array):
             return _blocks(array, bh, bw, factor, pad_h, pad_w).sum(axis=(1, 3))
@@ -360,7 +367,7 @@ def run(
 
     cap = int(cfg.pipeline["validation"]["file_caps_bytes"]["data/risk/risk-zones.geojson"])
     chosen = None
-    for block_factor in (4, 5, 6, 8, 10, 12):
+    for block_factor in vector_block_factors:
         zone_features, _ = build_zones(block_factor, zone_tolerance)
         payload = json_bytes(
             feature_collection("Derived risk zones", "derived", zone_features, version),

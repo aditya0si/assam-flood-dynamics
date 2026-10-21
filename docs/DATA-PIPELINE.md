@@ -435,11 +435,13 @@ python -m baanh_pipeline.cli build-inundation `
   bytes), `scenario.json` copy, and the uint8 mask cache (≤300 MB). There is no
   `flood-frames.geojson` and no per-step vector outline in M0.
 - **Validation:** area non-decreasing on the rising limb (S00–S07), decreasing on recession
-  (S08–S11), peak at S07; every frame present and valid; peak extent inside V-A4; peak median
-  depth 1.0–2.2 m, p95 ≤ stage and clamped wet ≤30 % (V-A5), computed on the area-filtered
-  mask; clamped AOI ≤6 % (V-A6); V-A9 component counts and dropped area recorded and
-  reproducible; V-A10 index/PNG agreement; wall time and artifacts inside V-A8; per-frame PNG
-  ≤400 KB, animation tier ≤4.0 MB and `public/data/` ≤9.0 MB inside V09.
+  (S08–S11), peak at S07; every frame present and valid; peak extent inside V-A4; V-A5 v4 is
+  shape-based (median ≥0.7 m and ≤ peak stage − 0.5 m; p95 ≤ peak stage; p95 − median ≥0.6 m;
+  clamped wet ≤30 %), computed on the area-filtered mask; every step carries `wet_cells` and
+  the six `delay_deciles` (REVIEW-05 D2); clamped AOI ≤6 % (V-A6); V-A9 component counts,
+  dropped area and `wet_cells` recorded and reproducible; V-A10 index/PNG agreement; wall time
+  and artifacts inside V-A8; per-frame PNG ≤400 KB, animation tier ≤4.0 MB and `public/data/`
+  ≤9.0 MB inside V09.
 
 ### Stage 10 — risk zones, district ranking, hotspots
 
@@ -804,8 +806,8 @@ for the app to place every PNG without knowing the projection:
 class 0 is fully transparent, classes 1–4 are the depth bands. The PNG is optimised with
 `optimize=True` and a palette + `tRNS` chunk, and is gated **raw** at 400 KB per frame. No
 per-band GeoJSON and no per-step vector outline are produced in M0; a peak-extent outline is
-allowed only as P1 with its own cap. The `flood-summary.json` schema is unchanged for per-step
-area/district shares (§6.8).
+allowed only as P1 with its own cap. `flood-summary.json` keeps the per-step area/district
+shares and, from REVIEW-05 D2, also publishes `wet_cells` plus the six `delay_deciles` (§6.8).
 
 ### 6.8 `flood/flood-summary.json`
 
@@ -835,10 +837,19 @@ area/district shares (§6.8).
       "stage_m": 3.70,
       "above_threshold": true,
       "inundated_area_km2": 0.0,
+      "wet_cells": 0,
       "new_inundation_km2": 0.0,
       "receded_area_km2": 0.0,
       "median_depth_m": 0.0,
       "p95_depth_m": 0.0,
+      "delay_deciles": {
+        "p10": 0.0,
+        "p25": 0.0,
+        "p50": 0.0,
+        "p75": 0.0,
+        "p90": 0.0,
+        "p95": 0.0
+      },
       "max_depth_m": 0.0,
       "mean_depth_m": 0.0,
       "clamped_wet_share": 0.0,
@@ -907,12 +918,19 @@ Field semantics:
 - `above_threshold`: `stage_m >= scenario.threshold_stage_m` (2.0). A model flag, not an official warning.
 - `inundated_area_km2`: union of wet cells inside AOI v2 at the step, after the V-A9
   component-area filter.
+- `wet_cells`: count of wet analysis cells (90 m) in the same area-filtered mask. It is an
+  artifact, not a derived estimate; V-A9 checks it against the committed wet mask.
 - `new_inundation_km2`: cells wet at `t` and dry at `t−1` (0 at t=0).
 - `receded_area_km2`: cells dry at `t` and wet at `t−1` (0 at t=0).
 - `median_depth_m`, `p95_depth_m`, `max_depth_m`, `mean_depth_m`: over wet cells at the step;
   mean is area-weighted. Depth is `stage_m − max(HAND, 0)` (REVIEW-03 B2), so every value is
   ≤ the step stage. The median and p95 are the V-A5 statistics on the area-filtered mask
   (including channel cells).
+- `delay_deciles`: REVIEW-05 D2. The 10th, 25th, 50th, 75th, 90th and 95th percentile of depth
+  over wet cells, keyed `p10`…`p95`. `p50` equals `median_depth_m` and `p95` equals
+  `p95_depth_m`; the six values are published independently and no consumer may average them
+  into one number. They are the shape evidence behind the V-A5 spread rule: a distribution
+  piled up against the bathtub bound is visible in `p75`–`p95`, not in the median alone.
 - `clamped_wet_share`: share of the step's wet area whose burned ground lies below its nearest
   channel elevation (HAND clamped to 0). V-A5 caps the peak-step value at 30 %.
 - `clamped_aoi_share`: share of valid AOI v2 cells that are clamped; V-A6 caps it at 6 %.
@@ -947,6 +965,13 @@ Field semantics:
 
 Geometry: `Polygon`/`MultiPolygon`, simplified 100 m, min 0.05 km². Only cells wet in at least
 one step are classified, so the layer is **scenario-conditional risk**, not all-time flood risk.
+Because 12k 90 m components cannot fit the fixed 0.9 MB raw cap, stage 10 vectorises a
+block-majority grid: the smallest factor in `risk.zone.vector_block_factors` whose output fits the
+cap is used, with a block retained when at least `risk.zone.vector_min_wet_fraction` of its 90 m
+cells are wet. `risk_score`, `mean_hand_m`, `mean_duration_days`, `peak_depth_m` are still
+computed from the 90 m cells under each zone. In A5 the chosen grid is 1,080 m (factor 12) at a
+45% wet threshold; the 100 m simplification and 0.05 km² floor are unchanged. This is a
+cartographic generalisation required by the size cap, not a change to the risk formula.
 
 ### 6.10 `risk/district-risk.json`
 
@@ -1136,7 +1161,7 @@ valid samples. No NaN; invalid samples are omitted and counted in provenance.
       "id": "V-A5",
       "name": "Peak depth",
       "status": "pass",
-      "expected": "peak-step median 1.0–2.2 m; p95 ≤ peak stage; clamped wet ≤30%",
+      "expected": "peak-step median ≥0.7 m and ≤ peak stage − 0.5 m; p95 ≤ peak stage; p95 − median ≥0.6 m; clamped wet ≤30%; every step has wet_cells and ordered delay_deciles",
       "actual": "…",
       "detail": "…"
     }
@@ -1308,8 +1333,9 @@ channel. Remove them:
 1. Label `wet_raw` with 8-connectivity (`scipy.ndimage.label`).
 2. A component is retained if it contains at least one channel cell, or a cell whose
    `distance_m <= 90` (one cell from a channel).
-3. Drop components with fewer than `MIN_COMPONENT_CELLS` (3) cells.
-4. `wet = retained components`; `depth = depth_raw` where wet, else 0.
+3. `wet_connected = retained components`; the V-A9 ≥9-cell filter below is the only
+   component-size floor (there is no separate 3-cell floor).
+4. `depth = depth_raw` where the final wet mask is true, else 0.
 
 This is a topological connectivity check, not a flow simulation. It can still retain a cell that
 would be separated by a levee; that is covered by the no-levee limitation. It can drop a genuine
@@ -1504,6 +1530,10 @@ Polygonise the classified raster, simplify at 100 m, drop polygons < 0.05 km². 
 `risk_score` is the area-weighted mean cell score; its class is the class of that mean, and
 because polygonisation is per class the mean stays inside the class band. If a merged polygon
 would cross a class boundary, keep the classes separate (do not merge across classes).
+The 0.9 MB raw cap is binding: stage 10 vectorises a block-majority grid
+(`risk.zone.vector_block_factors`, `risk.zone.vector_min_wet_fraction`) to reduce the boundary
+coordinate count while keeping the 90 m cell statistics; the chosen grid and the resulting zone
+coverage are reported in `docs/PIPELINE-REPORT.md`.
 
 ### 9.2 District aggregation → ranking
 
@@ -1613,7 +1643,7 @@ refuses if `status != "pass"`. The report lists every gate by ID in
 | V-A2 | Channel policy | Channel cells ≤4.0% of AOI v2; zero model ways with midpoint outside AOI v2 + 5 km; every model way is `waterway=river` | fail |
 | V-A3 | Stage series v3 | Strictly increases S00→S07, strictly decreases S08→S11, peak = 3.70 m at S07, threshold 2.0 m | fail |
 | V-A4 | Peak extent plausibility | Peak extent between 4,000 and 12,000 km² and ≤40% of the 31,050 km² flood-prone area (reviewer-selected band, not a calibrated observation) | fail |
-| V-A5 | Peak depth | Peak-step median depth 1.0–2.2 m; p95 ≤ peak stage; clamped share of wet area ≤30% (`depth = stage − max(HAND, 0)`), computed on the area-filtered mask | fail |
+| V-A5 | Peak depth | REVIEW-05 D1 v4: peak-step median ≥0.7 m and ≤ peak stage − 0.5 m; p95 ≤ peak stage; p95 − median ≥0.6 m; clamped share of wet area ≤30% (`depth = stage − max(HAND, 0)`), computed on the area-filtered mask; every step carries `wet_cells` and six ordered `delay_deciles` whose p50/p95 equal the step median/p95 (D2) | fail |
 | V-A6 | Clamped HAND | Clamped negative HAND cells inside AOI v2 ≤6.0% | fail |
 | V-A7 | Hydrograph shape | Every rising-limb step non-decreasing; recession non-increasing; peak at S07 | fail |
 | V-A8 | Stage 09 performance | Stage 09 wall time ≤10 min; no `inundation-stack.npz` above 300 MB; every stage-09 artifact ≤300 MB | fail |

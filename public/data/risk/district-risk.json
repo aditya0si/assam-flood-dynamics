@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "scenario_id": "assam-monsoon-composite-v1",
   "class": "derived",
-  "generated_at": "2026-10-21T02:22:19Z",
+  "generated_at": "2026-10-21T02:47:00Z",
   "weights": {
     "area_share": 0.45,
     "duration": 0.35,

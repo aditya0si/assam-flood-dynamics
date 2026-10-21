@@ -1,0 +1,353 @@
+{
+  "dataset_version": "2026.10.0",
+  "entries": [
+    {
+      "class": "source",
+      "dataset": "AWS Terrarium DEM mosaic",
+      "fetched_at": "2026-10-20T20:33:58Z",
+      "id": "terrain",
+      "licence": "Mapzen/Amazon elevation tiles; attribution required; verify terms before public launch",
+      "notes": "Bilinear warp z11 Web Mercator to EPSG:32646 at 90 m; hillshade 315°/45°, 8-bit WebP. The DEM GeoTIFF is an intermediate and is not committed.",
+      "output_paths": [
+        "data/basemap/assam-hillshade.webp"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli fetch-terrain --aoi pipeline/config/aoi.json --sources pipeline/config/sources.json --zoom 11 --cache pipeline/cache/terrain",
+          "stage": "01",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-dem --tiles pipeline/cache/terrain --index pipeline/work/terrain-index.json --aoi pipeline/config/aoi.json --out-dem pipeline/work/dem-90m.tif --out-hillshade public/data/basemap/assam-hillshade.webp --hillshade-width 2000",
+          "stage": "04",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "AWS Terrarium elevation tiles",
+      "source_url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+    },
+    {
+      "class": "source",
+      "dataset": "geoBoundaries ADM2 Assam districts and dissolved state",
+      "fetched_at": "2026-10-20T20:29:58Z",
+      "id": "boundaries",
+      "licence": "geoBoundaries API metadata: ADM2 Open Data Commons ODbL 1.0; ADM1 filter CC BY 2.5 IN",
+      "notes": "ADM2 shapeISO is empty in the fetched release, so Assam districts were selected against the same source's ADM1 Assam polygon. State outline is dissolved from the selected ADM2 features. District risk attributes are derived in stage 10.",
+      "output_paths": [
+        "data/admin/assam-state.geojson",
+        "data/admin/assam-districts.geojson"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli fetch-boundaries --aoi pipeline/config/aoi.json --sources pipeline/config/sources.json --cache pipeline/cache/boundaries",
+          "stage": "02",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-admin --raw pipeline/cache/boundaries/geoboundaries-ind-adm2.json --aoi pipeline/config/aoi.json --out-districts pipeline/work/districts-base.geojson --out-state public/data/admin/assam-state.geojson --out-centroids pipeline/work/district-centroids.json",
+          "stage": "05",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-risk --masks pipeline/work/inundation-masks --hand pipeline/work/hand-90m.tif --distance pipeline/work/channel-distance-90m.tif --channels pipeline/work/channels-90m.tif --districts pipeline/work/districts-base.geojson --scenario pipeline/config/scenario.json --out-zones public/data/risk/risk-zones.geojson --out-ranking public/data/risk/district-risk.json --out-districts public/data/admin/assam-districts.geojson --out-hotspots public/data/risk/hotspots.geojson",
+          "stage": "10",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "geoBoundaries gbOpen India ADM2 (with ADM1 Assam filter geometry)",
+      "source_url": "https://www.geoboundaries.org/api/current/gbOpen/IND/ADM2/"
+    },
+    {
+      "class": "source",
+      "dataset": "Mapped river centrelines",
+      "fetched_at": "2026-10-20T21:20:25Z",
+      "id": "rivers",
+      "licence": "OpenStreetMap contributors, ODbL 1.0",
+      "notes": "REVIEW-02 A2: waterway=river only, clipped to AOI v2 + 5 km, midpoint inside that clip, clipped length >= 2 km, 0 shortest ways pruned to keep channel cells <= 4.0% of AOI v2. Display shows the same kept set; only simplification changes.",
+      "output_paths": [
+        "data/hydro/assam-rivers.geojson"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli fetch-rivers --aoi pipeline/config/aoi.json --sources pipeline/config/sources.json --cache pipeline/cache/rivers --overpass-timeout 180",
+          "stage": "03",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-rivers --raw pipeline/cache/rivers/rivers-raw.geojson --dem pipeline/work/dem-90m.tif --state public/data/admin/assam-state.geojson --aoi pipeline/config/aoi.json --out public/data/hydro/assam-rivers.geojson --out-channels pipeline/work/channel-lines.geojson",
+          "stage": "06",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli burn-rivers --dem pipeline/work/dem-90m.tif --channels pipeline/work/channel-lines.geojson --out-dem pipeline/work/dem-burned.tif --out-channels pipeline/work/channels-90m.tif --burn-depth-m 3.0",
+          "stage": "07",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli compute-hand --dem-burned pipeline/work/dem-burned.tif --channels pipeline/work/channels-90m.tif --max-channel-distance-m 12000 --out-hand pipeline/work/hand-90m.tif --out-distance pipeline/work/channel-distance-90m.tif --out-meta pipeline/work/hand-meta.json",
+          "stage": "08",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "OSM Overpass river centrelines with Natural Earth 10m fallback",
+      "source_url": "https://overpass-api.de/api/interpreter"
+    },
+    {
+      "class": "scenario",
+      "dataset": "Scenario inundation raster frames and summary",
+      "fetched_at": "2026-10-21T02:33:00Z",
+      "id": "flood",
+      "licence": "Mapzen/Amazon elevation tiles; attribution required; verify terms before public launch; see rivers entry",
+      "notes": "REVIEW-04 C1/C2: HAND threshold inside AOI v2 (Assam and DEM <= 120 m); uniform synthetic stage per step; >=9-cell component-area filter applied before statistics and rendering, no morphological opening; half-resolution 5-class paletted PNG per step plus frame-index.json; per-step uint8 wet masks; no per-band GeoJSON, no vector outline and no inundation-stack.npz. The peak-extent plausibility band is reviewer-selected, not calibrated.",
+      "output_paths": [
+        "data/flood/frame-index.json",
+        "data/flood/flood-summary.json",
+        "data/flood/frames/step-00.png",
+        "data/flood/frames/step-01.png",
+        "data/flood/frames/step-02.png",
+        "data/flood/frames/step-03.png",
+        "data/flood/frames/step-04.png",
+        "data/flood/frames/step-05.png",
+        "data/flood/frames/step-06.png",
+        "data/flood/frames/step-07.png",
+        "data/flood/frames/step-08.png",
+        "data/flood/frames/step-09.png",
+        "data/flood/frames/step-10.png",
+        "data/flood/frames/step-11.png"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli burn-rivers --dem pipeline/work/dem-90m.tif --channels pipeline/work/channel-lines.geojson --out-dem pipeline/work/dem-burned.tif --out-channels pipeline/work/channels-90m.tif --burn-depth-m 3.0",
+          "stage": "07",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli compute-hand --dem-burned pipeline/work/dem-burned.tif --channels pipeline/work/channels-90m.tif --max-channel-distance-m 12000 --out-hand pipeline/work/hand-90m.tif --out-distance pipeline/work/channel-distance-90m.tif --out-meta pipeline/work/hand-meta.json",
+          "stage": "08",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-inundation --dem pipeline/work/dem-burned.tif --hand pipeline/work/hand-90m.tif --distance pipeline/work/channel-distance-90m.tif --channels pipeline/work/channels-90m.tif --state public/data/admin/assam-state.geojson --scenario pipeline/config/scenario.json --frame-index public/data/flood/frame-index.json --out-summary public/data/flood/flood-summary.json --out-masks pipeline/work/inundation-masks --out-frames-dir public/data/flood/frames",
+          "stage": "09",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "Derived from AWS Terrarium DEM + mapped channels + synthetic scenario",
+      "source_url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+    },
+    {
+      "class": "derived",
+      "dataset": "Scenario-conditional risk zones and district ranking",
+      "fetched_at": "2026-10-21T02:58:47Z",
+      "id": "risk",
+      "licence": "Derived output; source licences as recorded for terrain, boundaries and rivers",
+      "notes": "Cell risk weights HAND 0.60 and duration 0.40; district score weights area share 0.45, duration 0.35, p90 peak depth 0.20. No population, asset loss, agency or incident field exists.",
+      "output_paths": [
+        "data/risk/risk-zones.geojson",
+        "data/risk/district-risk.json"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli compute-hand --dem-burned pipeline/work/dem-burned.tif --channels pipeline/work/channels-90m.tif --max-channel-distance-m 12000 --out-hand pipeline/work/hand-90m.tif --out-distance pipeline/work/channel-distance-90m.tif --out-meta pipeline/work/hand-meta.json",
+          "stage": "08",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-inundation --dem pipeline/work/dem-burned.tif --hand pipeline/work/hand-90m.tif --distance pipeline/work/channel-distance-90m.tif --channels pipeline/work/channels-90m.tif --state public/data/admin/assam-state.geojson --scenario pipeline/config/scenario.json --frame-index public/data/flood/frame-index.json --out-summary public/data/flood/flood-summary.json --out-masks pipeline/work/inundation-masks --out-frames-dir public/data/flood/frames",
+          "stage": "09",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-risk --masks pipeline/work/inundation-masks --hand pipeline/work/hand-90m.tif --distance pipeline/work/channel-distance-90m.tif --channels pipeline/work/channels-90m.tif --districts pipeline/work/districts-base.geojson --scenario pipeline/config/scenario.json --out-zones public/data/risk/risk-zones.geojson --out-ranking public/data/risk/district-risk.json --out-districts public/data/admin/assam-districts.geojson --out-hotspots public/data/risk/hotspots.geojson",
+          "stage": "10",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "Derived from HAND, scenario duration/depth and Assam districts",
+      "source_url": "https://www.geoboundaries.org/api/current/gbOpen/IND/ADM2/"
+    },
+    {
+      "class": "synthetic",
+      "dataset": "Synthetic monsoon series and derived cross-sections",
+      "fetched_at": "2026-10-21T02:33:09Z",
+      "id": "series",
+      "licence": "Synthetic model parameters; terrain and channel licences as recorded",
+      "notes": "Rainfall, main-stem stage and backwater values are declared synthetic; the series repeats flood-summary values exactly. Cross-sections sample DEM/HAND at 2 km and are not surveyed sections.",
+      "output_paths": [
+        "data/series/monsoon-series.json",
+        "data/series/cross-sections.json"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli build-inundation --dem pipeline/work/dem-burned.tif --hand pipeline/work/hand-90m.tif --distance pipeline/work/channel-distance-90m.tif --channels pipeline/work/channels-90m.tif --state public/data/admin/assam-state.geojson --scenario pipeline/config/scenario.json --frame-index public/data/flood/frame-index.json --out-summary public/data/flood/flood-summary.json --out-masks pipeline/work/inundation-masks --out-frames-dir public/data/flood/frames",
+          "stage": "09",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-series --scenario pipeline/config/scenario.json --summary public/data/flood/flood-summary.json --dem pipeline/work/dem-90m.tif --channels pipeline/work/channels-90m.tif --transects pipeline/config/transects.json --out-series public/data/series/monsoon-series.json --out-profiles public/data/series/cross-sections.json",
+          "stage": "11",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "Synthetic scenario parameters + DEM/HAND profiles",
+      "source_url": "pipeline/config/scenario.json"
+    },
+    {
+      "class": "source",
+      "dataset": "Assam relief hillshade fallback",
+      "fetched_at": "2026-10-20T20:44:23Z",
+      "id": "hillshade",
+      "licence": "Mapzen/Amazon elevation tiles; attribution required; verify terms before public launch",
+      "notes": "8-bit grayscale WebP, 2000 px wide, quality 82; positions with the AOI Mercator corners; relief only, no labels, water or flood extent.",
+      "output_paths": [
+        "data/basemap/assam-hillshade.webp"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli fetch-terrain --aoi pipeline/config/aoi.json --sources pipeline/config/sources.json --zoom 11 --cache pipeline/cache/terrain",
+          "stage": "01",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-dem --tiles pipeline/cache/terrain --index pipeline/work/terrain-index.json --aoi pipeline/config/aoi.json --out-dem pipeline/work/dem-90m.tif --out-hillshade public/data/basemap/assam-hillshade.webp --hillshade-width 2000",
+          "stage": "04",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "AWS Terrarium elevation tiles",
+      "source_url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+    },
+    {
+      "class": "derived",
+      "dataset": "Derived inundation hotspots",
+      "fetched_at": "2026-10-21T02:58:47Z",
+      "id": "hotspots",
+      "licence": "Derived output; source licences as recorded for terrain and rivers",
+      "notes": "Low-HAND, >1.5 km from a channel, at least 2 km², first wet by step 6. These are backwater pockets, not embankment breaches; no breach dataset exists.",
+      "output_paths": [
+        "data/risk/hotspots.geojson"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli compute-hand --dem-burned pipeline/work/dem-burned.tif --channels pipeline/work/channels-90m.tif --max-channel-distance-m 12000 --out-hand pipeline/work/hand-90m.tif --out-distance pipeline/work/channel-distance-90m.tif --out-meta pipeline/work/hand-meta.json",
+          "stage": "08",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-inundation --dem pipeline/work/dem-burned.tif --hand pipeline/work/hand-90m.tif --distance pipeline/work/channel-distance-90m.tif --channels pipeline/work/channels-90m.tif --state public/data/admin/assam-state.geojson --scenario pipeline/config/scenario.json --frame-index public/data/flood/frame-index.json --out-summary public/data/flood/flood-summary.json --out-masks pipeline/work/inundation-masks --out-frames-dir public/data/flood/frames",
+          "stage": "09",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-risk --masks pipeline/work/inundation-masks --hand pipeline/work/hand-90m.tif --distance pipeline/work/channel-distance-90m.tif --channels pipeline/work/channels-90m.tif --districts pipeline/work/districts-base.geojson --scenario pipeline/config/scenario.json --out-zones public/data/risk/risk-zones.geojson --out-ranking public/data/risk/district-risk.json --out-districts public/data/admin/assam-districts.geojson --out-hotspots public/data/risk/hotspots.geojson",
+          "stage": "10",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "Derived from peak scenario wet mask, HAND and channel distance",
+      "source_url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+    },
+    {
+      "class": "source",
+      "dataset": "OSM facility exposure",
+      "fetched_at": "2026-10-21T02:31:00Z",
+      "id": "assets",
+      "licence": "ODbL 1.0 (OpenStreetMap contributors)",
+      "notes": "Completeness unknown (incomplete-osm); exposure is a scenario depth join, not damage, capacity or operational status. No facility list was hand-built.",
+      "output_paths": [
+        "data/assets/critical-facilities.geojson"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli build-inundation --dem pipeline/work/dem-burned.tif --hand pipeline/work/hand-90m.tif --distance pipeline/work/channel-distance-90m.tif --channels pipeline/work/channels-90m.tif --state public/data/admin/assam-state.geojson --scenario pipeline/config/scenario.json --frame-index public/data/flood/frame-index.json --out-summary public/data/flood/flood-summary.json --out-masks pipeline/work/inundation-masks --out-frames-dir public/data/flood/frames",
+          "stage": "09",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-assets --aoi pipeline/config/aoi.json --sources pipeline/config/sources.json --masks pipeline/work/inundation-masks --hand pipeline/work/hand-90m.tif --frame-index public/data/flood/frame-index.json --districts public/data/admin/assam-districts.geojson --out public/data/assets/critical-facilities.geojson",
+          "stage": "12",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "OpenStreetMap Overpass hospitals, clinics and schools",
+      "source_url": "https://overpass-api.de/api/interpreter"
+    },
+    {
+      "class": "synthetic",
+      "dataset": "Virtual gauges",
+      "fetched_at": "2026-10-21T02:31:08Z",
+      "id": "gauges",
+      "licence": "Synthetic output; river geometry licence as recorded",
+      "notes": "No agency, station code, datum or measurement. Stage series is copied from the scenario with no local variation.",
+      "output_paths": [
+        "data/gauges/virtual-gauges.geojson"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli fetch-rivers --aoi pipeline/config/aoi.json --sources pipeline/config/sources.json --cache pipeline/cache/rivers --overpass-timeout 180",
+          "stage": "03",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-gauges --rivers public/data/hydro/assam-rivers.geojson --summary public/data/flood/flood-summary.json --out public/data/gauges/virtual-gauges.geojson",
+          "stage": "13",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "Points on mapped rivers with the synthetic scenario stage",
+      "source_url": "https://overpass-api.de/api/interpreter"
+    },
+    {
+      "class": "reference",
+      "dataset": "Assam flood-prone area reference value",
+      "fetched_at": null,
+      "id": "flood_prone_area",
+      "licence": "Government of Assam published statistic; cited as a reference denominator, not ingested as a layer",
+      "notes": "31,050 km² flood-prone area against a 78,523 km² state area (39.6%); retrieved 2026-10-21. This is a published flood-prone-area statistic, not a single event's observed extent and not a forecast. V-A4's peak-extent band is a reviewer choice, not a calibrated observation.",
+      "output_paths": [
+        "data/flood/flood-summary.json"
+      ],
+      "pipeline": [
+        {
+          "command": "reference value used as a V-A4 plausibility denominator; not ingested",
+          "stage": "00",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "Government of Assam, Water Resources Department — flood-prone area",
+      "source_url": "https://waterresources.assam.gov.in/portlets/flood-erosion-problems"
+    },
+    {
+      "class": "reference",
+      "dataset": "UNOSAT flood products",
+      "fetched_at": null,
+      "id": "unosat",
+      "licence": "UNOSAT terms; not ingested",
+      "notes": "UNOSAT is explicitly not used in this build. No UNOSAT layer, incident context or event statistic feeds the app.",
+      "output_paths": [],
+      "pipeline": [
+        {
+          "command": "not ingested in M0; reserved for future event-context cross-check",
+          "stage": "00",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "UNOSAT flood products",
+      "source_url": "https://unosat.org/products/"
+    }
+  ],
+  "generated_at": "2026-10-21T03:05:51Z",
+  "schema_version": "1.0.0",
+  "versions": {
+    "Pillow": "12.3.0",
+    "jsonschema": "4.26.0",
+    "mercantile": "1.2.1",
+    "numpy": "2.4.3",
+    "pyproj": "3.7.2",
+    "python": "3.11.16",
+    "rasterio": "1.4.4",
+    "requests": "2.33.0",
+    "scipy": "1.17.1",
+    "shapely": "2.2.0"
+  }
+}

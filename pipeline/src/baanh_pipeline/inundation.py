@@ -754,7 +754,7 @@ def run(
                 "max_share_of_flood_prone_area": max_flood_prone_share,
                 "note": (
                     "V-A4 band chosen by the reviewer from REVIEW-02; it is not a "
-                    "calibrated observation and not an event forecast."
+                    "calibrated observation and no forecast is implied."
                 ),
             },
         },

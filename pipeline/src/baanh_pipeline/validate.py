@@ -562,6 +562,11 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
     # V13 — forbidden fields and claims.
     banned = []
     for name, doc in docs.items():
+        # The validation report is this check's own output: scanning it would
+        # make the gate self-referential (and would flag its own check text).
+        # Every committed data/scenario artifact is still scanned.
+        if name == "validation-report.json":
+            continue
         for kind, text in _all_strings_and_keys(doc):
             if kind == "key" and text.lower() in FORBIDDEN_KEYS:
                 banned.append(f"{name}: key {text}")

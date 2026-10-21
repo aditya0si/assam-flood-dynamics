@@ -69,7 +69,9 @@
     },
     "zone": {
       "simplify_tolerance_m": 100,
-      "min_area_km2": 0.05
+      "min_area_km2": 0.05,
+      "vector_block_factors": [4, 5, 6, 8, 10, 12],
+      "vector_min_wet_fraction": 0.45
     },
     "district": {
       "area_share_saturation": 0.60,

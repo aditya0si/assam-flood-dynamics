@@ -1,0 +1,318 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_version": "2026.10.0",
+  "app_min_version": "0.1.0",
+  "scenario_id": "assam-monsoon-composite-v1",
+  "generated_at": "2026-10-21T03:05:51Z",
+  "crs": "EPSG:4326",
+  "analysis_crs": "EPSG:32646",
+  "bbox": [
+    89.55,
+    23.95,
+    96.15,
+    28.15
+  ],
+  "aoi_v2": {
+    "definition": "(inside Assam) intersect (DEM <= max_dem_m)",
+    "area_km2": 52240.747967,
+    "max_dem_m": 120.0,
+    "edge_buffer_km": 2.0,
+    "assam_area_km2": 78220.613028,
+    "assam_area_km2_reference": 78523.0,
+    "flood_prone_area_km2": 31050.0,
+    "channel_cell_share_of_aoi_v2": 0.02861833,
+    "note": "Metrics use the core mask (inside Assam, DEM <= 120 m). The 2 km edge buffer is for raster continuity only and is not counted as AOI v2 area. The channel clip mask is AOI v2 + 5 km."
+  },
+  "step_count": 12,
+  "load_tiers": {
+    "critical": [
+      "data/admin/assam-districts.geojson",
+      "data/admin/assam-state.geojson",
+      "data/hydro/assam-rivers.geojson",
+      "data/provenance.json",
+      "data/risk/district-risk.json",
+      "data/scenario.json",
+      "data/series/monsoon-series.json",
+      "data/validation-report.json"
+    ],
+    "animation": [
+      "data/flood/flood-summary.json",
+      "data/flood/frame-index.json",
+      "data/flood/frames/step-00.png",
+      "data/flood/frames/step-01.png",
+      "data/flood/frames/step-02.png",
+      "data/flood/frames/step-03.png",
+      "data/flood/frames/step-04.png",
+      "data/flood/frames/step-05.png",
+      "data/flood/frames/step-06.png",
+      "data/flood/frames/step-07.png",
+      "data/flood/frames/step-08.png",
+      "data/flood/frames/step-09.png",
+      "data/flood/frames/step-10.png",
+      "data/flood/frames/step-11.png",
+      "data/risk/risk-zones.geojson"
+    ],
+    "optional": [
+      "data/assets/critical-facilities.geojson",
+      "data/gauges/virtual-gauges.geojson",
+      "data/risk/hotspots.geojson",
+      "data/series/cross-sections.json"
+    ],
+    "fallback": [
+      "data/basemap/assam-hillshade.webp"
+    ]
+  },
+  "files": [
+    {
+      "path": "data/admin/assam-districts.geojson",
+      "bytes": 170859,
+      "sha256": "c85a776c500774c7cc009cf49d6833070bd7b1d31a292a1bc18bf0280838397e",
+      "class": "source",
+      "tier": "critical",
+      "description": "Assam ADM2 district boundaries (source) with derived scenario risk attributes."
+    },
+    {
+      "path": "data/admin/assam-state.geojson",
+      "bytes": 35963,
+      "sha256": "0c46f2fd81fd110f42a8cd4bcbff205df13133b7cdd292c2925e4788a7cbae02",
+      "class": "source",
+      "tier": "critical",
+      "description": "Assam state outline dissolved from geoBoundaries ADM2."
+    },
+    {
+      "path": "data/assets/critical-facilities.geojson",
+      "bytes": 574243,
+      "sha256": "966a06854dddbfc7918d95026a231a4b152517a84c5e3f53ebc1f071e5c45559",
+      "class": "source",
+      "tier": "optional",
+      "description": "OSM hospitals/clinics/schools with scenario depth exposure; completeness incomplete-osm."
+    },
+    {
+      "path": "data/basemap/assam-hillshade.webp",
+      "bytes": 609072,
+      "sha256": "0b2bc5cc3d1921eb3d71cb93777ed8d03acf30459ea58437a3f6d5a468ea3e92",
+      "class": "source",
+      "tier": "fallback",
+      "description": "8-bit hillshade relief fallback derived from the AWS Terrarium DEM."
+    },
+    {
+      "path": "data/flood/flood-summary.json",
+      "bytes": 21926,
+      "sha256": "04c439818055d98d84a129f5a8edc3ef835c9c47a0eda0de5a46bdcbcde926eb",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Per-step inundation area, depth, stage, component-filter audit and district-count summary."
+    },
+    {
+      "path": "data/flood/frame-index.json",
+      "bytes": 3863,
+      "sha256": "a13657c9317700d66ba6c3a84f7f0dd493dbe28449082ffa2420c2b83cb51def",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Frame placement contract: WGS84 bbox, half-resolution width/height, 5-class palette and per-step PNG file/area."
+    },
+    {
+      "path": "data/flood/frames/step-00.png",
+      "bytes": 67354,
+      "sha256": "17685a4d4c67e1cf916dadcc64640d560991a5f1fa176146f5d2b55bad23ac63",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 00, half-resolution paletted PNG."
+    },
+    {
+      "path": "data/flood/frames/step-01.png",
+      "bytes": 70185,
+      "sha256": "2b2b46f74e6265fc080dda99d680be9013d340f78dbb790154f7d7a04ce73e3d",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 01, half-resolution paletted PNG."
+    },
+    {
+      "path": "data/flood/frames/step-02.png",
+      "bytes": 75947,
+      "sha256": "6494e89a20e6eaaf0950a6e20b276e9a9ad3210880f507778f088f7072bc1a81",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 02, half-resolution paletted PNG."
+    },
+    {
+      "path": "data/flood/frames/step-03.png",
+      "bytes": 87225,
+      "sha256": "9fd8b06a8b8442f6c15dcd591b86b2f18c1c6de1003e09cd42f658b8c858cede",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 03, half-resolution paletted PNG."
+    },
+    {
+      "path": "data/flood/frames/step-04.png",
+      "bytes": 106091,
+      "sha256": "28f55a70fe875a10b7b69f174fcda58051e414740919e1f09318334dac2e3651",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 04, half-resolution paletted PNG."
+    },
+    {
+      "path": "data/flood/frames/step-05.png",
+      "bytes": 128137,
+      "sha256": "9b2fe9352b31480238120f655c97c970aab278b0a5130d61bf081a999b0cb900",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 05, half-resolution paletted PNG."
+    },
+    {
+      "path": "data/flood/frames/step-06.png",
+      "bytes": 193215,
+      "sha256": "0068861cf5e101d46b391fa657ec3d0730f0c633d4ff4c898f42067d55b8d6da",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 06, half-resolution paletted PNG."
+    },
+    {
+      "path": "data/flood/frames/step-07.png",
+      "bytes": 254791,
+      "sha256": "84fcddcaf5f05aadbf78f93727c996925c121ac88880c056319faa8ead45907a",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 07 (peak), half-resolution paletted PNG."
+    },
+    {
+      "path": "data/flood/frames/step-08.png",
+      "bytes": 193215,
+      "sha256": "0068861cf5e101d46b391fa657ec3d0730f0c633d4ff4c898f42067d55b8d6da",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 08, half-resolution paletted PNG."
+    },
+    {
+      "path": "data/flood/frames/step-09.png",
+      "bytes": 121703,
+      "sha256": "346585d6c2561e8f0ef913f1b8914999f84ee4803c18f9d1e855decad1bfabcf",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 09, half-resolution paletted PNG."
+    },
+    {
+      "path": "data/flood/frames/step-10.png",
+      "bytes": 95340,
+      "sha256": "d5b6e889695bfbf975cec62f1eeb708450c918c574d87adbab35d30390ccf541",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 10, half-resolution paletted PNG."
+    },
+    {
+      "path": "data/flood/frames/step-11.png",
+      "bytes": 75947,
+      "sha256": "6494e89a20e6eaaf0950a6e20b276e9a9ad3210880f507778f088f7072bc1a81",
+      "class": "scenario",
+      "tier": "animation",
+      "description": "Scenario inundation depth classes at step 11, half-resolution paletted PNG."
+    },
+    {
+      "path": "data/gauges/virtual-gauges.geojson",
+      "bytes": 3430,
+      "sha256": "fb33ac1c1de61df47610d27a3d88b13a45afdf97e93a2e84d4090bca74332b6c",
+      "class": "synthetic",
+      "tier": "optional",
+      "description": "Virtual stations on mapped rivers with the synthetic scenario stage; no agency or datum."
+    },
+    {
+      "path": "data/hydro/assam-rivers.geojson",
+      "bytes": 973417,
+      "sha256": "432a8eae6fe65d8f9538dce79117ecdf9a8add456013f7cb8e5d16c50d750530",
+      "class": "source",
+      "tier": "critical",
+      "description": "Mapped river centrelines (OSM Overpass or documented Natural Earth fallback)."
+    },
+    {
+      "path": "data/provenance.json",
+      "bytes": 20817,
+      "sha256": "23a05c08aa68b396fe263f44f7a625f727660839128e0e6479c62eb58a7873bb",
+      "class": "derived",
+      "tier": "critical",
+      "description": "Source → stage → file provenance for every dataset."
+    },
+    {
+      "path": "data/risk/district-risk.json",
+      "bytes": 15398,
+      "sha256": "ed4136ddb403b66dd2e75cd2521297bede3d14b0f6a6d346cbda61213fe52185",
+      "class": "derived",
+      "tier": "critical",
+      "description": "Scenario-conditional district exposure ranking (no demographics)."
+    },
+    {
+      "path": "data/risk/hotspots.geojson",
+      "bytes": 9023,
+      "sha256": "96e88a2b4abd35081bc87199bbfbe6d078c1229a98853531758ad0e939797449",
+      "class": "derived",
+      "tier": "optional",
+      "description": "Derived low-HAND backwater pockets (not breaches)."
+    },
+    {
+      "path": "data/risk/risk-zones.geojson",
+      "bytes": 855563,
+      "sha256": "bc67473cf83f1dc4830e1ebf2f665328e54d836d0717948beb5f3cb960788b27",
+      "class": "derived",
+      "tier": "animation",
+      "description": "Scenario-conditional terrain risk zones classified from HAND and duration."
+    },
+    {
+      "path": "data/scenario.json",
+      "bytes": 6588,
+      "sha256": "3618eeaabf27ab99866835020cf83c114e165e815d8ea1f40698a857e67e4946",
+      "class": "synthetic",
+      "tier": "critical",
+      "description": "Synthetic 12-step monsoon scenario and HAND model parameters."
+    },
+    {
+      "path": "data/series/cross-sections.json",
+      "bytes": 58222,
+      "sha256": "99f59cc683c563ec53630dcdbe8bf4d82b2042dcb9633efe928546780de53d85",
+      "class": "derived",
+      "tier": "optional",
+      "description": "DEM + HAND valley profiles with scenario water surface by step."
+    },
+    {
+      "path": "data/series/monsoon-series.json",
+      "bytes": 5564,
+      "sha256": "da26ab645c8fa05374693f7578a065d83b8a468442565cee61aa86fd5ef56877",
+      "class": "synthetic",
+      "tier": "critical",
+      "description": "Chart-ready synthetic rainfall and scenario stage series."
+    },
+    {
+      "path": "data/validation-report.json",
+      "bytes": 10476,
+      "sha256": "3b5ded9f31b2f5cc52668050b7bc72c2729009baf86c80547924784bf1fca4f9",
+      "class": "derived",
+      "tier": "critical",
+      "description": "V01–V20 plus V-A1–V-A10 validation report for the committed data."
+    }
+  ],
+  "attribution": [
+    {
+      "name": "AWS Terrarium / Mapzen",
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+      "licence": "Mapzen/Amazon elevation tiles; verify terms"
+    },
+    {
+      "name": "geoBoundaries gbOpen",
+      "url": "https://www.geoboundaries.org/",
+      "licence": "Licence recorded from API metadata (ADM2 ODbL 1.0; ADM1 CC BY 2.5 IN)"
+    },
+    {
+      "name": "OpenStreetMap contributors",
+      "url": "https://www.openstreetmap.org/copyright",
+      "licence": "ODbL 1.0"
+    },
+    {
+      "name": "Natural Earth",
+      "url": "https://www.naturalearthdata.com/",
+      "licence": "Public domain"
+    },
+    {
+      "name": "Esri, Maxar, Earthstar Geographics",
+      "url": "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9",
+      "licence": "Esri basemap terms; basemap only"
+    }
+  ]
+}
