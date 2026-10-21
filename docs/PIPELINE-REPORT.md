@@ -281,6 +281,12 @@ all required IDs are present). Key results:
 | V19 | critical 1.18 MB; animation 2.24 MB; optional/fallback 1.20 MB |
 | V10/V13/V16 | no stale manifest on the validated tree; no forbidden claim/field; 1,747 zones and 33 districts consistent |
 
+Two validator-hygiene fixes were needed; neither widens a gate. V13 now excludes
+`validation-report.json` from its own scan (otherwise the gate's own check text is flagged as a
+positive forecast claim); every scenario/data file is still scanned. The `flood-summary.json`
+V-A4 note now reads "no forecast is implied" (previously "not an event forecast") so the existing
+negative-claim regex accepts it. No gate rule or threshold changed.
+
 Stage 15: **28 files, 4,843,574 B (4.62 MB)** under the 9.0 MB total cap; V09 reports **4.63 MB**
 including `manifest.json` itself.
 
