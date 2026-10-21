@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_version": "2026.10.0",
+  "scenario_id": "assam-monsoon-composite-v1",
+  "class": "scenario",
+  "bbox": [
+    89.424203,
+    23.911344,
+    96.265512,
+    28.193794
+  ],
+  "width": 3733,
+  "height": 2611,
+  "crs": "EPSG:4326",
+  "source_crs": "EPSG:32646",
+  "source_resolution_m": 90.0,
+  "frame_resolution_m": 180.0,
+  "frame_scale": 2,
+  "classes": [
+    {
+      "id": 0,
+      "label": "dry",
+      "color": "#000000",
+      "alpha": 0,
+      "min_m": null,
+      "max_m": 0.0
+    },
+    {
+      "id": 1,
+      "label": "0.0-0.5",
+      "color": "#9ecae1",
+      "alpha": 235,
+      "min_m": 0.0,
+      "max_m": 0.5
+    },
+    {
+      "id": 2,
+      "label": "0.5-1.5",
+      "color": "#4292c6",
+      "alpha": 235,
+      "min_m": 0.5,
+      "max_m": 1.5
+    },
+    {
+      "id": 3,
+      "label": "1.5-3.0",
+      "color": "#08519c",
+      "alpha": 240,
+      "min_m": 1.5,
+      "max_m": 3.0
+    },
+    {
+      "id": 4,
+      "label": "3.0+",
+      "color": "#03135e",
+      "alpha": 245,
+      "min_m": 3.0,
+      "max_m": null
+    }
+  ],
+  "steps": [
+    {
+      "id": 0,
+      "label": "01 Jun",
+      "stage_m": 0.3,
+      "file": "frames/step-00.png",
+      "area_km2": 1833.9144,
+      "png_bytes": 67354,
+      "png_wet_cells": 56905,
+      "png_area_km2": 1839.5875
+    },
+    {
+      "id": 1,
+      "label": "15 Jun",
+      "stage_m": 0.6,
+      "file": "frames/step-01.png",
+      "area_km2": 1904.0647,
+      "png_bytes": 70185,
+      "png_wet_cells": 59082,
+      "png_area_km2": 1909.9642
+    },
+    {
+      "id": 2,
+      "label": "01 Jul",
+      "stage_m": 1.05,
+      "file": "frames/step-02.png",
+      "area_km2": 2149.1141,
+      "png_bytes": 75947,
+      "png_wet_cells": 66581,
+      "png_area_km2": 2152.3869
+    },
+    {
+      "id": 3,
+      "label": "15 Jul",
+      "stage_m": 1.55,
+      "file": "frames/step-03.png",
+      "area_km2": 2464.6695,
+      "png_bytes": 87225,
+      "png_wet_cells": 76437,
+      "png_area_km2": 2471.0052
+    },
+    {
+      "id": 4,
+      "label": "25 Jul",
+      "stage_m": 2.15,
+      "file": "frames/step-04.png",
+      "area_km2": 3284.9194,
+      "png_bytes": 106091,
+      "png_wet_cells": 101786,
+      "png_area_km2": 3290.4711
+    },
+    {
+      "id": 5,
+      "label": "05 Aug",
+      "stage_m": 2.65,
+      "file": "frames/step-05.png",
+      "area_km2": 4275.1465,
+      "png_bytes": 128137,
+      "png_wet_cells": 132419,
+      "png_area_km2": 4280.7547
+    },
+    {
+      "id": 6,
+      "label": "15 Aug",
+      "stage_m": 3.25,
+      "file": "frames/step-06.png",
+      "area_km2": 6857.4231,
+      "png_bytes": 193215,
+      "png_wet_cells": 212146,
+      "png_area_km2": 6858.1169
+    },
+    {
+      "id": 7,
+      "label": "25 Aug",
+      "stage_m": 3.7,
+      "file": "frames/step-07.png",
+      "area_km2": 10010.6411,
+      "png_bytes": 254791,
+      "png_wet_cells": 309751,
+      "png_area_km2": 10013.4273
+    },
+    {
+      "id": 8,
+      "label": "05 Sep",
+      "stage_m": 3.25,
+      "file": "frames/step-08.png",
+      "area_km2": 6857.4231,
+      "png_bytes": 193215,
+      "png_wet_cells": 212146,
+      "png_area_km2": 6858.1169
+    },
+    {
+      "id": 9,
+      "label": "15 Sep",
+      "stage_m": 2.5,
+      "file": "frames/step-09.png",
+      "area_km2": 4003.0877,
+      "png_bytes": 121703,
+      "png_wet_cells": 123971,
+      "png_area_km2": 4007.6532
+    },
+    {
+      "id": 10,
+      "label": "30 Sep",
+      "stage_m": 1.8,
+      "file": "frames/step-10.png",
+      "area_km2": 2769.5164,
+      "png_bytes": 95340,
+      "png_wet_cells": 85860,
+      "png_area_km2": 2775.6258
+    },
+    {
+      "id": 11,
+      "label": "15 Oct",
+      "stage_m": 1.05,
+      "file": "frames/step-11.png",
+      "area_km2": 2149.1141,
+      "png_bytes": 75947,
+      "png_wet_cells": 66581,
+      "png_area_km2": 2152.3869
+    }
+  ]
+}

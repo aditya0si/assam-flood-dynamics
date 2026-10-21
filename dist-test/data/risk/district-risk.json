@@ -1,0 +1,620 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "assam-monsoon-composite-v1",
+  "class": "derived",
+  "generated_at": "2026-10-21T02:47:00Z",
+  "weights": {
+    "area_share": 0.45,
+    "duration": 0.35,
+    "depth": 0.2
+  },
+  "reference_values": {
+    "area_share_saturation": 0.6,
+    "duration_saturation_days": 90.0,
+    "depth_reference_m": 4.0
+  },
+  "districts": [
+    {
+      "district_id": "76128533B21722277889516",
+      "name": "Sivasagar",
+      "area_km2": 1524.0192,
+      "peak_flooded_area_km2": 611.2215,
+      "area_share": 0.401059,
+      "mean_duration_days": 60.0806,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 71.944,
+      "risk_class": "very_high",
+      "drivers": [
+        "area",
+        "duration"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 1
+    },
+    {
+      "district_id": "76128533B15157901669242",
+      "name": "Majuli",
+      "area_km2": 1248.4336,
+      "peak_flooded_area_km2": 362.9231,
+      "area_share": 0.290703,
+      "mean_duration_days": 55.4217,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 61.856,
+      "risk_class": "very_high",
+      "drivers": [
+        "area",
+        "duration"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 2
+    },
+    {
+      "district_id": "76128533B70315194619807",
+      "name": "Hojai",
+      "area_km2": 1453.6893,
+      "peak_flooded_area_km2": 223.0263,
+      "area_share": 0.153421,
+      "mean_duration_days": 81.0301,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 61.518,
+      "risk_class": "very_high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.930237,
+      "class": "derived",
+      "rank": 3
+    },
+    {
+      "district_id": "76128533B40995085026980",
+      "name": "Nalbari",
+      "area_km2": 1052.6022,
+      "peak_flooded_area_km2": 378.626,
+      "area_share": 0.359705,
+      "mean_duration_days": 35.8888,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 59.435,
+      "risk_class": "high",
+      "drivers": [
+        "area",
+        "depth"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 4
+    },
+    {
+      "district_id": "76128533B13437137070957",
+      "name": "Nagaon",
+      "area_km2": 2508.048,
+      "peak_flooded_area_km2": 774.5795,
+      "area_share": 0.308838,
+      "mean_duration_days": 42.51,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 58.195,
+      "risk_class": "high",
+      "drivers": [
+        "area",
+        "depth"
+      ],
+      "valid_area_share": 0.997395,
+      "class": "derived",
+      "rank": 5
+    },
+    {
+      "district_id": "76128533B16749627383755",
+      "name": "Hailakandi",
+      "area_km2": 1291.1758,
+      "peak_flooded_area_km2": 258.7236,
+      "area_share": 0.200378,
+      "mean_duration_days": 63.364,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 58.17,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 6
+    },
+    {
+      "district_id": "76128533B96719327593873",
+      "name": "Darrang",
+      "area_km2": 1641.85,
+      "peak_flooded_area_km2": 440.9531,
+      "area_share": 0.268571,
+      "mean_duration_days": 48.0246,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 57.319,
+      "risk_class": "high",
+      "drivers": [
+        "area",
+        "duration"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 7
+    },
+    {
+      "district_id": "76128533B47772746709007",
+      "name": "Barpeta",
+      "area_km2": 2348.098,
+      "peak_flooded_area_km2": 591.8572,
+      "area_share": 0.252058,
+      "mean_duration_days": 49.3127,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 56.582,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "area"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 8
+    },
+    {
+      "district_id": "76128533B55519385298440",
+      "name": "Golaghat",
+      "area_km2": 3187.798,
+      "peak_flooded_area_km2": 335.1054,
+      "area_share": 0.105121,
+      "mean_duration_days": 74.6534,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 55.416,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.914181,
+      "class": "derived",
+      "rank": 9
+    },
+    {
+      "district_id": "76128533B66682530790248",
+      "name": "Kamrup",
+      "area_km2": 2935.7511,
+      "peak_flooded_area_km2": 660.9973,
+      "area_share": 0.225154,
+      "mean_duration_days": 50.3749,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 54.977,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.999782,
+      "class": "derived",
+      "rank": 10
+    },
+    {
+      "district_id": "76128533B26964150246712",
+      "name": "Cachar",
+      "area_km2": 3798.8421,
+      "peak_flooded_area_km2": 422.8414,
+      "area_share": 0.111308,
+      "mean_duration_days": 72.1287,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 54.898,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 11
+    },
+    {
+      "district_id": "76128533B66125202864966",
+      "name": "Dima Hasao",
+      "area_km2": 4904.1965,
+      "peak_flooded_area_km2": 17.8204,
+      "area_share": 0.003634,
+      "mean_duration_days": 114.6664,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 53.773,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.466131,
+      "class": "derived",
+      "rank": 12
+    },
+    {
+      "district_id": "76128533B91480770176940",
+      "name": "Kokrajhar",
+      "area_km2": 3086.7604,
+      "peak_flooded_area_km2": 150.1606,
+      "area_share": 0.048647,
+      "mean_duration_days": 78.9461,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 52.85,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.970667,
+      "class": "derived",
+      "rank": 13
+    },
+    {
+      "district_id": "76128533B25835998628545",
+      "name": "Dhubri",
+      "area_km2": 1786.9321,
+      "peak_flooded_area_km2": 194.0045,
+      "area_share": 0.108568,
+      "mean_duration_days": 65.8003,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 52.232,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 14
+    },
+    {
+      "district_id": "76128533B334793883930",
+      "name": "Jorhat",
+      "area_km2": 1895.9783,
+      "peak_flooded_area_km2": 384.1541,
+      "area_share": 0.202615,
+      "mean_duration_days": 47.3321,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 52.103,
+      "risk_class": "high",
+      "drivers": [
+        "depth",
+        "duration"
+      ],
+      "valid_area_share": 0.964356,
+      "class": "derived",
+      "rank": 15
+    },
+    {
+      "district_id": "76128533B17968019348564",
+      "name": "Morigaon",
+      "area_km2": 1505.5326,
+      "peak_flooded_area_km2": 344.8277,
+      "area_share": 0.22904,
+      "mean_duration_days": 40.1948,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 51.309,
+      "risk_class": "high",
+      "drivers": [
+        "depth",
+        "area"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 16
+    },
+    {
+      "district_id": "76128533B57995625790051",
+      "name": "Karbi Anglong West",
+      "area_km2": 3100.6893,
+      "peak_flooded_area_km2": 34.4609,
+      "area_share": 0.011114,
+      "mean_duration_days": 80.3494,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 50.581,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.580479,
+      "class": "derived",
+      "rank": 17
+    },
+    {
+      "district_id": "76128533B40714385808093",
+      "name": "Biswanath",
+      "area_km2": 1792.8386,
+      "peak_flooded_area_km2": 249.9066,
+      "area_share": 0.139392,
+      "mean_duration_days": 55.2088,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 50.424,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.999679,
+      "class": "derived",
+      "rank": 18
+    },
+    {
+      "district_id": "76128533B20298037622173",
+      "name": "South Salmara-Mankachar",
+      "area_km2": 717.7941,
+      "peak_flooded_area_km2": 159.7617,
+      "area_share": 0.222573,
+      "mean_duration_days": 38.0268,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 49.981,
+      "risk_class": "high",
+      "drivers": [
+        "depth",
+        "area"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 19
+    },
+    {
+      "district_id": "76128533B23092176497025",
+      "name": "Karimganj",
+      "area_km2": 1847.5088,
+      "peak_flooded_area_km2": 232.5547,
+      "area_share": 0.125875,
+      "mean_duration_days": 56.0937,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 49.755,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 20
+    },
+    {
+      "district_id": "76128533B8221925175605",
+      "name": "Baksa",
+      "area_km2": 2394.3499,
+      "peak_flooded_area_km2": 411.9798,
+      "area_share": 0.172063,
+      "mean_duration_days": 47.0691,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 49.709,
+      "risk_class": "high",
+      "drivers": [
+        "depth",
+        "duration"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 21
+    },
+    {
+      "district_id": "76128533B91472319248603",
+      "name": "Goalpara",
+      "area_km2": 1971.252,
+      "peak_flooded_area_km2": 268.3897,
+      "area_share": 0.136152,
+      "mean_duration_days": 52.8101,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 49.249,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 22
+    },
+    {
+      "district_id": "76128533B41005496708834",
+      "name": "Sonitpur",
+      "area_km2": 3476.3001,
+      "peak_flooded_area_km2": 506.4323,
+      "area_share": 0.145681,
+      "mean_duration_days": 49.0241,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 48.491,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.996007,
+      "class": "derived",
+      "rank": 23
+    },
+    {
+      "district_id": "76128533B46490409917345",
+      "name": "Bongaigaon",
+      "area_km2": 1096.5955,
+      "peak_flooded_area_km2": 132.0249,
+      "area_share": 0.120395,
+      "mean_duration_days": 53.1117,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 48.184,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 24
+    },
+    {
+      "district_id": "76128533B57825981663822",
+      "name": "Dibrugarh",
+      "area_km2": 3344.2278,
+      "peak_flooded_area_km2": 397.9661,
+      "area_share": 0.119001,
+      "mean_duration_days": 52.7498,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 47.939,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 25
+    },
+    {
+      "district_id": "76128533B50650763703739",
+      "name": "Dhemaji",
+      "area_km2": 2636.8586,
+      "peak_flooded_area_km2": 420.5225,
+      "area_share": 0.159479,
+      "mean_duration_days": 43.8857,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 47.528,
+      "risk_class": "high",
+      "drivers": [
+        "depth",
+        "duration"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 26
+    },
+    {
+      "district_id": "76128533B89228414823983",
+      "name": "Charaideo",
+      "area_km2": 1049.7082,
+      "peak_flooded_area_km2": 122.9086,
+      "area_share": 0.117088,
+      "mean_duration_days": 51.9175,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 47.472,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 27
+    },
+    {
+      "district_id": "76128533B85627242103654",
+      "name": "Lakhimpur",
+      "area_km2": 2857.0866,
+      "peak_flooded_area_km2": 477.0388,
+      "area_share": 0.166967,
+      "mean_duration_days": 40.4042,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 46.735,
+      "risk_class": "high",
+      "drivers": [
+        "depth",
+        "duration"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 28
+    },
+    {
+      "district_id": "76128533B56012535339305",
+      "name": "Chirang",
+      "area_km2": 1583.8247,
+      "peak_flooded_area_km2": 109.614,
+      "area_share": 0.069208,
+      "mean_duration_days": 55.3977,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 45.234,
+      "risk_class": "high",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 1.0,
+      "class": "derived",
+      "rank": 29
+    },
+    {
+      "district_id": "76128533B20307518801538",
+      "name": "Udalguri",
+      "area_km2": 2052.6552,
+      "peak_flooded_area_km2": 100.7078,
+      "area_share": 0.049062,
+      "mean_duration_days": 56.2357,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 44.049,
+      "risk_class": "moderate",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.995167,
+      "class": "derived",
+      "rank": 30
+    },
+    {
+      "district_id": "76128533B38548995376745",
+      "name": "Karbi Anglong East",
+      "area_km2": 7290.0259,
+      "peak_flooded_area_km2": 108.4421,
+      "area_share": 0.014875,
+      "mean_duration_days": 60.2263,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 43.037,
+      "risk_class": "moderate",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.557618,
+      "class": "derived",
+      "rank": 31
+    },
+    {
+      "district_id": "76128533B38230828972906",
+      "name": "Kamrup Metropolitan",
+      "area_km2": 1129.4076,
+      "peak_flooded_area_km2": 81.4326,
+      "area_share": 0.072102,
+      "mean_duration_days": 48.1748,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 42.642,
+      "risk_class": "moderate",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.977483,
+      "class": "derived",
+      "rank": 32
+    },
+    {
+      "district_id": "76128533B8920527783032",
+      "name": "Tinsukia",
+      "area_km2": 3897.51,
+      "peak_flooded_area_km2": 40.1829,
+      "area_share": 0.01031,
+      "mean_duration_days": 52.2634,
+      "p90_peak_depth_m": 3.7,
+      "risk_score": 39.598,
+      "risk_class": "moderate",
+      "drivers": [
+        "duration",
+        "depth"
+      ],
+      "valid_area_share": 0.744241,
+      "class": "derived",
+      "rank": 33
+    }
+  ],
+  "counts": {
+    "total": 33,
+    "very_high": 3,
+    "high": 26,
+    "moderate": 4,
+    "low": 0,
+    "no_data": 0
+  }
+}

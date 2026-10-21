@@ -1,0 +1,292 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_version": "2026.10.0",
+  "scenario_id": "assam-monsoon-composite-v1",
+  "class": "synthetic",
+  "series": [
+    {
+      "id": "rainfall",
+      "label": "Rainfall (synthetic)",
+      "unit": "mm/day",
+      "class": "synthetic",
+      "source_note": "Parameterised monsoon curve; no gauge record.",
+      "points": [
+        {
+          "step": 0,
+          "day": 0,
+          "value": 6
+        },
+        {
+          "step": 1,
+          "day": 14,
+          "value": 12
+        },
+        {
+          "step": 2,
+          "day": 30,
+          "value": 17
+        },
+        {
+          "step": 3,
+          "day": 44,
+          "value": 21
+        },
+        {
+          "step": 4,
+          "day": 54,
+          "value": 24
+        },
+        {
+          "step": 5,
+          "day": 65,
+          "value": 20
+        },
+        {
+          "step": 6,
+          "day": 75,
+          "value": 14
+        },
+        {
+          "step": 7,
+          "day": 85,
+          "value": 10
+        },
+        {
+          "step": 8,
+          "day": 96,
+          "value": 7
+        },
+        {
+          "step": 9,
+          "day": 106,
+          "value": 5
+        },
+        {
+          "step": 10,
+          "day": 121,
+          "value": 3
+        },
+        {
+          "step": 11,
+          "day": 136,
+          "value": 2
+        }
+      ]
+    },
+    {
+      "id": "mainstem_stage",
+      "label": "Main-stem stage anomaly (synthetic)",
+      "unit": "m",
+      "class": "synthetic",
+      "source_note": "Parameterised stage anomaly relative to a pre-monsoon baseline; not a gauge reading.",
+      "points": [
+        {
+          "step": 0,
+          "day": 0,
+          "value": 0.19
+        },
+        {
+          "step": 1,
+          "day": 14,
+          "value": 0.44
+        },
+        {
+          "step": 2,
+          "day": 30,
+          "value": 0.75
+        },
+        {
+          "step": 3,
+          "day": 44,
+          "value": 1.12
+        },
+        {
+          "step": 4,
+          "day": 54,
+          "value": 1.49
+        },
+        {
+          "step": 5,
+          "day": 65,
+          "value": 1.8
+        },
+        {
+          "step": 6,
+          "day": 75,
+          "value": 1.99
+        },
+        {
+          "step": 7,
+          "day": 85,
+          "value": 2.11
+        },
+        {
+          "step": 8,
+          "day": 96,
+          "value": 1.99
+        },
+        {
+          "step": 9,
+          "day": 106,
+          "value": 1.68
+        },
+        {
+          "step": 10,
+          "day": 121,
+          "value": 1.18
+        },
+        {
+          "step": 11,
+          "day": 136,
+          "value": 0.62
+        }
+      ]
+    },
+    {
+      "id": "backwater",
+      "label": "Backwater allowance (synthetic)",
+      "unit": "m",
+      "class": "synthetic",
+      "source_note": "Declared additive allowance for tributary/backwater stacking; not a solved backwater term.",
+      "points": [
+        {
+          "step": 0,
+          "day": 0,
+          "value": 0.11
+        },
+        {
+          "step": 1,
+          "day": 14,
+          "value": 0.16
+        },
+        {
+          "step": 2,
+          "day": 30,
+          "value": 0.3
+        },
+        {
+          "step": 3,
+          "day": 44,
+          "value": 0.43
+        },
+        {
+          "step": 4,
+          "day": 54,
+          "value": 0.66
+        },
+        {
+          "step": 5,
+          "day": 65,
+          "value": 0.85
+        },
+        {
+          "step": 6,
+          "day": 75,
+          "value": 1.26
+        },
+        {
+          "step": 7,
+          "day": 85,
+          "value": 1.59
+        },
+        {
+          "step": 8,
+          "day": 96,
+          "value": 1.26
+        },
+        {
+          "step": 9,
+          "day": 106,
+          "value": 0.82
+        },
+        {
+          "step": 10,
+          "day": 121,
+          "value": 0.62
+        },
+        {
+          "step": 11,
+          "day": 136,
+          "value": 0.43
+        }
+      ]
+    },
+    {
+      "id": "stage_above_drainage",
+      "label": "Stage above local drainage (scenario)",
+      "unit": "m",
+      "class": "scenario",
+      "source_note": "Synthetic stage applied to the HAND threshold; not a gauge reading.",
+      "points": [
+        {
+          "step": 0,
+          "day": 0,
+          "value": 0.3
+        },
+        {
+          "step": 1,
+          "day": 14,
+          "value": 0.6
+        },
+        {
+          "step": 2,
+          "day": 30,
+          "value": 1.05
+        },
+        {
+          "step": 3,
+          "day": 44,
+          "value": 1.55
+        },
+        {
+          "step": 4,
+          "day": 54,
+          "value": 2.15
+        },
+        {
+          "step": 5,
+          "day": 65,
+          "value": 2.65
+        },
+        {
+          "step": 6,
+          "day": 75,
+          "value": 3.25
+        },
+        {
+          "step": 7,
+          "day": 85,
+          "value": 3.7
+        },
+        {
+          "step": 8,
+          "day": 96,
+          "value": 3.25
+        },
+        {
+          "step": 9,
+          "day": 106,
+          "value": 2.5
+        },
+        {
+          "step": 10,
+          "day": 121,
+          "value": 1.8
+        },
+        {
+          "step": 11,
+          "day": 136,
+          "value": 1.05
+        }
+      ]
+    }
+  ],
+  "threshold": {
+    "id": "scenario_threshold",
+    "label": "Scenario threshold",
+    "value": 2.0,
+    "unit": "m",
+    "class": "scenario",
+    "note": "Model parameter, not an official danger level."
+  }
+}
