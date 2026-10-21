@@ -30,11 +30,18 @@ interface BaanhCameraProbe {
   readonly pitch: number;
 }
 
+interface BaanhTileSourcesProbe {
+  readonly dem: 'loading' | 'live' | 'degraded' | 'offline';
+  readonly imagery: 'loading' | 'live' | 'degraded' | 'offline';
+}
+
 interface BaanhProbe {
   readonly step: number;
   readonly frameFile: string;
   readonly isPlaying: boolean;
   readonly tileHealth: 'live' | 'degraded' | 'offline';
+  /** Per-host state behind the aggregate level, for diagnosing partial blocks. */
+  readonly tileSources: BaanhTileSourcesProbe;
   /** Every distinct overall level observed since the map mounted, in order. */
   readonly tileHealthHistory: string[];
   /** Live MapLibre camera: centre, zoom and pitch (B5 hero reach). */

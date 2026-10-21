@@ -195,6 +195,10 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       get tileHealth(): 'live' | 'degraded' | 'offline' {
         return useTileHealthStore.getState().level;
       },
+      get tileSources() {
+        const snapshot = useTileHealthStore.getState().snapshot;
+        return { dem: snapshot.dem, imagery: snapshot.imagery };
+      },
       get panel(): string {
         return usePanelStore.getState().activePanel;
       },

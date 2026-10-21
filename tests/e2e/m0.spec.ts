@@ -132,26 +132,43 @@ test.describe('M0 acceptance', () => {
   test('the flood surface paints monotonically more of the map at S00, S04 and S07', async ({
     page,
   }) => {
+    // B6: six canvas captures plus decode are the cost here, not navigation.
+    // Give the test its own budget instead of sharing the 75 s default.
+    test.setTimeout(180_000);
     const errors = collectErrors(page);
     await openApp(page);
     await openPanel(page, 'Layers');
+
+    // B6: one page for all three states. Step buttons select a frame directly,
+    // so the test never re-navigates and never decodes the intermediate frames
+    // that Home + repeated ArrowRight used to pull in.
+    const timelineSteps = page.getByRole('group', { name: 'Timeline steps' });
+    const selectStep = async (step: number) => {
+      if ((await probeValue(page, 'step')) === step) return;
+      await timelineSteps.locator(`[data-step="${step}"]`).click();
+      await expect.poll(() => probeValue(page, 'step')).toBe(step);
+      await expect
+        .poll(() => probeValue(page, 'frameFile'), { timeout: 15_000 })
+        .toContain(`step-${String(step).padStart(2, '0')}.png`);
+    };
 
     // Painted share = the pixels the flood raster changes at that step, measured
     // against the same map with the flood hidden. This is a per-step share, not
     // a S00-vs-S04 delta, so the thin early margins cannot make the test fail.
     const measured: Array<{ step: number; different: number; pixels: number; share: number }> = [];
     for (const step of [0, 4, 7]) {
-      await gotoStep(page, step);
+      await selectStep(step);
       await setFloodVisible(page, true);
-      await page.waitForTimeout(500);
+      // One settle for the frame crossfade; no second seek before the capture.
+      await page.waitForTimeout(300);
       await hideMapOverlays(page);
-      await page.waitForTimeout(250);
+      await page.waitForTimeout(150);
       const floodOn = decodePng(await mapCanvasScreenshot(page));
 
       await setFloodVisible(page, false);
-      await page.waitForTimeout(250);
+      await page.waitForTimeout(300);
       await hideMapOverlays(page);
-      await page.waitForTimeout(250);
+      await page.waitForTimeout(150);
       const floodOff = decodePng(await mapCanvasScreenshot(page));
 
       expect(floodOn.width).toBe(floodOff.width);
@@ -235,8 +252,8 @@ test.describe('M0 acceptance', () => {
     await page.keyboard.press('Space');
     await expect(flood).toBeChecked();
 
-    // Pointer path: the invisible input covers the visible track, so a click
-    // lands on the input instead of being intercepted by the track span.
+    // Pointer path: the visually hidden input is a fixed, directly clickable
+    // 1x1 control; clicks on the visible track are forwarded by the label.
     await flood.uncheck();
     await expect(flood).not.toBeChecked();
     await flood.check();
@@ -340,7 +357,10 @@ test.describe('R6 map dominance', () => {
     // produced by the flood raster, exactly as REVIEW-08 measured it.
     for (const label of ['Show Risk zones', 'Show Inundation hotspots']) {
       const checkbox = page.getByRole('checkbox', { name: label });
-      if (await checkbox.isChecked()) await checkbox.uncheck();
+      // B6: the input is a stable 1x1 visually-hidden control. At this larger
+      // viewport software WebGL can spend seconds per actionability frame, so
+      // allow more than the 10 s default; never force the click.
+      if (await checkbox.isChecked()) await checkbox.uncheck({ timeout: 15_000 });
     }
     await page.waitForTimeout(600);
 

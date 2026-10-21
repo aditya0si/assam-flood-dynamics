@@ -2,14 +2,24 @@ import { expect, test } from '@playwright/test';
 import { collectErrors, focusTimeline, gotoStep, openApp, probeValue } from './helpers';
 
 test.describe('M0 blocked-tile fallback', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.route('**/elevation-tiles-prod/**', (route) => route.abort());
-    await page.route('**/arcgisonline.com/**', (route) => route.abort());
-  });
-
   test('loads with both tile hosts blocked: health offline, overlays intact, playback works', async ({
     page,
   }) => {
+    const blocked = { dem: 0, imagery: 0 };
+    // B6: regex routes, not `**/arcgisonline.com/**`. That glob compiles to a
+    // pattern that needs a slash immediately before the host name, so it never
+    // matched `server.arcgisonline.com`: B5 blocked only the DEM host, imagery
+    // succeeded, and `degraded` was the correct aggregate state. Both tile hosts
+    // must fail before an offline verdict is honest.
+    await page.route(/elevation-tiles-prod/, (route) => {
+      blocked.dem += 1;
+      return route.abort();
+    });
+    await page.route(/arcgisonline\.com/, (route) => {
+      blocked.imagery += 1;
+      return route.abort();
+    });
+
     const errors = collectErrors(page);
     const startedAt = Date.now();
     await openApp(page);
@@ -19,15 +29,33 @@ test.describe('M0 blocked-tile fallback', () => {
     const remaining = 8_000 - (Date.now() - startedAt);
     expect(remaining, 'app load must leave room for the 8 s offline budget').toBeGreaterThan(0);
     await expect
-      .poll(() => probeValue(page, 'tileHealth'), {
-        timeout: remaining,
-        intervals: [200, 400, 800],
-      })
+      .poll(
+        async () => {
+          const overall = await probeValue(page, 'tileHealth');
+          const sources = await probeValue(page, 'tileSources');
+          console.log(
+            `[fallback] t+${Date.now() - startedAt}ms overall=${overall ?? '?'} ` +
+              `dem=${sources?.dem ?? '?'} imagery=${sources?.imagery ?? '?'} ` +
+              `blocked(dem=${blocked.dem}, imagery=${blocked.imagery})`,
+          );
+          return overall;
+        },
+        { timeout: remaining, intervals: [200, 400, 800] },
+      )
       .toBe('offline');
+    const offlineAt = Date.now() - startedAt;
+    console.log(
+      `[fallback] offline at t+${offlineAt}ms; blocked requests ` +
+        `dem=${blocked.dem}, imagery=${blocked.imagery}`,
+    );
     expect(
-      Date.now() - startedAt,
+      offlineAt,
       'the both-hosts-blocked path must reach offline within 8 s',
     ).toBeLessThanOrEqual(8_000);
+    expect(blocked.dem, 'the DEM host must have been requested and blocked').toBeGreaterThan(0);
+    expect(blocked.imagery, 'the imagery host must have been requested and blocked').toBeGreaterThan(
+      0,
+    );
 
     const history = await probeValue(page, 'tileHealthHistory');
     const degradedIndex = history?.indexOf('degraded') ?? -1;

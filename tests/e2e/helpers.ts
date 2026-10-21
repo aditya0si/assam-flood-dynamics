@@ -1,6 +1,8 @@
 import { expect, type Page } from '@playwright/test';
 import { APP_BASE_PATH } from './basePath';
 
+export type TileSourceStatus = 'loading' | 'live' | 'degraded' | 'offline';
+
 export interface Probe {
   step: number;
   stepCount: number;
@@ -11,6 +13,7 @@ export interface Probe {
   ready: boolean;
   isPlaying: boolean;
   tileHealth: 'live' | 'degraded' | 'offline';
+  tileSources: { dem: TileSourceStatus; imagery: TileSourceStatus };
   tileHealthHistory: string[];
   camera: {
     center: [number, number];
