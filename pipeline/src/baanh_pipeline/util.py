@@ -1,6 +1,7 @@
 """Small shared utilities: paths, atomic writes, hashing, provenance."""
 from __future__ import annotations
 
+import gzip
 import hashlib
 import importlib.metadata
 import json
@@ -130,6 +131,18 @@ def path_size(path: Path) -> int:
     if path.is_dir():
         return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
     return path.stat().st_size if path.exists() else 0
+
+
+def gzip_size(path: Path) -> int:
+    """Transfer size a browser pays for ``path`` after gzip -9 (no metadata)."""
+    if not path.is_file():
+        return 0
+    payload = path.read_bytes()
+    return len(gzip.compress(payload, 9, mtime=0))
+
+
+def gzip_bytes(payload: bytes) -> int:
+    return len(gzip.compress(payload, 9, mtime=0))
 
 
 def total_bytes(paths: Iterable[Path]) -> int:

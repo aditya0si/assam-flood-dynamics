@@ -520,7 +520,7 @@ interface CameraStatus {
 
 1. **critical** (`≤3.5 MB` raw): scenario, provenance, districts, state, rivers, district-risk,
    monsoon series.
-2. **animation** (`≤7.6 MB` raw): flood-frames, flood-summary, risk-zones. Frames must be parsed
+2. **animation** (`≤6.5 MB` raw and `≤1.5 MB` gzip): flood-frames, flood-summary, risk-zones. Frames must be parsed
    and added to the map as one source before `framesReady = true`; Play is disabled until then.
    The committed load contract remains one `flood-frames.geojson`; the pipeline’s per-step
    `flood/frames/step-XX.geojson` files are internal staging and are removed after the combined
@@ -578,6 +578,15 @@ MapLibre draws in style-layer array order. `paintOrder` in the registry matches 
 | 17 | `selection` | districts/hotspots | white outline + soft halo |
 | 18 | `sky` | — | horizon/fog |
 
+<!-- amended: REVIEW-03 B4 -->
+
+**Two-class fallback (recorded, not silent).** The default is the four depth bands in
+`scenario.json`. If, *after V-A9 speckle control*, a frame still exceeds 6,815,744 bytes raw or
+1,572,864 bytes gzip, the stage may render that step as two classes — `shallow` 0–1 m and `deep`
+≥1 m — using the same layer ids and the same single-source contract. The change must be written
+in this section and in `manifest.json`; it may not be applied by dropping real polygons, by
+reducing the four bands without this record, or by coarsening below 75 m.
+
 District names and hotspot labels are DOM `Marker`s positioned from committed centroids, not
 MapLibre symbol layers, so no glyph endpoint is required. They are hidden below zoom 6.5 to avoid
 clutter and have `pointer-events: none` except hotspot labels.
@@ -623,9 +632,11 @@ not enqueue source/tile work. The app preloads the source before enabling Play, 
 press of Play cannot trigger a fetch. Camera movement still causes normal raster tile requests;
 that is not the animation path.
 
-The trade-off is memory: all frames are resident (~6.5 MB raw). That is accepted and budgeted in
-§8. If the budget is exceeded, the fallback is to reduce depth bands from four to three, not to
-stream frames during playback.
+The trade-off is memory: all frames are resident (≤6.5 MB raw, ≤1.5 MB gzip). That is accepted and
+budgeted in §8. If a frame still exceeds the cap **after V-A9 speckle control**, the recorded
+fallback is a two-class depth rendering (shallow 0–1 m / deep ≥1 m), documented here and in the
+manifest; reducing the depth-band count silently or streaming frames during playback is not
+permitted (REVIEW-03 B4).
 
 ### 7.5 Hotspots, gauges, facilities
 
@@ -698,7 +709,7 @@ Target machine: 2020-class 4-core laptop, integrated GPU, 1440×900, Chromium 12
 | JS initial | — | ≤ 350 KB |
 | CSS | — | ≤ 25 KB |
 | Critical data (scenario, districts, state, rivers, risk summary, series, manifest) | ≤ 3.5 MB | ≤ 1.2 MB |
-| Animation data (flood frames, summary, risk zones) | ≤ 7.6 MB | ≤ 1.9 MB |
+| Animation data (flood frames, summary, risk zones) | ≤ 6.5 MB | ≤ 1.5 MB |
 | Optional/fallback (hillshade, cross-sections, hotspots, assets, gauges) | ≤ 3.0 MB | ≤ 0.9 MB |
 | Total committed data | ≤ 14 MB | ≤ 4.5 MB |
 
@@ -711,7 +722,7 @@ Per-file hard caps enforced by `scripts/check-data.mjs` and pipeline validation:
 
 | File | Cap |
 |---|---|
-| `flood/flood-frames.geojson` | 6.5 MB |
+| `flood/flood-frames.geojson` | 6.5 MB raw and 1.5 MB gzip |
 | `admin/assam-districts.geojson` | 1.2 MB |
 | `admin/assam-state.geojson` | 0.15 MB |
 | `hydro/assam-rivers.geojson` | 1.0 MB |
@@ -731,7 +742,8 @@ Per-file hard caps enforced by `scripts/check-data.mjs` and pipeline validation:
   coordinates quantised to 5 decimal places (~1 m). Risk zones simplified at 100 m, minimum
   0.05 km². Districts simplified at 150 m; state at 200 m; rivers at 50 m.
 - Depth bands: four (`0–0.5`, `0.5–1.5`, `1.5–3.0`, `3.0+` m). If the flood frame cap is
-  exceeded, drop to three bands (`0–1`, `1–3`, `3+`) rather than coarsening geography.
+  exceeded **after V-A9 speckle control**, the recorded fallback is two classes (shallow 0–1 m /
+  deep ≥1 m), not a silent three-band reduction and not coarser geography.
 - No `fill-antialias` on the outgoing layer; no symbols; no extrusions; no shadows beyond
   hillshade. `maxzoom` on raster sources prevents over-fetching.
 - DPR capped at 2; on `devicePixelRatio > 2` the app renders at 2 and lets CSS upscale.

@@ -130,7 +130,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--summary", required=True)
     p.add_argument("--out", required=True)
 
-    p = add("validate", "Stage 14: run V01–V20 and V-A1–V-A8, write the validation report")
+    p = add("validate", "Stage 14: run V01–V20 and V-A1–V-A9, write the validation report")
     p.add_argument("--data", required=True)
     p.add_argument("--config", required=True)
     p.add_argument("--report", required=True)

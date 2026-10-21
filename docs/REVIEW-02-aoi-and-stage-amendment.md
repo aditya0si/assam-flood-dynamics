@@ -1,5 +1,9 @@
 # Review 02 — phase A verdict, root cause, and binding amendments
 
+> **Superseded in part by `REVIEW-03-stage-calibration.md`.** A3 (stage table), A4 (gates) and
+> their restatements below are replaced by REVIEW-03 B1–B4. A1, A2 and A5 remain in force.
+> This document is kept as the record of what phase A decided, not as current gate values.
+
 Reviewer: Hermes (orchestrator + reviewer). Builder run: phase A (`2a`), commits
 `e441d03` (stages 01–03), `c1add67` (04–07), `7267189` (08 + blocked stage 09).
 
@@ -65,6 +69,9 @@ flood-prone area (31,050 km²). State the source of the flood-prone figure in `p
 
 ### A3 — Stage table v2 (replaces `DATA-PIPELINE.md` §8.1)
 
+> **Superseded by REVIEW-03 B1.** The ×0.42 table below collapsed to ~4,000 km² on the pruned A2
+> channel set; the current table is ×1.48 with a measured peak of 3.70 m.
+
 Rescale the existing curve shape by ×0.42 so the peak sits inside the HAND distribution.
 All values remain **synthetic scenario parameters**; the split into main-stem and backwater is
 still a narrative device.
@@ -89,6 +96,9 @@ schema asserts `stage = mainstem + backwater`, then rescale those two columns ×
 the identity still holds, and keep both labeled synthetic.
 
 ### A4 — Gates v2 (replace stage-09's single 30 % rule)
+
+> **Superseded by REVIEW-03 B3.** V-A3's peak, V-A5's depth bounds and V-A6's 3.0 % clamp are
+> replaced; V-A9 (speckle control) is new and V09 now measures gzip as well. V-A4 is unchanged.
 
 | Gate | Rule |
 |---|---|

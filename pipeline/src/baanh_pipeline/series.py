@@ -140,8 +140,10 @@ def run(
                 invalid += 1
                 continue
             _, _, distance_m = geod().inv(start[0], start[1], lon, lat)
-            water = [channel_z + stage_m for stage_m in transforms]
-            depth = [max(0.0, surface - ground) for surface in water]
+            # REVIEW-03 B2: depth = stage - max(HAND, 0), the same clamped
+            # bathtub convention as stage 09, so depth never exceeds the stage.
+            depth = [max(0.0, stage_m - max(hand_value, 0.0)) for stage_m in transforms]
+            water = [ground + value for value in depth]
             samples.append(
                 {
                     "distance_km": round(distance_m / 1000.0, 4),

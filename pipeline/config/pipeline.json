@@ -46,6 +46,10 @@
     "peak_extent_min_km2": 4000.0,
     "peak_extent_max_km2": 12000.0,
     "max_peak_area_share_of_flood_prone": 0.40,
+    "calibrated_peak_stage_m": 3.70,
+    "peak_median_depth_min_m": 1.0,
+    "peak_median_depth_max_m": 2.2,
+    "peak_clamped_wet_share_max": 0.30,
     "assam_area_km2_reference": 78523.0,
     "flood_prone_area_km2": 31050.0,
     "aoi_v2_area_min_km2": 45000.0,
@@ -88,8 +92,14 @@
     "total_cap_bytes": 14680064,
     "tier_caps_bytes": {
       "critical": 3670016,
-      "animation": 7969177,
+      "animation": 6815744,
       "optional": 3145728
+    },
+    "tier_gzip_caps_bytes": {
+      "animation": 1572864
+    },
+    "gzip_caps_bytes": {
+      "data/flood/flood-frames.geojson": 1572864
     },
     "file_caps_bytes": {
       "data/flood/flood-frames.geojson": 6815744,
@@ -109,7 +119,7 @@
     "min_valid_hand_share": 0.80,
     "warn_valid_hand_share": 0.85,
     "warn_clamped_negative_share": 0.02,
-    "max_clamped_negative_share": 0.03,
+    "max_clamped_negative_share": 0.06,
     "series_tolerance": 0.000001,
     "min_hotspot_ring_area_km2": 0.02
   },
@@ -117,7 +127,7 @@
     "data/manifest.json": { "class": "derived", "tier": "critical", "description": "Dataset manifest: versions, tiers, sizes, SHA-256, attribution." },
     "data/provenance.json": { "class": "derived", "tier": "critical", "description": "Source → stage → file provenance for every dataset." },
     "data/scenario.json": { "class": "synthetic", "tier": "critical", "description": "Synthetic 12-step monsoon scenario and HAND model parameters." },
-    "data/validation-report.json": { "class": "derived", "tier": "critical", "description": "V01–V20 plus V-A1–V-A8 validation report for the committed data." },
+    "data/validation-report.json": { "class": "derived", "tier": "critical", "description": "V01–V20 plus V-A1–V-A9 validation report for the committed data." },
     "data/admin/assam-districts.geojson": { "class": "source", "tier": "critical", "description": "Assam ADM2 district boundaries (source) with derived scenario risk attributes." },
     "data/admin/assam-state.geojson": { "class": "source", "tier": "critical", "description": "Assam state outline dissolved from geoBoundaries ADM2." },
     "data/hydro/assam-rivers.geojson": { "class": "source", "tier": "critical", "description": "Mapped river centrelines (OSM Overpass or documented Natural Earth fallback)." },

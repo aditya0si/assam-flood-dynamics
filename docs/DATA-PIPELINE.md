@@ -397,7 +397,7 @@ python -m baanh_pipeline.cli compute-hand `
   (m), `hand-meta.json` (`valid_cells`, `nodata_cells`, `clamped_negative_cells`,
   `max_distance_m`, `p50_hand_m`, `p95_hand_m`, `channel_elevation_min/max`).
 - **Validation:** HAND ≥0 everywhere valid; distance monotonic with mask distance; at least 80%
-  of AOI v2 core cells valid HAND (warn below 85%); clamped negatives inside AOI v2 ≤3.0 %
+  of AOI v2 core cells valid HAND (warn below 85%); clamped negatives inside AOI v2 ≤6.0 %
   (V-A6); no NaN/Inf.
 
 ### Stage 09 — build the inundation sequence
@@ -420,17 +420,20 @@ python -m baanh_pipeline.cli build-inundation `
 
 - **Input:** DEM/HAND/distance/channel mask; state outline; scenario steps; AOI v2 masks.
 - **Process:** for each step, threshold HAND by `stage_m` inside AOI v2, apply connectivity,
-  derive depth bands from a per-step float depth array, polygonise only the wet bounding window,
-  validate/simplify, and write `pipeline/work/flood-frames/step-XX.geojson` immediately. Build
-  `flood-frames.geojson` by combining those per-step files, then remove the staging files. Write
-  each step’s wet mask as uint8 to `pipeline/work/inundation-masks/step-XX-wet.tif`. Do **not**
-  build a float stack of all steps and do **not** write `inundation-stack.npz`. Full algorithm in
-  §7.
-- **Output:** `flood-frames.geojson` (≤6.5 MB), `flood-summary.json` (with AOI v2, Assam and
-  flood-prone denominators), `scenario.json` copy, and the uint8 mask cache (≤300 MB).
+  apply the **V-A9** 3×3 opening and <0.10 km² part drop, derive depth bands from the clamped
+  depth, polygonise only the wet bounding window, validate/simplify, and write
+  `pipeline/work/flood-frames/step-XX.geojson` immediately. Build `flood-frames.geojson` by
+  combining those per-step files, then remove the staging files. Write each step’s wet mask as
+  uint8 to `pipeline/work/inundation-masks/step-XX-wet.tif`. Do **not** build a float stack of
+  all steps and do **not** write `inundation-stack.npz`. Full algorithm in §7.
+- **Output:** `flood-frames.geojson` (≤6,815,744 B raw and ≤1,572,864 B gzip),
+  `flood-summary.json` (with AOI v2, Assam and flood-prone denominators, V-A9 counts and
+  per-frame raw/gzip sizes), `scenario.json` copy, and the uint8 mask cache (≤300 MB).
 - **Validation:** area non-decreasing on the rising limb (S00–S07), decreasing on recession
   (S08–S11), peak at S07; every polygon valid; every feature inside AOI v2; peak extent inside
-  V-A4; peak depth inside V-A5; wall time and artifacts inside V-A8.
+  V-A4; peak median depth 1.0–2.2 m, p95 ≤ stage and clamped wet ≤30 % (V-A5); clamped AOI ≤6 %
+  (V-A6); V-A9 counts recorded; wall time and artifacts inside V-A8; raw and gzip frame caps
+  inside V09.
 
 ### Stage 10 — risk zones, district ranking, hotspots
 
@@ -480,9 +483,10 @@ python -m baanh_pipeline.cli build-series `
   stack: stage 11 recomputes water surface from nearest-channel elevation and stage.)
 - **Process:** emit the chart-ready synthetic rainfall/stage series and the scenario threshold
   (cross-checked against `flood-summary.json`); sample each transect at 2 km spacing, record
-  ground elevation, HAND, and water surface/depth for all 12 steps. Water surface at a sample =
-  nearest channel elevation + scenario stage. Samples with nodata HAND become `ground_m: null`
-  and are omitted from the profile; the count is reported.
+  ground elevation, HAND, and water surface/depth for all 12 steps. Depth follows REVIEW-03 B2:
+  `depth_m = max(0, stage_m − max(HAND, 0))`, so it never exceeds the stage; `water_surface_m` is
+  `ground_m + depth_m` for the same clamped bathtub surface. Samples with nodata HAND become
+  `ground_m: null` and are omitted from the profile; the count is reported.
 - **Output:** `monsoon-series.json` (≤0.05 MB), `cross-sections.json` (≤0.20 MB).
 - **Validation:** 12 points per series; values identical to summary at each step (tolerance 1e−6);
   every transect has ≥30 valid samples; no NaN.
@@ -543,7 +547,7 @@ python -m baanh_pipeline.cli validate `
   --version 2026.10.0
 ```
 
-Runs V01–V20 and V-A1–V-A8 (§10), writes the report atomically, prints a one-line summary, and exits non-zero
+Runs V01–V20 and V-A1–V-A9 (§10), writes the report atomically, prints a one-line summary, and exits non-zero
 if any `fail` check exists. Warnings are allowed only where §10 says so.
 
 ### Stage 15 — publish manifest and provenance
@@ -763,6 +767,16 @@ features overlap (each step is a full snapshot); the app filters by `step`.
 Geometry: `Polygon`/`MultiPolygon`, EPSG:4326, simplified 75 m, min ring 0.02 km², 5 decimals.
 No feature may straddle two `step` values.
 
+<!-- amended: REVIEW-03 -->
+
+Before polygonisation the wet mask receives the V-A9 speckle control: a 3×3 binary opening and
+removal of wet parts below 0.10 km². The per-step part counts before and after, the dropped count
+and the removed area are recorded in `flood-summary.json`; the committed frame's polygon-part
+count is recorded too. The committed file must be ≤6,815,744 bytes raw **and** ≤1,572,864 bytes
+gzip (V09). If a frame still exceeds 6.5 MB after speckle control, the recorded fallback is a
+two-class depth rendering (shallow 0–1 m / deep ≥1 m) in `ARCHITECTURE.md` §7.2 and
+`manifest.json`; dropping real polygons to fit is forbidden.
+
 ### 6.8 `flood/flood-summary.json`
 
 <!-- amended: REVIEW-02 -->
@@ -786,26 +800,43 @@ No feature may straddle two `step` values.
       "day_offset": 85,
       "phase": "peak",
       "rainfall_mm_day": 10,
-      "mainstem_stage_m": 1.428,
-      "backwater_m": 1.072,
-      "stage_m": 2.50,
+      "mainstem_stage_m": 2.11,
+      "backwater_m": 1.59,
+      "stage_m": 3.70,
       "above_threshold": true,
       "inundated_area_km2": 0.0,
       "new_inundation_km2": 0.0,
       "receded_area_km2": 0.0,
       "median_depth_m": 0.0,
+      "p95_depth_m": 0.0,
       "max_depth_m": 0.0,
       "mean_depth_m": 0.0,
+      "clamped_wet_share": 0.0,
+      "clamped_aoi_share": 0.0,
+      "speckle_control": {
+        "opening": "3x3",
+        "min_part_area_km2": 0.10,
+        "parts_before": 0,
+        "parts_after": 0,
+        "dropped_parts": 0,
+        "removed_area_km2": 0.0
+      },
+      "frame_polygon_parts": 0,
+      "frame_raw_bytes": 0,
+      "frame_gzip_bytes": 0,
       "affected_district_count": 0,
       "valid_cell_share": 0.0
     }
   ],
   "totals": {
     "max_area_km2": 0.0,
-    "peak_stage_m": 2.50,
+    "peak_stage_m": 3.70,
     "scenario_days": 136,
     "districts_any_inundation": 0,
     "median_depth_at_peak_m": 0.0,
+    "p95_depth_at_peak_m": 0.0,
+    "clamped_wet_share_at_peak": 0.0,
+    "clamped_aoi_share": 0.0,
     "max_depth_at_peak_m": 0.0,
     "aoi_v2_area_km2": 52240.7,
     "assam_area_km2": 78220.6,
@@ -832,12 +863,21 @@ Field semantics:
 - `stage_m`: scenario water level above local drainage, metres; the value applied to HAND.
   It is defined exactly as `stage_m = mainstem_stage_m + backwater_m` (validated by V11); the
   additive form is a declared simplification, not a hydrodynamic backwater solution.
-- `above_threshold`: `stage_m >= scenario.threshold_stage_m` (1.5). A model flag, not an official warning.
-- `inundated_area_km2`: union of wet cells inside AOI v2 at the step.
+- `above_threshold`: `stage_m >= scenario.threshold_stage_m` (2.0). A model flag, not an official warning.
+- `inundated_area_km2`: union of wet cells inside AOI v2 at the step, after V-A9 speckle control.
 - `new_inundation_km2`: cells wet at `t` and dry at `t−1` (0 at t=0).
 - `receded_area_km2`: cells dry at `t` and wet at `t−1` (0 at t=0).
-- `median_depth_m`, `max_depth_m`, `mean_depth_m`: over wet cells at the step; mean is
-  area-weighted. The median is the V-A5 statistic (including channel cells).
+- `median_depth_m`, `p95_depth_m`, `max_depth_m`, `mean_depth_m`: over wet cells at the step;
+  mean is area-weighted. Depth is `stage_m − max(HAND, 0)` (REVIEW-03 B2), so every value is
+  ≤ the step stage. The median and p95 are the V-A5 statistics (including channel cells).
+- `clamped_wet_share`: share of the step's wet area whose burned ground lies below its nearest
+  channel elevation (HAND clamped to 0). V-A5 caps the peak-step value at 30 %.
+- `clamped_aoi_share`: share of valid AOI v2 cells that are clamped; V-A6 caps it at 6 %.
+- `speckle_control`: V-A9 record. `parts_before`/`parts_after` are connected-component counts of
+  the connectivity-filtered wet mask before the 3×3 opening and after the 0.10 km² part drop;
+  `removed_area_km2` is the opened area removed by the part-size floor.
+- `frame_polygon_parts`, `frame_raw_bytes`, `frame_gzip_bytes`: measured size of the per-step
+  frame after polygonisation (raw UTF-8 and gzip -9), used to audit V09.
 - `affected_district_count`: districts with >1 km² wet.
 - `valid_cell_share`: share of AOI v2 core cells with valid HAND. A coverage caveat.
 - `share_of_aoi_v2`, `share_of_assam`, `share_of_flood_prone_area`: the same step area against
@@ -1050,16 +1090,16 @@ valid samples. No NaN; invalid samples are omitted and counted in provenance.
       "id": "V-A5",
       "name": "Peak depth",
       "status": "pass",
-      "expected": "peak-step median ≤1.5 m and max ≤2.60 m",
+      "expected": "peak-step median 1.0–2.2 m; p95 ≤ peak stage; clamped wet ≤30%",
       "actual": "…",
       "detail": "…"
     }
   ],
-  "counts": { "files": 16, "steps": 12, "features": 0, "gates": 28, "failures": 0, "warnings": 0 }
+  "counts": { "files": 16, "steps": 12, "features": 0, "gates": 29, "failures": 0, "warnings": 0 }
 }
 ```
 
-`checks` must contain every ID in `V01–V20` and `V-A1–V-A8` (28 gates); a missing ID is a
+`checks` must contain every ID in `V01–V20` and `V-A1–V-A9` (29 gates); a missing ID is a
 failure, not a skip. `status` is `pass` only if every check is `pass` or an allowed `warn`. A
 `fail` makes `publish` refuse.
 
@@ -1191,8 +1231,16 @@ For each step `s` with stage `stage_s` (metres above local drainage):
 
 ```text
 wet_raw = valid_hand AND inside_AOI_v2 AND (hand <= stage_s)
-depth_raw = max(0, stage_s - hand)
+depth_raw = stage_s - max(hand, 0)
 ```
+
+<!-- amended: REVIEW-03 B2 -->
+
+`depth = stage − max(HAND, 0)` is the bathtub convention, so `depth ≤ stage` for every wet cell.
+A cell below the burnt channel datum reports the full stage (HAND 0). This is deliberately
+**conservative-shallow**: without levee or bathymetry data the model cannot assign a deeper
+surface to that cell. State the bias in the methodology note and the run report; do not present
+the clamped depth as a measured water depth.
 
 `inside_AOI_v2` is the core mask (inside Assam, DEM ≤120 m), not the 2 km edge buffer and not the
 full Assam polygon. The 2 km buffer is used only so edge channels/terrain remain continuous.
@@ -1223,9 +1271,21 @@ would be separated by a levee; that is covered by the no-levee limitation. It ca
 backwater pocket that is disconnected at 90 m; the count of dropped components is recorded and
 reported, and the limitation is stated.
 
+**V-A9 speckle control (REVIEW-03 B3)** runs immediately after connectivity and before
+polygonisation:
+
+1. Apply a 3×3 binary opening to the retained wet mask.
+2. Label the opened mask with 8-connectivity and drop every part below 0.10 km² geodesic area.
+3. Record, per step, `parts_before` (components before the opening), `parts_after` (components
+   retained after the area drop), `dropped_parts` and `removed_area_km2`.
+4. Only the resulting mask is polygonised, counted for area and used for depth statistics.
+
+The dropped parts are DEM/edge speckle, not islands; no band reduction, coarse simplification or
+quiet polygon drop is used to meet the frame cap.
+
 ### 7.8 Step G — depth bands and polygonisation
 
-<!-- amended: REVIEW-02 -->
+<!-- amended: REVIEW-02 / REVIEW-03 -->
 
 For each step:
 
@@ -1249,6 +1309,10 @@ For each step:
    collection to `pipeline/work/flood-frames/step-XX.geojson` immediately, then combine those
    files into the committed `flood-frames.geojson` (A5.3). The staging files are removed after
    the combined file is written, so the app’s one-file load contract is unchanged.
+9. Measure each step frame raw and gzip -9 size; record both in the summary and the report.
+   Refuse to write the committed frames if the combined file exceeds 6,815,744 bytes raw or
+   1,572,864 bytes gzip. The only recorded fallback is the two-class rendering in §7.2; dropping
+   real polygons is not permitted.
 
 ### 7.9 Step H — no reachable channel, edge cases
 
@@ -1256,7 +1320,7 @@ For each step:
 |---|---|---|
 | No channel within 12 km | HAND nodata; never wet; counted in `hand-meta.json` | Cell absent from flood/risk; `valid_area_share` caveat |
 | No channel at all in AOI | Pipeline fails V04/V17; no output | No fake flood |
-| Cell below nearest channel | HAND clamped to 0; counted; warning if >2% | Cell floods at the first stage ≥0 |
+| Cell below nearest channel | HAND clamped to 0; counted; warning above 2%, hard gate 6% (V-A6) | Cell floods at the first stage ≥0 |
 | Channel elevation above cell but distance valid | Same clamp; local depression | Stated limitation |
 | Isolated wet component | Dropped by connectivity; count reported | Avoids speckle |
 | Cell outside AOI v2 | Computed for continuity but excluded from output and metrics | No hill-district flood area; stated caveat |
@@ -1276,25 +1340,26 @@ and is stated in-app. A flow-accumulation/routing refinement is P2.
 ### 8.1 The 12 steps
 
 `N = 12`; peak at S07; total 136 days. Dates are **composite labels without a year** to avoid
-implying a specific observed event. Stages are the phase-A curve rescaled by ×0.42 (A3). The
-main-stem and backwater columns are rescaled with the same factor and the backwater value absorbs
-the 3-decimal reconciliation so `stage_m = mainstem_stage_m + backwater_m` still holds exactly.
+implying a specific observed event. Stages are the phase-A curve rescaled by ×1.48 (REVIEW-03 B1);
+the peak is 3.70 m, selected by the phase-A3 measured calibration inside V-A4/V-A5. The
+main-stem and backwater columns are scaled with the same factor and the backwater value absorbs
+the 2-decimal reconciliation so `stage_m = mainstem_stage_m + backwater_m` still holds exactly.
 All three columns remain **synthetic scenario parameters**.
 
-| Step | Label | Day | Phase | Rainfall (mm/day, synthetic) | Main-stem anomaly (m, synthetic) | Backwater allowance (m, synthetic) | Stage above drainage (m, scenario) | Above 1.5 m |
+| Step | Label | Day | Phase | Rainfall (mm/day, synthetic) | Main-stem anomaly (m, synthetic) | Backwater allowance (m, synthetic) | Stage above drainage (m, scenario) | Above 2.0 m |
 |---:|---|---:|---|---:|---:|---:|---:|---|
-| S00 | 01 Jun | 0 | onset | 6 | 0.126 | 0.074 | 0.20 | no |
-| S01 | 15 Jun | 14 | rising | 12 | 0.294 | 0.106 | 0.40 | no |
-| S02 | 01 Jul | 30 | rising | 17 | 0.504 | 0.196 | 0.70 | no |
-| S03 | 15 Jul | 44 | rising | 21 | 0.756 | 0.294 | 1.05 | no |
-| S04 | 25 Jul | 54 | rising | 24 | 1.008 | 0.442 | 1.45 | no |
-| S05 | 05 Aug | 65 | rising | 20 | 1.218 | 0.582 | 1.80 | yes |
-| S06 | 15 Aug | 75 | rising | 14 | 1.344 | 0.856 | 2.20 | yes |
-| S07 | 25 Aug | 85 | peak | 10 | 1.428 | 1.072 | **2.50** | yes |
-| S08 | 05 Sep | 96 | receding | 7 | 1.344 | 0.856 | 2.20 | yes |
-| S09 | 15 Sep | 106 | receding | 5 | 1.134 | 0.566 | 1.70 | yes |
-| S10 | 30 Sep | 121 | receding | 3 | 0.798 | 0.402 | 1.20 | no |
-| S11 | 15 Oct | 136 | receding | 2 | 0.420 | 0.280 | 0.70 | no |
+| S00 | 01 Jun | 0 | onset | 6 | 0.19 | 0.11 | 0.30 | no |
+| S01 | 15 Jun | 14 | rising | 12 | 0.44 | 0.16 | 0.60 | no |
+| S02 | 01 Jul | 30 | rising | 17 | 0.75 | 0.30 | 1.05 | no |
+| S03 | 15 Jul | 44 | rising | 21 | 1.12 | 0.43 | 1.55 | no |
+| S04 | 25 Jul | 54 | rising | 24 | 1.49 | 0.66 | 2.15 | yes |
+| S05 | 05 Aug | 65 | rising | 20 | 1.80 | 0.85 | 2.65 | yes |
+| S06 | 15 Aug | 75 | rising | 14 | 1.99 | 1.26 | 3.25 | yes |
+| S07 | 25 Aug | 85 | peak | 10 | 2.11 | 1.59 | **3.70** | yes |
+| S08 | 05 Sep | 96 | receding | 7 | 1.99 | 1.26 | 3.25 | yes |
+| S09 | 15 Sep | 106 | receding | 5 | 1.68 | 0.82 | 2.50 | yes |
+| S10 | 30 Sep | 121 | receding | 3 | 1.18 | 0.62 | 1.80 | no |
+| S11 | 15 Oct | 136 | receding | 2 | 0.62 | 0.43 | 1.05 | no |
 
 ### 8.2 What is anchored, what is invented
 
@@ -1312,7 +1377,7 @@ discharge, gauge level, return period, or event statistic is quoted from a sourc
 - Every rainfall value in the table.
 - Every main-stem anomaly value.
 - Every backwater-allowance value.
-- Every stage-above-drainage value and the 1.5 m scenario threshold.
+- Every stage-above-drainage value and the 2.0 m scenario threshold.
 - The step dates (composite month/day labels, no year).
 
 **Derived (computed, not observed):**
@@ -1327,13 +1392,12 @@ forecast, not a gauge record, not an evacuation instruction.”
 
 ### 8.3 Why these values
 
-The stage rises from 0.20 m to **2.50 m**, the phase-A curve rescaled by ×0.42 so the peak sits
-inside the valley HAND distribution rather than above its 60th percentile. The number is a **model
-parameter, not a measured flood level**: it was chosen to produce a legible sequence from first
-inundation to a broad peak without turning most of Assam into water. The rainfall peak at S04 and
-stage peak at S07 preserve the visible lag. The recession is slower than the rise (51 days from
-peak to S11 vs 85 days from S00 to peak), matching the qualitative behaviour of a large valley
-draining after the monsoon.
+The stage rises from 0.30 m to **3.70 m**, the phase-A curve rescaled by ×1.48 (REVIEW-03 B1).
+The number is a **model parameter, not a measured flood level**: it is the peak stage selected by
+the phase-A3 measured calibration on the A2 channel set, inside the V-A4 extent band. The rainfall
+peak at S04 and stage peak at S07 preserve the visible lag. The recession is slower than the rise
+(51 days from peak to S11 vs 85 days from S00 to peak), matching the qualitative behaviour of a
+large valley draining after the monsoon.
 
 The stage is the exact sum of the two synthetic columns:
 `stage_m = mainstem_stage_m + backwater_m`. The split is a narrative device for the causal chain
@@ -1341,13 +1405,15 @@ The stage is the exact sum of the two synthetic columns:
 applies the summed stage uniformly to every mapped channel. A reviewer must not read the split as
 two independent physical estimates.
 
-The 2.50 m peak is the **V-A4/V-A5 plausibility band subject**, not a calibrated observation. The
-band (4,000–12,000 km²) and the ≤40 %-of-flood-prone ceiling were chosen by the REVIEW-02 reviewer;
-they are recorded in `provenance.json` and the run report as a plausibility choice.
+The 3.70 m peak is the **measured calibration choice**, not an observation. The V-A4 band
+(4,000–12,000 km²) and the ≤40 %-of-flood-prone ceiling were chosen by the REVIEW-02 reviewer; the
+V-A5 depth band and clamped-share gates were revised by REVIEW-03 B3. They are recorded in
+`provenance.json` and the run report as plausibility and calibration choices.
 
 If the builder changes any value, they must update the scenario table, the config, the summary,
-the series, and the validation expectations together. No component may hard-code 2.50 or step 7;
-they come from `scenario.json`/`flood-summary.json`.
+the series, and the validation expectations together. No component may hard-code 3.70 or step 7;
+they come from `scenario.json`/`flood-summary.json`, and V-A3 compares the peak against
+`pipeline/inundation/calibrated_peak_stage_m`.
 
 ### 8.4 Duration weights
 
@@ -1491,26 +1557,27 @@ refuses if `status != "pass"`. The report lists every gate by ID in
 | V06 | Recession | `area[S08..S11]` non-increasing; peak step = 7 | fail |
 | V07 | Finite numbers | No `NaN`, `Infinity`, `-Infinity` anywhere; JSON `allow_nan=False` | fail |
 | V08 | Classes and labels | Every feature `class` in the five-value enum; badges/labels present; no layer missing a class | fail |
-| V09 | File caps | Every file ≤ its §11 cap; total ≤14 MB | fail |
+| V09 | File caps | Every file ≤ its §11 raw cap; flood frames ≤6,815,744 B raw **and** ≤1,572,864 B gzip; total ≤14 MB | fail |
 | V10 | Manifest integrity | Every file except `manifest.json` is listed once; SHA-256 and byte size match; no orphan data file | fail |
-| V11 | Series and stage consistency | `monsoon-series` points equal `flood-summary` at every step (1e−6); threshold = 1.5; `stage_m = mainstem_stage_m + backwater_m` at every step | fail |
+| V11 | Series and stage consistency | `monsoon-series` points equal `flood-summary` at every step (1e−6); threshold = 2.0; `stage_m = mainstem_stage_m + backwater_m` at every step | fail |
 | V12 | District join | Every ranking district exists in districts GeoJSON exactly once; `rank` dense; score 0–100 | fail |
 | V13 | Forbidden fields/claims | No `casualties`, `deaths`, `displaced`, `affected_persons`, `incident_id`, `agency_id`, `relief_camp`, `eta`, `warning_issued`; no positive `operational forecast`/`official forecast`/`flood forecast`. A bare `forecast` passes only inside the required negation `not a forecast` / `never a forecast` or the boolean key `not_a_forecast`. | fail |
 | V14 | Step count | Exactly 12 steps; labels/days/phases match `scenario.json`; every step has at least one feature | fail |
 | V15 | Coordinate hygiene | 5 decimals; no consecutive duplicates; RFC 7946 winding; no ring <0.02 km² (flood) | fail |
 | V16 | Risk range | All scores 0–100; zone classes match thresholds; ranking classes match thresholds | fail |
-| V17 | Channel coverage | ≥85% of AOI v2 core cells valid HAND; no-channel cells reported; clamped negatives ≤3.0% | warn if 80–85% valid or clamped 2–3%; fail <80% valid |
+| V17 | Channel coverage | ≥85% of AOI v2 core cells valid HAND; no-channel cells reported; clamped negatives ≤6.0% | warn if 80–85% valid or clamped 2–6%; fail <80% valid or >6% |
 | V18 | Fallback asset | `assam-hillshade.webp` exists, ≤1.5 MB, decodes, width 2000 | fail |
-| V19 | First-paint budget | Critical-tier bytes ≤3.5 MB raw; total animation tier ≤7.6 MB raw | fail |
+| V19 | First-paint budget | Critical-tier bytes ≤3.5 MB raw; total animation tier ≤6.5 MB raw **and** ≤1.5 MB gzip | fail |
 | V20 | Provenance completeness | Every committed dataset has a provenance entry with source/licence/stage/output; UNOSAT absence noted; flood-prone source recorded | fail |
 | V-A1 | AOI v2 area | AOI v2 core area between 45,000 and 56,000 km²; mask area agrees with metadata | fail |
 | V-A2 | Channel policy | Channel cells ≤4.0% of AOI v2; zero model ways with midpoint outside AOI v2 + 5 km; every model way is `waterway=river` | fail |
-| V-A3 | Stage series v2 | Strictly increases S00→S07, strictly decreases S08→S11, peak = 2.50 m at S07 | fail |
+| V-A3 | Stage series v3 | Strictly increases S00→S07, strictly decreases S08→S11, peak = 3.70 m at S07, threshold 2.0 m | fail |
 | V-A4 | Peak extent plausibility | Peak extent between 4,000 and 12,000 km² and ≤40% of the 31,050 km² flood-prone area (reviewer-selected band, not a calibrated observation) | fail |
-| V-A5 | Peak depth | Peak-step median depth ≤1.5 m and max depth ≤2.60 m (`stage − HAND`) | fail |
-| V-A6 | Clamped HAND | Clamped negative HAND cells inside AOI v2 ≤3.0% | fail |
+| V-A5 | Peak depth | Peak-step median depth 1.0–2.2 m; p95 ≤ peak stage; clamped share of wet area ≤30% (`depth = stage − max(HAND, 0)`) | fail |
+| V-A6 | Clamped HAND | Clamped negative HAND cells inside AOI v2 ≤6.0% | fail |
 | V-A7 | Hydrograph shape | Every rising-limb step non-decreasing; recession non-increasing; peak at S07 | fail |
 | V-A8 | Stage 09 performance | Stage 09 wall time ≤10 min; no `inundation-stack.npz` above 300 MB; every stage-09 artifact ≤300 MB | fail |
+| V-A9 | Speckle control | 3×3 binary opening on the wet mask and wet parts <0.10 km² dropped **before** polygonisation; parts before/after, dropped count and removed area recorded for every step; committed polygon-part count matches the summary | fail |
 
 Additional assertions inside stages:
 
@@ -1551,7 +1618,7 @@ produced locally and committed with a fresh manifest.
 
 | File | Cap |
 |---|---|
-| `flood/flood-frames.geojson` | 6.5 MB |
+| `flood/flood-frames.geojson` | 6.5 MB raw and 1.5 MB gzip |
 | `admin/assam-districts.geojson` | 1.2 MB |
 | `admin/assam-state.geojson` | 0.15 MB |
 | `hydro/assam-rivers.geojson` | 1.0 MB |
@@ -1567,12 +1634,16 @@ produced locally and committed with a fresh manifest.
 | **Total committed data** | **14 MB** |
 
 Tiers: critical (manifest, scenario, provenance, districts, state, rivers, district-risk,
-monsoon-series, validation) ≤3.5 MB raw; animation (flood frames, summary, risk zones) ≤7.6 MB
-raw; optional/fallback (hillshade, cross-sections, hotspots, assets, gauges) ≤3.0 MB raw.
+monsoon-series, validation) ≤3.5 MB raw; animation (flood frames, summary, risk zones) ≤6.5 MB
+raw **and** ≤1.5 MB gzip; optional/fallback (hillshade, cross-sections, hotspots, assets, gauges)
+≤3.0 MB raw.
 
-If the flood cap is exceeded, reduce depth bands (four → three) before coarsening the grid or
-simplifying below 75 m. The model resolution is the last thing to degrade. Do not hand-edit the
-committed JSON, and do not drop genuine flood polygons merely to make the byte count look good.
+<!-- amended: REVIEW-03 B4 -->
+
+If a frame still exceeds 6.5 MB after V-A9 speckle control, the only permitted fallback is a
+**two-class depth rendering** (shallow 0–1 m / deep ≥1 m), recorded in `ARCHITECTURE.md` §7.2 and
+`manifest.json`. Do not reduce the depth-band count silently, coarsen below 75 m, or drop genuine
+flood polygons merely to make the byte count look good. Do not hand-edit the committed JSON.
 The stage-09 per-step uint8 mask cache is capped at 300 MB; the old float `.npz` stack is not part
 of the accepted path.
 
@@ -1629,7 +1700,7 @@ fetching; clarity over speed.
 5. **90 m grid.** Smaller channels, culverts, and local depressions are not resolved.
 6. **Euclidean nearest drainage.** A channel across a ridge can be selected; no flow-path
    distance. Negative HAND (cell below its nearest channel) is clamped and counted; V-A6 caps it
-   at 3.0% of AOI v2.
+   at 6.0% of AOI v2, and V-A5 caps the peak-step clamped share of wet area at 30%.
 7. **No calibration.** Stage values are not fitted to a gauge or a satellite extent. The
    4,000–12,000 km² peak band and 31,050 km² flood-prone denominator are plausibility references,
    not observations of this scenario.

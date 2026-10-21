@@ -14,7 +14,7 @@ import numpy as np
 import rasterio
 from rasterio.features import shapes as raster_shapes
 from rasterio.transform import Affine
-from scipy.ndimage import label
+from scipy.ndimage import binary_opening, label
 from shapely.geometry import MultiPolygon, Polygon, shape
 from shapely.ops import unary_union
 
@@ -35,6 +35,7 @@ from .util import (
     atomic_write_bytes,
     atomic_write_json,
     ensure_dirs,
+    gzip_bytes,
     json_bytes,
     path_size,
 )
@@ -75,6 +76,38 @@ def _component_filter(wet_raw: np.ndarray, distance: np.ndarray, min_cells: int,
     return wet, int(count), dropped
 
 
+def _speckle_control(
+    wet: np.ndarray,
+    distance: np.ndarray,
+    area_2d: np.ndarray,
+    res: float,
+    opening_cells: int,
+    min_part_area_km2: float,
+):
+    """V-A9: 3x3 opening, then drop wet parts below the area floor.
+
+    ``parts_before`` and ``parts_after`` are connected-component counts of the
+    connectivity-filtered wet mask and of the retained mask, both recorded in
+    ``flood-summary.json``.  Applied before polygonisation, never after it.
+    """
+    structure = np.ones((opening_cells, opening_cells), dtype=bool)
+    opened = binary_opening(wet, structure=structure, border_value=0)
+    _, parts_before = label(wet, structure=np.ones((3, 3), dtype=np.int8))
+    labels, count = label(opened, structure=np.ones((3, 3), dtype=np.int8))
+    if count == 0:
+        return opened, int(parts_before), 0, 0, 0.0
+    part_area = np.bincount(labels.ravel(), weights=area_2d.ravel(), minlength=count + 1)
+    # V-A9 drops parts by area only.  Connectivity was already enforced on the
+    # pre-opening mask; re-testing channel proximity here would delete large
+    # components merely because the opening moved their edge cells.
+    keep = part_area >= min_part_area_km2
+    keep[0] = False
+    kept = keep[labels]
+    removed_area = float(area_2d[opened].sum() - area_2d[kept].sum())
+    dropped = int((~keep[1:]).sum())
+    return kept, int(parts_before), int(keep[1:].sum()), dropped, removed_area
+
+
 def _polygonise_band(
     band: np.ndarray,
     value: int,
@@ -85,7 +118,7 @@ def _polygonise_band(
 ):
     mask = band == value
     if not mask.any():
-        return None, 0.0
+        return None, 0.0, 0
     parts = []
     for geom_mapping, _ in raster_shapes(
         band, mask=mask, connectivity=8, transform=step_transform
@@ -95,18 +128,18 @@ def _polygonise_band(
             continue
         parts.extend(polygon_parts(geom))
     if not parts:
-        return None, 0.0
+        return None, 0.0, 0
     # The connected components of one band are disjoint.  Build a MultiPolygon
     # directly instead of unioning thousands of parts per step.
     multi = MultiPolygon(parts)
     if not multi.is_valid:
         multi = valid(unary_union(parts))
     if multi is None or multi.is_empty:
-        return None, 0.0
+        return None, 0.0, 0
     wgs = project_geom(multi, cfg.aoi.analysis_crs, cfg.aoi.output_crs)
     wgs = valid(wgs)
     if wgs is None or wgs.is_empty:
-        return None, 0.0
+        return None, 0.0, 0
     # Simplifying one MultiPolygon with tens of thousands of parts is very
     # expensive.  Simplify each disjoint part in WGS84 with an equivalent
     # ground tolerance (~75 m in latitude).
@@ -131,16 +164,17 @@ def _polygonise_band(
                 clean_part = Polygon(clean_part.exterior, holes)
             kept.append(clean_part)
     if not kept:
-        return None, 0.0
+        return None, 0.0, 0
     result = MultiPolygon(kept)
     if not result.is_valid:
         result = valid(unary_union(kept))
     if result is None or result.is_empty:
-        return None, 0.0
-    area = sum(geodesic_area_km2(part) for part in polygon_parts(result))
+        return None, 0.0, 0
+    parts = polygon_parts(result)
+    area = sum(geodesic_area_km2(part) for part in parts)
     if area <= 0:
-        return None, 0.0
-    return result, area
+        return None, 0.0, 0
+    return result, area, len(parts)
 
 
 def _district_raster(cfg: Config, transform, height: int, width: int):
@@ -207,6 +241,14 @@ def run(
     min_component_cells = int(model.get("min_component_cells", 3))
     tolerance = float(model["simplify_tolerance_m"])
     min_band_area = float(model["min_polygon_area_km2"])
+    speckle = dict(model.get("speckle_control") or {})
+    if not speckle.get("applied_before_polygonisation"):
+        raise RuntimeError(
+            "stage 09: V-A9 requires the documented speckle control before "
+            "polygonisation (model.speckle_control)"
+        )
+    opening_cells = int(speckle.get("opening_cells", 3))
+    min_part_area = float(speckle.get("min_part_area_km2", 0.10))
     version = cfg.pipeline["dataset_version"]
 
     aoi = aoi_domain.load_saved(cfg)
@@ -222,6 +264,19 @@ def run(
         distance = src.read(1)
     with rasterio.open(channels_path) as src:
         channel = src.read(1) > 0
+    nearest_path = hand_path.parent / "nearest-channel-elevation-90m.tif"
+    if not nearest_path.exists():
+        raise RuntimeError(
+            f"stage 09: nearest-channel-elevation raster missing at {nearest_path}; "
+            "re-run stage 08"
+        )
+    with rasterio.open(nearest_path) as src:
+        nearest_z = src.read(1)
+    with rasterio.open(dem_path) as src:
+        dem = src.read(1)
+    if not (dem.shape == nearest_z.shape == hand.shape):
+        raise RuntimeError("stage 09: DEM/nearest-channel/HAND raster shape mismatch")
+    stage.inputs.append(nearest_path)
     if not channel.any():
         raise RuntimeError("stage 09: no channel cells")
     if hand.shape != (height, width):
@@ -237,6 +292,12 @@ def run(
     valid_cell_share = float(domain.sum()) / core_cells if core_cells else 0.0
     areas = row_cell_areas_km2(transform, height, width, cfg.aoi.analysis_crs)
     area_2d = np.broadcast_to(areas, (height, width))
+    # B2/V-A6: a cell is "clamped" when the burned ground lies below its
+    # nearest channel elevation, so HAND is reported as 0 and depth = stage.
+    clamped_domain = domain & (dem < nearest_z)
+    clamped_aoi_cells = int(clamped_domain.sum())
+    valid_aoi_cells = int(domain.sum())
+    clamped_aoi_share = clamped_aoi_cells / valid_aoi_cells if valid_aoi_cells else 1.0
 
     district_ids, district_names, districts_path = _district_raster(
         cfg, transform, height, width
@@ -258,6 +319,9 @@ def run(
     peak_index = 0
     peak_median_depth = None
     peak_max_depth = None
+    peak_p95_depth = None
+    peak_clamped_wet_share = None
+    peak_clamped_aoi_share = None
     total_features = 0
 
     for index, step in enumerate(scenario.steps):
@@ -265,8 +329,16 @@ def run(
         step_label = str(step["label"])
         phase = str(step["phase"])
         wet_raw = domain & (hand <= stage_m)
-        wet, component_count, dropped = _component_filter(
+        wet_connected, component_count, dropped = _component_filter(
             wet_raw, distance, min_component_cells, res
+        )
+        wet, parts_before, parts_after, speckle_dropped, speckle_removed = _speckle_control(
+            wet_connected,
+            distance,
+            area_2d,
+            res,
+            opening_cells,
+            min_part_area,
         )
         depth = np.where(wet, stage_m - hand, np.float32(0.0)).astype(np.float32)
 
@@ -279,12 +351,17 @@ def run(
         if wet.any():
             values = depth[wet]
             max_depth = float(values.max())
-            mean_depth = _row_area(areas, depth * wet) / area_km2 if area_km2 > 0 else None
             median_depth = float(np.median(values))
+            p95_depth = float(np.percentile(values, 95))
+            mean_depth = _row_area(areas, depth * wet) / area_km2 if area_km2 > 0 else None
+            clamped_wet_km2 = _row_area(areas, wet & clamped_domain)
+            clamped_wet_share = clamped_wet_km2 / area_km2 if area_km2 > 0 else None
         else:
             max_depth = None
             mean_depth = None
             median_depth = None
+            p95_depth = None
+            clamped_wet_share = None
 
         affected = 0
         if district_ids is not None and wet.any():
@@ -312,8 +389,21 @@ def run(
             "new_inundation_km2": round(new_km2, 4),
             "receded_area_km2": round(receded_km2, 4),
             "median_depth_m": round(median_depth, 4) if median_depth is not None else None,
+            "p95_depth_m": round(p95_depth, 4) if p95_depth is not None else None,
             "max_depth_m": round(max_depth, 4) if max_depth is not None else None,
             "mean_depth_m": round(mean_depth, 4) if mean_depth is not None else None,
+            "clamped_wet_share": (
+                round(clamped_wet_share, 6) if clamped_wet_share is not None else None
+            ),
+            "clamped_aoi_share": round(clamped_aoi_share, 6),
+            "speckle_control": {
+                "opening": f"{opening_cells}x{opening_cells}",
+                "min_part_area_km2": min_part_area,
+                "parts_before": parts_before,
+                "parts_after": parts_after,
+                "dropped_parts": speckle_dropped,
+                "removed_area_km2": round(speckle_removed, 4),
+            },
             "affected_district_count": affected,
             "valid_cell_share": round(valid_cell_share, 6),
             "share_of_aoi_v2": round(area_km2 / core_area, 6) if core_area else None,
@@ -328,6 +418,9 @@ def run(
             peak_index = index
             peak_median_depth = median_depth
             peak_max_depth = max_depth
+            peak_p95_depth = p95_depth
+            peak_clamped_wet_share = clamped_wet_share
+            peak_clamped_aoi_share = clamped_aoi_share
         prev_wet = wet
 
         # Polygonise only the wet bounding window; every cell is already inside
@@ -341,13 +434,15 @@ def run(
             depth_window = depth[r0:r1, c0:c1]
             band = _band_index(depth_window, edges)
             window_transform = transform * Affine.translation(c0, r0)
+            frame_parts = 0
             for band_value in range(1, 5):
                 band_label, lo, hi = BAND_LABELS[band_value - 1]
-                geom_wgs, band_area = _polygonise_band(
+                geom_wgs, band_area, band_parts = _polygonise_band(
                     band, band_value, window_transform, cfg, tolerance, min_band_area
                 )
                 if geom_wgs is None:
                     continue
+                frame_parts += band_parts
                 props = {
                     "step": index,
                     "step_label": step_label,
@@ -383,6 +478,10 @@ def run(
             step_features,
             version,
         )
+        step_payload_bytes = json_bytes(step_payload, indent=None)
+        summary_step["frame_polygon_parts"] = frame_parts
+        summary_step["frame_raw_bytes"] = len(step_payload_bytes)
+        summary_step["frame_gzip_bytes"] = gzip_bytes(step_payload_bytes)
         atomic_write_json(out_frames_dir / f"step-{index:02d}.geojson", step_payload, indent=None)
         total_features += len(step_features)
 
@@ -392,8 +491,12 @@ def run(
             f"{area_km2 / assam_area:.1%} of Assam, "
             f"{area_km2 / flood_prone_area:.1%} of flood-prone), "
             f"median {median_depth if median_depth is None else round(median_depth, 2)}, "
+            f"p95 {p95_depth if p95_depth is None else round(p95_depth, 2)}, "
+            f"clamped {clamped_wet_share if clamped_wet_share is None else round(clamped_wet_share, 1)}, "
             f"max {max_depth if max_depth is None else round(max_depth, 2)}, "
-            f"components {component_count} dropped {dropped}"
+            f"parts {parts_before}->{parts_after}/{frame_parts}, "
+            f"frame {len(step_payload_bytes) / 1024 / 1024:.2f} MB raw / "
+            f"{summary_step['frame_gzip_bytes'] / 1024 / 1024:.2f} MB gzip"
         )
 
     # Hydrograph shape — exact, not a widened tolerance.
@@ -437,6 +540,60 @@ def run(
             f"{max_flood_prone_share:.0%}"
         )
 
+    # V-A5 / V-A6 — measured on the same wet masks that are written out.
+    peak_step_summary = step_summaries[scenario.peak_step]
+    peak_stage_m = float(peak_step_summary["stage_m"])
+    v_a5_failures: list[str] = []
+    median_min = float(inundation_cfg["peak_median_depth_min_m"])
+    median_max = float(inundation_cfg["peak_median_depth_max_m"])
+    clamped_wet_max = float(inundation_cfg["peak_clamped_wet_share_max"])
+    if not (median_min <= float(peak_median_depth) <= median_max):
+        v_a5_failures.append(
+            f"median {float(peak_median_depth):.3f} m outside {median_min:.2f}–{median_max:.2f} m"
+        )
+    if float(peak_p95_depth) > peak_stage_m + 1e-6:
+        v_a5_failures.append(f"p95 {float(peak_p95_depth):.3f} m > peak stage {peak_stage_m:.2f} m")
+    if float(peak_clamped_wet_share) > clamped_wet_max + 1e-9:
+        v_a5_failures.append(
+            f"clamped wet share {float(peak_clamped_wet_share):.1%} > {clamped_wet_max:.0%}"
+        )
+    max_clamped_aoi = float(cfg.pipeline["validation"]["max_clamped_negative_share"])
+    if clamped_aoi_share > max_clamped_aoi + 1e-9:
+        v_a5_failures.append(
+            f"clamped AOI share {clamped_aoi_share:.2%} > {max_clamped_aoi:.1%} (V-A6)"
+        )
+
+    attempt = {
+        "schema_version": "1.0.0",
+        "status": "blocked" if v_a5_failures else "ok",
+        "peak_step": peak_index,
+        "steps": step_summaries,
+        "totals": {
+            "max_area_km2": round(peak_area, 4),
+            "peak_stage_m": peak_stage_m,
+            "median_depth_at_peak_m": (
+                round(peak_median_depth, 4) if peak_median_depth is not None else None
+            ),
+            "p95_depth_at_peak_m": (
+                round(peak_p95_depth, 4) if peak_p95_depth is not None else None
+            ),
+            "clamped_wet_share_at_peak": (
+                round(peak_clamped_wet_share, 6)
+                if peak_clamped_wet_share is not None
+                else None
+            ),
+            "clamped_aoi_share": round(clamped_aoi_share, 6),
+            "v_a5_failures": v_a5_failures,
+        },
+    }
+    atomic_write_json(
+        cfg.root / "pipeline" / "work" / "stage09-attempt.json", attempt, indent=2
+    )
+    if v_a5_failures:
+        raise RuntimeError(
+            "stage 09: V-A5/V-A6 failed on the measured peak: " + "; ".join(v_a5_failures)
+        )
+
     # Combine the per-step files (A5.3).  The staging directory is removed after
     # the combined file is written; the committed load contract stays one file.
     frame_features: list[dict] = []
@@ -468,6 +625,15 @@ def run(
             f"stage 09: flood frames {len(frames_payload)} bytes exceed cap {frame_cap}; "
             "reduce bands only as a last resort and record the deviation"
         )
+    gzip_cap = int(
+        cfg.pipeline["validation"]["gzip_caps_bytes"]["data/flood/flood-frames.geojson"]
+    )
+    frames_gzip = gzip_bytes(frames_payload)
+    if frames_gzip > gzip_cap:
+        raise RuntimeError(
+            f"stage 09: flood frames gzip {frames_gzip} bytes exceed cap {gzip_cap}; "
+            "record the two-class fallback instead of dropping polygons"
+        )
     atomic_write_bytes(out_frames, frames_payload)
     for step_path in out_frames_dir.glob("step-*.geojson"):
         step_path.unlink()
@@ -496,6 +662,15 @@ def run(
             "median_depth_at_peak_m": (
                 round(peak_median_depth, 4) if peak_median_depth is not None else None
             ),
+            "p95_depth_at_peak_m": (
+                round(peak_p95_depth, 4) if peak_p95_depth is not None else None
+            ),
+            "clamped_wet_share_at_peak": (
+                round(peak_clamped_wet_share, 6)
+                if peak_clamped_wet_share is not None
+                else None
+            ),
+            "clamped_aoi_share": round(clamped_aoi_share, 6),
             "max_depth_at_peak_m": (
                 round(peak_max_depth, 4) if peak_max_depth is not None else None
             ),
@@ -526,7 +701,13 @@ def run(
     stage.out(out_frames, out_summary, out_masks_dir, public_scenario_path)
     stage.metric("frames_features", total_features)
     stage.metric("frames_bytes", len(frames_payload))
+    stage.metric("frames_gzip_bytes", frames_gzip)
     stage.metric("mask_cache_bytes", mask_bytes)
+    stage.metric("peak_p95_depth_m", round(peak_p95_depth, 4))
+    stage.metric("peak_clamped_wet_share", round(peak_clamped_wet_share, 6))
+    stage.metric("clamped_aoi_share", round(clamped_aoi_share, 6))
+    stage.metric("speckle_opening", f"{opening_cells}x{opening_cells}")
+    stage.metric("speckle_min_part_area_km2", min_part_area)
     stage.metric("peak_area_km2", round(peak_area, 4))
     stage.metric("aoi_v2_area_km2", round(core_area, 4))
     stage.metric("assam_area_km2", round(assam_area, 4))

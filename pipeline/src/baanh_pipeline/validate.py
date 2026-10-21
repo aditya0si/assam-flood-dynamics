@@ -16,7 +16,13 @@ from shapely.geometry import Polygon, shape
 from shapely.validation import make_valid
 
 from .config import Config
-from .geo import geodesic_area_km2, iter_coords, project_geom, row_cell_areas_km2
+from .geo import (
+    geodesic_area_km2,
+    iter_coords,
+    polygon_parts,
+    project_geom,
+    row_cell_areas_km2,
+)
 from .schemas import (
     BANDS,
     CLASSES,
@@ -27,6 +33,7 @@ from .schemas import (
 from .util import (
     atomic_write_json,
     ensure_dirs,
+    gzip_size,
     load_fragments,
     path_size,
     sha256_file,
@@ -34,7 +41,7 @@ from .util import (
 )
 
 REQUIRED_GATE_IDS = [f"V{index:02d}" for index in range(1, 21)] + [
-    f"V-A{index}" for index in range(1, 9)
+    f"V-A{index}" for index in range(1, 10)
 ]
 
 
@@ -389,6 +396,16 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
     total_all = sum(path.stat().st_size for path in files)
     if total_all > total_cap:
         cap_failures.append(f"total {total_all} > {total_cap}")
+    gzip_caps = cfg.pipeline["validation"].get("gzip_caps_bytes", {})
+    gzip_measured = {}
+    for key, cap in gzip_caps.items():
+        path = public_root / key
+        if not path.exists():
+            continue
+        size = gzip_size(path)
+        gzip_measured[key] = size
+        if size > int(cap):
+            cap_failures.append(f"{key} gzip: {size} > {cap}")
     meta_cap = int(caps["meta_combined_cap_bytes"])
     meta_files = ["manifest.json", "provenance.json", "scenario.json", "validation-report.json"]
     meta_size = sum((data_path / name).stat().st_size for name in meta_files if (data_path / name).exists())
@@ -398,9 +415,11 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         _check(
             "V09",
             "File caps",
-            "every file ≤ its §11 cap; total ≤14 MB",
-            f"total {total_all / 1024 / 1024:.2f} MB; meta {meta_size / 1024:.0f} KB; {len(cap_failures)} over cap",
-            "; ".join(cap_failures[:6]) if cap_failures else "all file caps satisfied",
+            "every file ≤ its §11 raw cap and the flood frames ≤1.5 MB gzip; total ≤14 MB",
+            f"total {total_all / 1024 / 1024:.2f} MB; meta {meta_size / 1024:.0f} KB; "
+            f"frames gzip {gzip_measured.get('data/flood/flood-frames.geojson', 0) / 1024:.0f} KB; "
+            f"{len(cap_failures)} over cap",
+            "; ".join(cap_failures[:6]) if cap_failures else "all raw and gzip file caps satisfied",
             "fail" if cap_failures else "pass",
         )
     )
@@ -786,12 +805,23 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
     optional_total = tiers["optional"] + tiers["fallback"]
     if optional_total > int(tier_caps["optional"]):
         budget_failures.append(f"optional/fallback {optional_total} > {tier_caps['optional']}")
+    tier_gzip_caps = cfg.pipeline["validation"].get("tier_gzip_caps_bytes", {})
+    tier_gzip = {}
+    for tier, cap in tier_gzip_caps.items():
+        measured = sum(gzip_size(public_root / path) for path in tiers.get(tier, []))
+        tier_gzip[tier] = measured
+        if measured > int(cap):
+            budget_failures.append(f"{tier} gzip {measured} > {cap}")
     checks.append(
         _check(
             "V19",
             "First-paint budget",
-            "critical ≤3.5 MB; animation ≤7.6 MB; optional/fallback ≤3.0 MB",
-            f"critical {tiers['critical'] / 1024 / 1024:.2f} MB, animation {tiers['animation'] / 1024 / 1024:.2f} MB, optional/fallback {optional_total / 1024 / 1024:.2f} MB",
+            "critical ≤3.5 MB; animation ≤6.5 MB raw and ≤1.5 MB gzip; "
+            "optional/fallback ≤3.0 MB",
+            f"critical {tiers['critical'] / 1024 / 1024:.2f} MB, animation "
+            f"{tiers['animation'] / 1024 / 1024:.2f} MB raw / "
+            f"{tier_gzip.get('animation', 0) / 1024 / 1024:.2f} MB gzip, "
+            f"optional/fallback {optional_total / 1024 / 1024:.2f} MB",
             "; ".join(budget_failures) if budget_failures else "all tier budgets satisfied",
             "fail" if budget_failures else "pass",
         )
@@ -837,7 +867,7 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
     )
 
     # ------------------------------------------------------------------
-    # REVIEW-02 A4 gates.  V-A1…V-A8 are evaluated from the committed files
+    # REVIEW-02/03 A4 gates.  V-A1…V-A9 are evaluated from the committed files
     # and the stage work artifacts; none is hard-coded to pass.
     # ------------------------------------------------------------------
     work = cfg.root / "pipeline" / "work"
@@ -967,7 +997,8 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         )
     )
 
-    # V-A3 — stage table v2.
+    # V-A3 — stage table v3 (REVIEW-03 B1).
+    calibrated_peak = float(cfg.pipeline["inundation"]["calibrated_peak_stage_m"])
     scenario_doc = docs.get("scenario.json") or {}
     scenario_steps = scenario_doc.get("steps", [])
     stage_values = [float(step["stage_m"]) for step in scenario_steps]
@@ -985,21 +1016,27 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
                 a3_failures.append(
                     f"S{index:02d}->S{index + 1:02d} not strictly falling"
                 )
-        if abs(stage_values[7] - 2.50) > 1e-9:
-            a3_failures.append(f"peak {stage_values[7]:.3f} m != 2.50 m")
+        if abs(stage_values[7] - calibrated_peak) > 1e-9:
+            a3_failures.append(
+                f"peak {stage_values[7]:.3f} m != calibrated {calibrated_peak:.3f} m"
+            )
         if max(stage_values) != stage_values[7]:
             a3_failures.append(f"maximum at S{stage_values.index(max(stage_values)):02d}")
         if int(scenario_doc.get("peak_step", -1)) != 7:
             a3_failures.append(f"peak_step {scenario_doc.get('peak_step')} != 7")
+        threshold = float(scenario_doc.get("threshold_stage_m", -1.0))
+        if abs(threshold - 2.0) > 1e-9:
+            a3_failures.append(f"threshold {threshold:.2f} m != 2.00 m")
     checks.append(
         _check(
             "V-A3",
-            "Stage series v2",
-            "strictly increases S00→S07; strictly decreases S08→S11; peak = 2.50 m at S07",
+            "Stage series v3",
+            f"strictly increases S00→S07; strictly decreases S08→S11; peak = "
+            f"{calibrated_peak:.2f} m at S07; threshold 2.00 m",
             " -> ".join(f"{value:.2f}" for value in stage_values)
             if stage_values
             else "scenario.json missing",
-            "; ".join(a3_failures) if a3_failures else "stage table v2 shape and peak valid",
+            "; ".join(a3_failures) if a3_failures else "stage table v3 shape and peak valid",
             "fail" if a3_failures else "pass",
         )
     )
@@ -1043,7 +1080,7 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         )
     )
 
-    # V-A5 — peak depth.
+    # V-A5 — peak depth (REVIEW-03 B3).
     a5_failures = []
     peak_index_summary = int(summary.get("peak_step", -1)) if isinstance(summary, dict) else -1
     peak_step_summary = (
@@ -1052,22 +1089,38 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         else {}
     )
     peak_median = peak_step_summary.get("median_depth_m")
-    peak_max_depth = peak_step_summary.get("max_depth_m")
+    peak_p95 = peak_step_summary.get("p95_depth_m")
+    peak_clamped_wet = peak_step_summary.get("clamped_wet_share")
+    peak_stage = peak_step_summary.get("stage_m")
+    median_min = float(cfg.pipeline["inundation"]["peak_median_depth_min_m"])
+    median_max = float(cfg.pipeline["inundation"]["peak_median_depth_max_m"])
+    clamped_wet_max = float(cfg.pipeline["inundation"]["peak_clamped_wet_share_max"])
     if peak_median is None:
         a5_failures.append("summary has no median_depth_m at the peak")
-    elif float(peak_median) > 1.5:
-        a5_failures.append(f"median {float(peak_median):.3f} m > 1.5 m")
-    if peak_max_depth is None:
-        a5_failures.append("summary has no max_depth_m at the peak")
-    elif float(peak_max_depth) > 2.60 + 1e-9:
-        a5_failures.append(f"max {float(peak_max_depth):.3f} m > 2.60 m")
+    elif not (median_min <= float(peak_median) <= median_max):
+        a5_failures.append(
+            f"median {float(peak_median):.3f} m outside {median_min:.2f}–{median_max:.2f} m"
+        )
+    if peak_p95 is None or peak_stage is None:
+        a5_failures.append("summary has no p95_depth_m/stage_m at the peak")
+    elif float(peak_p95) > float(peak_stage) + 1e-9:
+        a5_failures.append(
+            f"p95 {float(peak_p95):.3f} m > peak stage {float(peak_stage):.3f} m"
+        )
+    if peak_clamped_wet is None:
+        a5_failures.append("summary has no clamped_wet_share at the peak")
+    elif float(peak_clamped_wet) > clamped_wet_max + 1e-9:
+        a5_failures.append(
+            f"clamped share of wet {float(peak_clamped_wet):.2%} > {clamped_wet_max:.0%}"
+        )
     checks.append(
         _check(
             "V-A5",
             "Peak depth",
-            "peak-step median depth ≤1.5 m and max depth ≤2.60 m (stage − HAND)",
-            f"median {peak_median}, max {peak_max_depth}"
-            if peak_median is not None and peak_max_depth is not None
+            f"peak-step median {median_min:.1f}–{median_max:.1f} m; p95 ≤ peak "
+            f"stage; clamped share of wet cells ≤{clamped_wet_max:.0%} (stage − HAND)",
+            f"median {peak_median}, p95 {peak_p95}, clamped wet {peak_clamped_wet}"
+            if peak_median is not None and peak_p95 is not None
             else "peak depth missing",
             "; ".join(a5_failures) if a5_failures else "peak depth inside the gate",
             "fail" if a5_failures else "pass",
@@ -1165,6 +1218,77 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
             ),
             "; ".join(a8_failures) if a8_failures else "stage 09 within time and size limits",
             "fail" if a8_failures else "pass",
+        )
+    )
+
+    # V-A9 — speckle control before polygonisation (REVIEW-03 B3/B4).
+    a9_failures: list[str] = []
+    model_cfg = scenario_doc.get("model", {}) if isinstance(scenario_doc, dict) else {}
+    speckle_cfg = model_cfg.get("speckle_control", {}) if isinstance(model_cfg, dict) else {}
+    if not speckle_cfg.get("applied_before_polygonisation"):
+        a9_failures.append("model.speckle_control not declared applied before polygonisation")
+    if int(speckle_cfg.get("opening_cells", 0)) != 3:
+        a9_failures.append(f"opening {speckle_cfg.get('opening_cells')} cells != 3")
+    if abs(float(speckle_cfg.get("min_part_area_km2", -1)) - 0.10) > 1e-9:
+        a9_failures.append(
+            f"min part area {speckle_cfg.get('min_part_area_km2')} != 0.10 km²"
+        )
+    actual_parts: dict[int, int] = {}
+    frames_doc = docs.get("flood/flood-frames.geojson")
+    if not isinstance(frames_doc, dict):
+        a9_failures.append("flood/flood-frames.geojson missing")
+    else:
+        for flood_feature in _geo_features(frames_doc):
+            step_id = int(flood_feature["properties"]["step"])
+            actual_parts[step_id] = actual_parts.get(step_id, 0) + len(
+                polygon_parts(shape(flood_feature["geometry"]))
+            )
+    recorded_before: list[int] = []
+    recorded_after: list[int] = []
+    for step_doc in steps:
+        step_id = int(step_doc["step"])
+        speckle = step_doc.get("speckle_control") or {}
+        before = speckle.get("parts_before")
+        after = speckle.get("parts_after")
+        if before is None or after is None:
+            a9_failures.append(f"S{step_id:02d}: speckle part counts missing")
+            continue
+        recorded_before.append(int(before))
+        recorded_after.append(int(after))
+        frame_parts = step_doc.get("frame_polygon_parts")
+        if frame_parts is None:
+            a9_failures.append(f"S{step_id:02d}: frame_polygon_parts missing")
+        elif int(frame_parts) != actual_parts.get(step_id, 0):
+            a9_failures.append(
+                f"S{step_id:02d}: recorded {frame_parts} polygon parts != "
+                f"committed {actual_parts.get(step_id, 0)}"
+            )
+        if float(speckle.get("removed_area_km2", 0.0)) < 0:
+            a9_failures.append(f"S{step_id:02d}: negative removed area")
+    peak_parts_before = (
+        recorded_before[peak_index_summary]
+        if recorded_before and 0 <= peak_index_summary < len(recorded_before)
+        else None
+    )
+    peak_parts_after = (
+        recorded_after[peak_index_summary]
+        if recorded_after and 0 <= peak_index_summary < len(recorded_after)
+        else None
+    )
+    checks.append(
+        _check(
+            "V-A9",
+            "Speckle control",
+            "3x3 binary opening on the wet mask and wet parts <0.10 km² dropped "
+            "before polygonisation; both part counts recorded for every step",
+            (
+                f"peak parts {peak_parts_before}->{peak_parts_after}; committed "
+                f"polygon parts at peak {actual_parts.get(peak_index_summary, 0)}"
+                if peak_parts_before is not None
+                else "speckle counts missing"
+            ),
+            "; ".join(a9_failures[:6]) if a9_failures else "speckle control applied and counted",
+            "fail" if a9_failures else "pass",
         )
     )
 

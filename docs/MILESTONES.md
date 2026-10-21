@@ -195,7 +195,7 @@ inside `devDependencies` and starts the Vite dev server via `playwright.config.t
 
 ### M0 acceptance criteria (executable)
 
-<!-- amended: REVIEW-02 -->
+<!-- amended: REVIEW-02 / REVIEW-03 B3 -->
 
 | ID | Criterion | Where it is checked |
 |---|---|---|
@@ -209,8 +209,8 @@ inside `devDependencies` and starts the Vite dev server via `playwright.config.t
 | M0-A8 | Every visible layer/panel has a class badge (`SOURCE`, `DERIVED`, `SCENARIO`, `SYNTHETIC`); Provenance shows source → stage → file for terrain, districts, rivers, flood, and risk; “NOT A FORECAST” is visible. | `m0.spec.ts`, `check-honesty.mjs` |
 | M0-A9 | With both DEM and imagery tile hosts aborted, the app still renders the committed relief and all vector overlays, reports the offline status, and the timeline still steps. | `fallback.spec.ts` |
 | M0-A10 | Keyboard-only: Tab reaches the timeline, Space toggles play, ArrowRight steps, Enter opens the first risk row, ESC returns focus to the panel trigger. | `m0.spec.ts` |
-| M0-A11 | `flood-frames.geojson` has ≥1 feature for every step, all classes are valid, no coordinate outside AOI v2, no `NaN`; rising-limb area is non-decreasing and recession non-increasing (V-A7); peak extent is 4,000–12,000 km² and ≤40% of the 31,050 km² flood-prone area (V-A4); peak depth and clamped HAND pass V-A5/V-A6. | `check-data.mjs` + committed `validation-report.json` (V-A1…V-A8) |
-| M0-A12 | Committed data sizes are within the caps in `DATA-PIPELINE.md` §11; critical tier ≤3.5 MB; animation tier ≤7.6 MB. | `check-budget.mjs` |
+| M0-A11 | `flood-frames.geojson` has ≥1 feature for every step, all classes are valid, no coordinate outside AOI v2, no `NaN`; rising-limb area is non-decreasing and recession non-increasing (V-A7); peak extent is 4,000–12,000 km² and ≤40% of the 31,050 km² flood-prone area (V-A4); peak median depth is 1.0–2.2 m, p95 ≤ peak stage and clamped wet share ≤30% (V-A5); clamped AOI share ≤6% (V-A6); 3×3 opening + <0.10 km² part drop applied before polygonisation with both counts recorded (V-A9); frames ≤6.5 MB raw and ≤1.5 MB gzip (V09). | `check-data.mjs` + committed `validation-report.json` (V-A1…V-A9) |
+| M0-A12 | Committed data sizes are within the caps in `DATA-PIPELINE.md` §11; critical tier ≤3.5 MB; animation tier ≤6.5 MB raw and ≤1.5 MB gzip. | `check-budget.mjs` |
 | M0-A13 | No banned claim or field appears in data or built strings (`casualties`, `deaths`, `displaced`, `affected_persons`, `incident_id`, `agency_id`, `relief_camp`, positive “forecast”, `warning issued`); the required “NOT A FORECAST” disclaimer is explicitly allowed. | `check-honesty.mjs` |
 | M0-A14 | The map is meaningful **without reading the docs**: the reviewer can point to rainfall, stage, extent, and district risk in the UI. | Manual 60-second check below |
 
@@ -360,7 +360,7 @@ Cross-cutting M1 exits:
 |---|---|---|
 | M1-X1 | `npm run verify:m0` and `npm run verify:m1` both exit 0. | CI/local |
 | M1-X2 | `validation-report.json` status is `pass`; no warnings other than V17 coverage if applicable. | `check-data.mjs` |
-| M1-X3 | Data caps: total ≤14 MB; flood ≤6.5 MB; critical ≤3.5 MB; animation ≤7.6 MB. | `check-budget.mjs` |
+| M1-X3 | Data caps: total ≤14 MB; flood ≤6.5 MB raw and ≤1.5 MB gzip; critical ≤3.5 MB; animation ≤6.5 MB raw and ≤1.5 MB gzip. | `check-budget.mjs` |
 | M1-X4 | JS initial ≤350 KB gzip, CSS ≤25 KB gzip; no font/analytics/network requests outside the two tile hosts. | `check-budget.mjs` + Playwright request log |
 | M1-X5 | 60 fps pan/orbit target; p95 frame ≤22 ms; no playback frame >50 ms on the reference laptop. | Manual Chrome performance trace, recorded in the M1 PR |
 | M1-X6 | Axe: zero critical violations on Overview, Layers, Risk, Provenance, Cross-section; keyboard-only path complete. | `a11y.spec.ts` |
