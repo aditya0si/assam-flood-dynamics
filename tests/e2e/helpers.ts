@@ -16,6 +16,8 @@ export interface Probe {
   renderSeq: number;
   /** True once the style document and required layers/sources are installed. */
   styleLoaded: boolean;
+  /** Request one painted frame; no camera, layer or source change. */
+  requestRender: () => void;
   tileHealth: 'live' | 'degraded' | 'offline';
   tileSources: { dem: TileSourceStatus; imagery: TileSourceStatus };
   tileHealthHistory: string[];
@@ -187,27 +189,34 @@ export async function setFloodVisible(page: Page, visible: boolean): Promise<voi
 }
 
 /**
+ * B8: request two explicit map repaints. The probe's requestRender() calls
+ * map.triggerRepaint() only, so it schedules a painted frame without marking
+ * sources dirty, moving the camera or changing layer state. A rAF between
+ * requests keeps them from being coalesced.
+ */
+async function requestRenderFrames(page: Page): Promise<void> {
+  for (let index = 0; index < 2; index += 1) {
+    await page.evaluate(() => {
+      window.__baanh?.requestRender();
+    });
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+  }
+}
+
+/**
  * B8 capture precondition, for A6 and R6 only: the style document is loaded and
  * the map has painted at least two more frames. No dependence on tile network
  * state, so it behaves the same on headless Linux CI as on a live machine.
- *
- * While waiting, the predicate asks MapLibre for a repaint through its window
- * 'online' listener, which calls map._update()/triggerRepaint() without moving
- * the camera or changing layer state. That makes the two-frame advance
- * deterministic even after the map has gone idle, and still observes real
- * painted frames rather than a timer.
  */
 export async function waitForSettledFrame(page: Page, timeout = SETTLE_TIMEOUT): Promise<void> {
   await expect.poll(() => probeValue(page, 'styleLoaded'), { timeout }).toBe(true);
   const startSeq = (await probeValue(page, 'renderSeq')) ?? 0;
+  await requestRenderFrames(page);
   await page.waitForFunction(
-    (target) => {
-      const probe = window.__baanh;
-      if (probe?.styleLoaded !== true) return false;
-      if ((probe.renderSeq ?? 0) >= target) return true;
-      window.dispatchEvent(new Event('online'));
-      return false;
-    },
+    (target) =>
+      window.__baanh?.styleLoaded === true && (window.__baanh?.renderSeq ?? 0) >= target,
     startSeq + 2,
     { timeout, polling: 'raf' },
   );

@@ -82,9 +82,9 @@ p {
 }
 
 /*
- * REVIEW-07 B2 / REVIEW-14 B8: the tile-health pill is docked above this
- * bottom-right control stack (attribution + scale), so attribution stays pinned
- * to the corner with a reserved gutter and expanded text can wrap.
+ * REVIEW-07 B2 / REVIEW-14 B8: the tile-health pill now lives at the top of
+ * the map, clear of this bottom-right control stack, so attribution keeps the
+ * corner with a reserved gutter and expanded text can wrap.
  */
 .maplibregl-ctrl-bottom-right {
   right: 0;

@@ -202,6 +202,10 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       get renderSeq(): number {
         return renderSeqRef.current;
       },
+      /** Test-only repaint request; never changes camera, layers or sources. */
+      requestRender(): void {
+        mapRef.current?.triggerRepaint();
+      },
       get isPlaying(): boolean {
         return useTimelineStore.getState().playing;
       },

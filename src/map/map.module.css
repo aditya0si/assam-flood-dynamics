@@ -238,7 +238,7 @@
 
 .frameWarning {
   position: absolute;
-  top: 14px;
+  top: 50px;
   left: 50%;
   z-index: 6;
   transform: translateX(-50%);

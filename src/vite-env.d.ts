@@ -43,6 +43,8 @@ interface BaanhProbe {
   readonly renderSeq: number;
   /** True once the style document and required layers/sources are installed. */
   readonly styleLoaded: boolean;
+  /** Request one painted frame without changing camera, layers or sources. */
+  requestRender(): void;
   readonly tileHealth: 'live' | 'degraded' | 'offline';
   /** Per-host state behind the aggregate level, for diagnosing partial blocks. */
   readonly tileSources: BaanhTileSourcesProbe;
