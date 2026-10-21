@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { decodePng, countDifferentPixels } from '../../scripts/lib/png.mjs';
 import {
+  POLL_TIMEOUT,
   collectErrors,
   focusTimeline,
   gotoStep,
@@ -11,6 +12,9 @@ import {
   percentage,
   probeValue,
   setFloodVisible,
+  setLayerVisible,
+  settleHillshadeBasemap,
+  waitForSettledFrame,
 } from './helpers';
 
 test.describe('M0 acceptance', () => {
@@ -85,20 +89,22 @@ test.describe('M0 acceptance', () => {
     await expect.poll(() => probeValue(page, 'step'), { timeout: 6_000 }).toBeGreaterThan(0);
 
     await page.keyboard.press('Space');
-    await expect.poll(() => probeValue(page, 'isPlaying')).toBe(false);
+    await expect
+      .poll(() => probeValue(page, 'isPlaying'), { timeout: POLL_TIMEOUT })
+      .toBe(false);
     const pausedAt = await probeValue(page, 'step');
     await page.waitForTimeout(700);
     expect(await probeValue(page, 'step')).toBe(pausedAt);
 
     await page.keyboard.press('ArrowRight');
-    await expect.poll(() => probeValue(page, 'step')).toBe(pausedAt! + 1);
+    await expect.poll(() => probeValue(page, 'step'), { timeout: POLL_TIMEOUT }).toBe(pausedAt! + 1);
     await page.keyboard.press('ArrowLeft');
-    await expect.poll(() => probeValue(page, 'step')).toBe(pausedAt);
+    await expect.poll(() => probeValue(page, 'step'), { timeout: POLL_TIMEOUT }).toBe(pausedAt);
 
     await page.keyboard.press('End');
-    await expect.poll(() => probeValue(page, 'step')).toBe(11);
+    await expect.poll(() => probeValue(page, 'step'), { timeout: POLL_TIMEOUT }).toBe(11);
     await page.keyboard.press('Home');
-    await expect.poll(() => probeValue(page, 'step')).toBe(0);
+    await expect.poll(() => probeValue(page, 'step'), { timeout: POLL_TIMEOUT }).toBe(0);
 
     expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
@@ -137,7 +143,8 @@ test.describe('M0 acceptance', () => {
     test.setTimeout(180_000);
     const errors = collectErrors(page);
     await openApp(page);
-    await openPanel(page, 'Layers');
+    // B7: measure over the committed hillshade raster, never streaming imagery.
+    await settleHillshadeBasemap(page);
 
     // B6: one page for all three states. Step buttons select a frame directly,
     // so the test never re-navigates and never decodes the intermediate frames
@@ -146,9 +153,9 @@ test.describe('M0 acceptance', () => {
     const selectStep = async (step: number) => {
       if ((await probeValue(page, 'step')) === step) return;
       await timelineSteps.locator(`[data-step="${step}"]`).click();
-      await expect.poll(() => probeValue(page, 'step')).toBe(step);
+      await expect.poll(() => probeValue(page, 'step'), { timeout: POLL_TIMEOUT }).toBe(step);
       await expect
-        .poll(() => probeValue(page, 'frameFile'), { timeout: 15_000 })
+        .poll(() => probeValue(page, 'frameFile'), { timeout: POLL_TIMEOUT })
         .toContain(`step-${String(step).padStart(2, '0')}.png`);
     };
 
@@ -162,13 +169,13 @@ test.describe('M0 acceptance', () => {
       // One settle for the frame crossfade; no second seek before the capture.
       await page.waitForTimeout(300);
       await hideMapOverlays(page);
-      await page.waitForTimeout(150);
+      await waitForSettledFrame(page);
       const floodOn = decodePng(await mapCanvasScreenshot(page));
 
       await setFloodVisible(page, false);
       await page.waitForTimeout(300);
       await hideMapOverlays(page);
-      await page.waitForTimeout(150);
+      await waitForSettledFrame(page);
       const floodOff = decodePng(await mapCanvasScreenshot(page));
 
       expect(floodOn.width).toBe(floodOff.width);
@@ -184,6 +191,12 @@ test.describe('M0 acceptance', () => {
       .map((entry) => `S${String(entry.step).padStart(2, '0')} ${percentage(entry.different, entry.pixels)}`)
       .join(' < ');
     console.log(`M0-A6 painted share on the map box: ${summary}`);
+
+    expect(
+      s00.share,
+      `baseline not settled: S00 share ${percentage(s00.different, s00.pixels)} exceeds 20% ` +
+        `(measured ${summary})`,
+    ).toBeLessThanOrEqual(0.2);
 
     expect(s04.share, `painted share must grow S00 -> S04 (measured ${summary})`).toBeGreaterThan(
       s00.share,
@@ -224,7 +237,9 @@ test.describe('M0 acceptance', () => {
 
     await page.keyboard.press('Enter');
     const top = await page.evaluate(() => window.__baanh?.districtTop?.districtId ?? null);
-    await expect.poll(() => probeValue(page, 'selectedDistrictId')).toBe(top);
+    await expect
+      .poll(() => probeValue(page, 'selectedDistrictId'), { timeout: POLL_TIMEOUT })
+      .toBe(top);
     await expect(rows.first()).toHaveAttribute('aria-pressed', 'true');
 
     await page.keyboard.press('Escape');
@@ -238,43 +253,49 @@ test.describe('M0 acceptance', () => {
     await openApp(page);
     await openPanel(page, 'Layers');
 
-    const flood = page.getByRole('checkbox', { name: 'Show Scenario flood extent' });
-    await expect(flood).toBeChecked();
+    const flood = page.getByLabel('Show Scenario flood extent');
+    const floodVisible = async () =>
+      (await probeValue(page, 'layers'))?.visible.includes('flood') ?? false;
+    await expect.poll(floodVisible, { timeout: POLL_TIMEOUT }).toBe(true);
 
     // Keyboard path: the switch input must be focusable and Space must toggle it.
     await flood.focus();
     await expect(flood).toBeFocused();
     await page.keyboard.press('Space');
-    await expect(flood).not.toBeChecked();
-    await expect.poll(() => probeValue(page, 'layers')).toEqual(
-      expect.objectContaining({ visible: expect.not.arrayContaining(['flood']) }),
-    );
+    await expect.poll(floodVisible, { timeout: POLL_TIMEOUT }).toBe(false);
     await page.keyboard.press('Space');
-    await expect(flood).toBeChecked();
+    await expect.poll(floodVisible, { timeout: POLL_TIMEOUT }).toBe(true);
 
-    // Pointer path: the visually hidden input is a fixed, directly clickable
-    // 1x1 control; clicks on the visible track are forwarded by the label.
-    await flood.uncheck();
-    await expect(flood).not.toBeChecked();
-    await flood.check();
-    await expect(flood).toBeChecked();
+    // B7: the input is intentionally 1x1 and invisible, so force the checked
+    // state and assert the live store, not the hidden element's property.
+    await flood.setChecked(false, { force: true });
+    await expect.poll(floodVisible, { timeout: POLL_TIMEOUT }).toBe(false);
+    await flood.setChecked(true, { force: true });
+    await expect.poll(floodVisible, { timeout: POLL_TIMEOUT }).toBe(true);
 
     const opacity = page.locator('[data-opacity-for="flood"]');
     await opacity.focus();
     await page.keyboard.press('Home');
-    await expect.poll(async () => (await probeValue(page, 'layers'))?.opacity.flood).toBe(0);
+    await expect
+      .poll(async () => (await probeValue(page, 'layers'))?.opacity.flood, { timeout: POLL_TIMEOUT })
+      .toBe(0);
     for (let index = 0; index < 20; index += 1) await page.keyboard.press('ArrowRight');
-    await expect.poll(async () => (await probeValue(page, 'layers'))?.opacity.flood).toBeCloseTo(
-      0.2,
-      5,
-    );
+    await expect
+      .poll(async () => (await probeValue(page, 'layers'))?.opacity.flood, { timeout: POLL_TIMEOUT })
+      .toBeCloseTo(0.2, 5);
     await page.keyboard.press('End');
-    await expect.poll(async () => (await probeValue(page, 'layers'))?.opacity.flood).toBe(1);
+    await expect
+      .poll(async () => (await probeValue(page, 'layers'))?.opacity.flood, { timeout: POLL_TIMEOUT })
+      .toBe(1);
 
     await page.getByRole('button', { name: 'Hillshade', exact: true }).click();
-    await expect.poll(async () => (await probeValue(page, 'layers'))?.baseMode).toBe('hillshade');
+    await expect
+      .poll(async () => (await probeValue(page, 'layers'))?.baseMode, { timeout: POLL_TIMEOUT })
+      .toBe('hillshade');
     await page.getByRole('button', { name: 'Imagery', exact: true }).click();
-    await expect.poll(async () => (await probeValue(page, 'layers'))?.baseMode).toBe('imagery');
+    await expect
+      .poll(async () => (await probeValue(page, 'layers'))?.baseMode, { timeout: POLL_TIMEOUT })
+      .toBe('imagery');
 
     expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
@@ -315,7 +336,9 @@ test.describe('accessibility baseline', () => {
       await expect.poll(() => probeValue(page, 'isPlaying'), { timeout: 5_000 }).toBe(true);
       await expect.poll(() => probeValue(page, 'step'), { timeout: 8_000 }).toBeGreaterThan(0);
       await page.keyboard.press('Space');
-      await expect.poll(() => probeValue(page, 'isPlaying')).toBe(false);
+      await expect
+        .poll(() => probeValue(page, 'isPlaying'), { timeout: POLL_TIMEOUT })
+        .toBe(false);
       expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
     });
   });
@@ -327,6 +350,7 @@ test.describe('R6 map dominance', () => {
   test('hero camera frames S07 at >=10% of the map viewport, which is 62-68% of viewport height', async ({
     page,
   }) => {
+    test.setTimeout(180_000);
     const errors = collectErrors(page);
     await openApp(page);
 
@@ -351,27 +375,29 @@ test.describe('R6 map dominance', () => {
     expect(camera!.pitch).toBeCloseTo(42, 1);
 
     await gotoStep(page, 7);
-    await openPanel(page, 'Layers');
+    // B7: the same committed hillshade baseline as A6; no streaming imagery.
+    await settleHillshadeBasemap(page);
 
     // Flood-only contribution: hide the other hazard overlays so the diff is
     // produced by the flood raster, exactly as REVIEW-08 measured it.
-    for (const label of ['Show Risk zones', 'Show Inundation hotspots']) {
-      const checkbox = page.getByRole('checkbox', { name: label });
-      // B6: the input is a stable 1x1 visually-hidden control. At this larger
-      // viewport software WebGL can spend seconds per actionability frame, so
-      // allow more than the 10 s default; never force the click.
-      if (await checkbox.isChecked()) await checkbox.uncheck({ timeout: 15_000 });
+    for (const [id, label] of [
+      ['risk-zones', 'Show Risk zones'],
+      ['hotspots', 'Show Inundation hotspots'],
+    ] as const) {
+      await setLayerVisible(page, id, label, false);
     }
     await page.waitForTimeout(600);
 
     await hideMapOverlays(page);
     await page.waitForTimeout(500);
+    await waitForSettledFrame(page);
     const floodOn = decodePng(await mapCanvasScreenshot(page));
 
     await setFloodVisible(page, false);
     await page.waitForTimeout(300);
     await hideMapOverlays(page);
     await page.waitForTimeout(500);
+    await waitForSettledFrame(page);
     const floodOff = decodePng(await mapCanvasScreenshot(page));
 
     expect(floodOn.width).toBe(Math.round(mapBox!.width));

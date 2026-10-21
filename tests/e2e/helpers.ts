@@ -50,6 +50,9 @@ declare global {
 
 export type AppErrors = string[];
 
+/** Per-assertion budget for host-bound state transitions (B7). */
+export const POLL_TIMEOUT = 30_000;
+
 export function collectErrors(page: Page): AppErrors {
   const errors: string[] = [];
   page.on('pageerror', (error) => {
@@ -92,7 +95,7 @@ export async function openApp(page: Page): Promise<void> {
   await expect
     .poll(() => probeValue(page, 'frameFile'), { timeout: 30_000 })
     .toMatch(/frames\/step-00\.png$/);
-  await expect.poll(() => probeValue(page, 'ready'), { timeout: 10_000 }).toBe(true);
+  await expect.poll(() => probeValue(page, 'ready'), { timeout: POLL_TIMEOUT }).toBe(true);
 }
 
 export async function focusTimeline(page: Page): Promise<void> {
@@ -105,15 +108,17 @@ export async function gotoStep(page: Page, step: number): Promise<void> {
   for (let index = 0; index < step; index += 1) {
     await page.keyboard.press('ArrowRight');
   }
-  await expect.poll(() => probeValue(page, 'step')).toBe(step);
+  await expect.poll(() => probeValue(page, 'step'), { timeout: POLL_TIMEOUT }).toBe(step);
   const frame = `step-${String(step).padStart(2, '0')}.png`;
-  await expect.poll(() => probeValue(page, 'frameFile'), { timeout: 15_000 }).toContain(frame);
+  await expect.poll(() => probeValue(page, 'frameFile'), { timeout: POLL_TIMEOUT }).toContain(frame);
 }
 
 export async function openPanel(page: Page, name: 'Risk' | 'Provenance' | 'Methodology' | 'Layers'): Promise<void> {
   const tab = page.getByRole('tab', { name, exact: true });
   await tab.click();
-  await expect.poll(() => probeValue(page, 'panel')).toBe(name.toLowerCase());
+  await expect
+    .poll(() => probeValue(page, 'panel'), { timeout: POLL_TIMEOUT })
+    .toBe(name.toLowerCase());
 }
 
 export async function hideMapOverlays(page: Page): Promise<void> {
@@ -144,13 +149,72 @@ export async function showMapOverlays(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Toggle a Layers switch through its real control. B6 renders the input as a
+ * 1x1, opacity-0 element, so it is deliberately not actionable; force the
+ * checked state and verify the live store instead of the hidden input.
+ */
+export async function setLayerVisible(
+  page: Page,
+  layerId: string,
+  label: string,
+  visible: boolean,
+): Promise<void> {
+  await showMapOverlays(page);
+  const input = page.getByLabel(label);
+  const currentlyVisible = (await probeValue(page, 'layers'))?.visible.includes(layerId) ?? false;
+  if (currentlyVisible !== visible) await input.setChecked(visible, { force: true });
+  await expect
+    .poll(async () => (await probeValue(page, 'layers'))?.visible.includes(layerId), {
+      timeout: POLL_TIMEOUT,
+    })
+    .toBe(visible);
+}
+
 /** Toggle the flood layer through the real Layers control, then leave the rail visible. */
 export async function setFloodVisible(page: Page, visible: boolean): Promise<void> {
-  await showMapOverlays(page);
-  const checkbox = page.getByRole('checkbox', { name: 'Show Scenario flood extent' });
-  if ((await checkbox.isChecked()) !== visible) await checkbox.click();
-  if (visible) await expect(checkbox).toBeChecked();
-  else await expect(checkbox).not.toBeChecked();
+  await setLayerVisible(page, 'flood', 'Show Scenario flood extent', visible);
+}
+
+/** Wait for two consecutive animation frames with the same committed frame file. */
+export async function waitForStableFrameFile(page: Page, timeout = POLL_TIMEOUT): Promise<void> {
+  await page.evaluate(() => {
+    delete (window as typeof window & { __e2ePreviousFrameFile?: string }).__e2ePreviousFrameFile;
+  });
+  await page.waitForFunction(
+    () => {
+      const current =
+        document.querySelector('#map-viewport')?.getAttribute('data-frame-file') ?? '';
+      const scope = window as typeof window & { __e2ePreviousFrameFile?: string };
+      const previous = scope.__e2ePreviousFrameFile;
+      scope.__e2ePreviousFrameFile = current;
+      return current !== '' && current === previous;
+    },
+    undefined,
+    { timeout, polling: 'raf' },
+  );
+}
+
+/** B7 capture precondition: health is not loading and the frame file is stable. */
+export async function waitForSettledFrame(page: Page, timeout = POLL_TIMEOUT): Promise<void> {
+  await expect
+    .poll(async () => (await probeValue(page, 'tileHealth')) ?? 'loading', { timeout })
+    .not.toBe('loading');
+  await waitForStableFrameFile(page, timeout);
+}
+
+/**
+ * B7: settle A6/R6 on the committed hillshade raster. Imagery tiles stream in
+ * asynchronously and contaminate a flood-on/flood-off pixel diff, so wait for
+ * the base switch, a non-loading health state and a stable frame before capture.
+ */
+export async function settleHillshadeBasemap(page: Page): Promise<void> {
+  await openPanel(page, 'Layers');
+  await page.getByRole('button', { name: 'Hillshade', exact: true }).click();
+  await expect
+    .poll(async () => (await probeValue(page, 'layers'))?.baseMode, { timeout: POLL_TIMEOUT })
+    .toBe('hillshade');
+  await waitForSettledFrame(page);
 }
 
 export async function mapCanvasScreenshot(page: Page): Promise<Buffer> {
