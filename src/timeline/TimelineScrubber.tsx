@@ -30,6 +30,7 @@ export function TimelineScrubber({ summary }: TimelineScrubberProps) {
         onChange={(event) => setStep(Number(event.target.value), 'user')}
         aria-label="Scenario step"
         aria-valuetext={stepAriaText(current, step, stepCount)}
+        aria-keyshortcuts="ArrowLeft ArrowRight Home End"
         style={{ '--progress': `${progress}%` } as CSSProperties}
       />
       <div className={styles.rangeEnds} aria-hidden="true">

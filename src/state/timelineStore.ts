@@ -3,7 +3,7 @@ import { create } from 'zustand';
 export type Speed = 0.5 | 1 | 2;
 export type StepSource = 'user' | 'playback' | 'url' | 'init';
 
-/** One visible step per interval at 1x. Reduced motion shortens the crossfade, not the clock. */
+/** One visible step per interval at 1x. Reduced motion lengthens the dwell, never freezes it. */
 export const PLAYBACK_STEP_MS = 1200;
 
 interface TimelineState {

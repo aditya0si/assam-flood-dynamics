@@ -96,7 +96,7 @@
 .degradedChip {
   position: absolute;
   top: 14px;
-  left: 14px;
+  left: 54px;
   z-index: 6;
   padding: 5px 8px;
   border: 1px solid rgba(242, 184, 75, 0.42);
@@ -277,7 +277,7 @@
   }
 
   .degradedChip {
-    left: 10px;
+    left: 52px;
     top: 10px;
   }
 }

@@ -5,8 +5,9 @@
   height: 100%;
   border-left: 1px solid var(--line-strong);
   background:
-    linear-gradient(180deg, rgba(18, 38, 47, 0.66) 0%, rgba(7, 16, 20, 0.98) 46%),
-    var(--panel);
+    linear-gradient(180deg, rgba(18, 38, 47, 0.72) 0%, rgba(7, 16, 20, 0.95) 46%),
+    rgba(7, 16, 20, 0.94);
+  backdrop-filter: blur(10px);
   box-shadow: -18px 0 42px rgba(0, 0, 0, 0.24);
 }
 

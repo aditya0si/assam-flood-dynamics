@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { useTimelineStore } from '../state/timelineStore';
+import { PLAYBACK_STEP_MS, useTimelineStore } from '../state/timelineStore';
+import { prefersReducedMotion } from '../lib/motion';
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -10,8 +11,8 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 /**
  * One rAF clock for playback. Timing lives here; the store owns the actual
- * advance/stop decision. Reduced motion is handled by the map crossfade
- * (instant opacity), never by freezing the transport.
+ * advance/stop decision. Reduced motion removes the map crossfade and lengthens
+ * the step dwell; it never freezes the transport.
  */
 export function usePlayback(): void {
   useEffect(() => {
@@ -41,7 +42,12 @@ export function usePlayback(): void {
 
       const delta = lastTimestamp === 0 ? 0 : Math.max(0, timestamp - lastTimestamp);
       lastTimestamp = timestamp;
-      state.tick(delta);
+      // Reduced motion must not freeze the transport. It removes the crossfade
+      // (see flood.ts) and gives each step a longer dwell instead of animating.
+      const interval = prefersReducedMotion()
+        ? (PLAYBACK_STEP_MS / state.speed) * 1.6
+        : undefined;
+      state.tick(delta, interval);
 
       if (!useTimelineStore.getState().playing) {
         stopClock();

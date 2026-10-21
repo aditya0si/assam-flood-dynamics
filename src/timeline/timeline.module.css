@@ -1,9 +1,9 @@
 .dock {
   display: grid;
-  grid-template-columns: minmax(0, 1.06fr) minmax(430px, 0.94fr);
-  min-height: 310px;
-  max-height: 372px;
-  padding: 10px 14px;
+  grid-template-columns: minmax(0, 1.08fr) minmax(430px, 0.92fr);
+  height: clamp(248px, 26.5vh, 290px);
+  min-height: 0;
+  padding: 8px 12px;
   border-top: 1px solid var(--line-strong);
   background:
     linear-gradient(180deg, rgba(17, 36, 44, 0.55) 0%, rgba(8, 18, 23, 0.98) 54%),
@@ -13,9 +13,9 @@
 .dockMain {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 7px;
   min-width: 0;
-  padding-right: 18px;
+  padding-right: 14px;
   border-right: 1px solid var(--line);
 }
 
@@ -36,8 +36,8 @@
 .iconButton {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 29px;
+  height: 29px;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -51,8 +51,8 @@
 }
 
 .iconButton svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 
 .iconButton:hover:not(:disabled) {
@@ -67,8 +67,8 @@
 }
 
 .playButton {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   border-color: rgba(124, 199, 232, 0.55);
   background: var(--accent);
   color: #061014;
@@ -94,14 +94,14 @@
 }
 
 .speedButton {
-  height: 27px;
-  padding: 0 7px;
+  height: 24px;
+  padding: 0 6px;
   border: 0;
   border-right: 1px solid var(--line);
   background: transparent;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 9px;
   cursor: pointer;
 }
 
@@ -120,15 +120,15 @@
 }
 
 .stepButton {
-  height: 27px;
+  height: 24px;
   margin-left: 3px;
-  padding: 0 7px;
+  padding: 0 6px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 8.5px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
@@ -142,14 +142,14 @@
 .identity {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  padding-left: 4px;
+  padding-left: 2px;
 }
 
 .stepCode {
   font-family: var(--mono);
-  font-size: 25px;
+  font-size: 22px;
   font-weight: 550;
   line-height: 1;
   letter-spacing: -0.045em;
@@ -168,7 +168,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 640;
   letter-spacing: -0.015em;
 }
@@ -178,7 +178,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 8px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted);
@@ -201,17 +201,17 @@
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 7px;
+  gap: 5px;
 }
 
 .metric {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
   min-width: 0;
-  padding: 7px 9px 6px;
+  padding: 5px 7px 4px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 6px;
   background: rgba(17, 36, 44, 0.42);
 }
 
@@ -221,8 +221,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--mono);
-  font-size: 8px;
-  letter-spacing: 0.1em;
+  font-size: 7.5px;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -230,11 +230,11 @@
 .metricValue {
   display: flex;
   align-items: baseline;
-  gap: 5px;
+  gap: 4px;
   overflow: hidden;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 580;
-  line-height: 1.18;
+  line-height: 1.15;
   letter-spacing: -0.025em;
   font-variant-numeric: tabular-nums;
   color: var(--text);
@@ -263,7 +263,7 @@
 
 .range {
   width: 100%;
-  height: 18px;
+  height: 15px;
   margin: 0;
   padding: 0;
   background: transparent;
@@ -336,21 +336,21 @@
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
   gap: 1px;
-  margin-top: 1px;
+  margin-top: 0;
 }
 
 .tick {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  min-height: 25px;
-  padding: 2px 0 0;
+  gap: 2px;
+  min-height: 20px;
+  padding: 1px 0 0;
   border: 0;
   background: transparent;
   color: var(--faint);
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 7px;
   letter-spacing: 0.02em;
   cursor: pointer;
 }
@@ -392,7 +392,8 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding-left: 18px;
+  padding-left: 14px;
+  overflow: hidden;
 }
 
 .chartPaneHead {
@@ -400,12 +401,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 3px;
+  margin-bottom: 1px;
 }
 
 .paneKicker {
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 8px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
@@ -458,12 +459,12 @@
 .chartStack {
   position: relative;
   width: 100%;
-  min-height: 58px;
+  min-height: 32px;
 }
 
 .chartHost {
   width: 100%;
-  height: 58px;
+  height: 32px;
 }
 
 .thresholdKey {
@@ -526,7 +527,7 @@
 .chartGrid {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   min-height: 0;
 }
 
@@ -534,9 +535,9 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  min-height: 14px;
+  min-height: 12px;
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 7px;
   letter-spacing: 0.04em;
   color: var(--muted);
 }
@@ -562,7 +563,7 @@
 .chartList {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .chartRow {
@@ -577,15 +578,15 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  min-height: 14px;
-  line-height: 1.2;
+  min-height: 12px;
+  line-height: 1.15;
 }
 
 .chartRowTitle {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 600;
   color: var(--text-soft);
 }
@@ -596,21 +597,21 @@
   gap: 5px;
   flex-shrink: 0;
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 7px;
 }
 
 .chartRowValue {
   color: var(--text);
-  font-size: 8.5px;
+  font-size: 8px;
   font-variant-numeric: tabular-nums;
 }
 
 .decileFigure {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin: 1px 0 0;
-  padding-top: 4px;
+  gap: 1px;
+  margin: 0;
+  padding-top: 2px;
   border-top: 1px solid var(--line);
 }
 
@@ -619,7 +620,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  font-size: 9px;
+  font-size: 8px;
   color: var(--text-soft);
 }
 
@@ -627,7 +628,7 @@
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 3px;
-  height: 44px;
+  height: 32px;
   padding: 2px 2px 0;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -664,14 +665,14 @@
 
 .decileKey {
   font-family: var(--mono);
-  font-size: 6.5px;
+  font-size: 6px;
   letter-spacing: 0.04em;
   color: var(--faint);
 }
 
 .decileValue {
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 7.5px;
   color: var(--accent-strong);
   font-variant-numeric: tabular-nums;
 }
@@ -679,8 +680,8 @@
 .decileNote {
   margin: 0;
   font-family: var(--mono);
-  font-size: 7px;
-  line-height: 1.35;
+  font-size: 6.5px;
+  line-height: 1.3;
   color: var(--faint);
 }
 
@@ -689,9 +690,9 @@
 }
 
 .seriesNote {
-  margin: 4px 0 0;
-  font-size: 8.5px;
-  line-height: 1.35;
+  margin: 2px 0 0;
+  font-size: 8px;
+  line-height: 1.3;
   color: var(--faint);
 }
 
@@ -713,7 +714,7 @@
   }
 
   .metricValue {
-    font-size: 18px;
+    font-size: 16px;
   }
 
   .stepButton {
@@ -724,6 +725,7 @@
 @media (max-width: 960px) {
   .dock {
     grid-template-columns: minmax(0, 1fr);
+    height: auto;
     max-height: 46vh;
     overflow: auto;
   }

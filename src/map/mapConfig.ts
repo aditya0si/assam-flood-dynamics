@@ -47,9 +47,17 @@ export const MIN_ZOOM = 5.5;
 export const MAX_ZOOM = 13;
 export const MAX_PITCH = 75;
 
-export const FLOOD_OPACITY = 0.8;
+export const FLOOD_OPACITY = 0.88;
 export const CROSSFADE_MS = 220;
 export const TILE_HEALTH_TIMEOUT_MS = 6000;
+
+/**
+ * R6: the map is the dominant surface. After fitting the core flood belt, ease
+ * in slightly so the S07 mask is legible at a glance rather than a thin band in
+ * a wide viewport. This changes presentation only; no raster or value changes.
+ */
+export const HOME_ZOOM_BOOST = 0.4;
+export const MAP_FIT_PADDING = 12;
 
 /**
  * Palette separation (REVIEW-07 B2):

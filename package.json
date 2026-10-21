@@ -11,7 +11,11 @@
     "dev:sandbox": "node scripts/prebundle.mjs && node scripts/vite-run.mjs",
     "build:sandbox": "tsc -p tsconfig.json --noEmit && node scripts/vite-run.mjs build",
     "preview:sandbox": "node scripts/vite-run.mjs preview",
-    "test": "tsc -p tsconfig.test.json --noEmit && node --test --test-isolation=none src/state/timelineStore.test.ts src/map/tileHealth.test.ts"
+    "test": "npm run test:unit",
+    "test:unit": "tsc -p tsconfig.test.json --noEmit && node --test --test-isolation=none src/state/timelineStore.test.ts src/map/tileHealth.test.ts",
+    "test:e2e": "playwright test tests/e2e/m0.spec.ts tests/e2e/fallback.spec.ts",
+    "verify:m0": "npm run build && node scripts/check-data.mjs && node scripts/check-budget.mjs && node scripts/check-honesty.mjs && node scripts/check-honesty.mjs --self-test && npm run test:unit && playwright test tests/e2e/m0.spec.ts tests/e2e/fallback.spec.ts",
+    "verify:m0:sandbox": "npm run build:sandbox && node scripts/check-data.mjs && node scripts/check-budget.mjs && node scripts/check-honesty.mjs && node scripts/check-honesty.mjs --self-test && npm run test:unit && playwright test tests/e2e/m0.spec.ts tests/e2e/fallback.spec.ts"
   },
   "dependencies": {
     "maplibre-gl": "^5.0.0",
@@ -22,6 +26,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^24.19.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

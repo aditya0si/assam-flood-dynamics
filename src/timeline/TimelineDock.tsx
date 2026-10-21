@@ -40,7 +40,13 @@ export function TimelineDock({ dataset }: TimelineDockProps) {
   const current = dataset.summary.steps[step] ?? dataset.summary.steps[0];
 
   return (
-    <section className={styles.dock} aria-label="Scenario timeline">
+    <section
+      id="scenario-timeline"
+      className={styles.dock}
+      aria-label="Scenario timeline"
+      tabIndex={0}
+      data-timeline="true"
+    >
       <div className={styles.dockMain}>
         <div className={styles.dockHeader}>
           <PlaybackControls />

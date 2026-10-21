@@ -122,7 +122,7 @@ export function ChartGrid({ summary, series }: ChartGridProps) {
               syncKey={SYNC_KEY}
               threshold={model.threshold}
               thresholdLabel={model.thresholdLabel}
-              height={58}
+              height={32}
             />
           </section>
         ))}

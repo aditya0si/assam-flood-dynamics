@@ -105,6 +105,7 @@ export function LayersPanel({ dataset }: LayersPanelProps) {
                   step={1}
                   value={Math.round(value * 100)}
                   onChange={(event) => setOpacity(layer.id, Number(event.target.value) / 100)}
+                  aria-label={`${layer.label} opacity`}
                   aria-valuetext={`${Math.round(value * 100)} percent`}
                   data-opacity-for={layer.id}
                 />

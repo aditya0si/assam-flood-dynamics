@@ -33,7 +33,9 @@ import {
   HOME_BEARING,
   HOME_PITCH,
   HOME_ZOOM,
+  HOME_ZOOM_BOOST,
   HOTSPOTS_LAYER_ID,
+  MAP_FIT_PADDING,
   MAX_BOUNDS,
   MAX_PITCH,
   MAX_ZOOM,
@@ -154,8 +156,23 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       get step(): number {
         return useTimelineStore.getState().step;
       },
+      get stepCount(): number {
+        return dataset.summary.steps.length;
+      },
+      get stepLabel(): string {
+        return dataset.summary.steps[useTimelineStore.getState().step]?.step_label ?? '';
+      },
+      get phase(): string {
+        return dataset.summary.steps[useTimelineStore.getState().step]?.phase ?? '';
+      },
+      get areaKm2(): number {
+        return dataset.summary.steps[useTimelineStore.getState().step]?.inundated_area_km2 ?? 0;
+      },
       get frameFile(): string {
         return visibleFrameRef.current;
+      },
+      get ready(): boolean {
+        return readyRef.current;
       },
       get isPlaying(): boolean {
         return useTimelineStore.getState().playing;
@@ -165,6 +182,9 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       },
       get panel(): string {
         return usePanelStore.getState().activePanel;
+      },
+      get selectedDistrictId(): string | null {
+        return useSelectionStore.getState().selectedDistrictId;
       },
       get layers() {
         const state = useLayerStore.getState();
@@ -210,7 +230,8 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     }
 
     mapRef.current = map;
-    map.addControl(new NavigationControl({ visualizePitch: true, showCompass: true }), 'top-right');
+    // R6: the rail overlays the right edge, so map controls live top-left.
+    map.addControl(new NavigationControl({ visualizePitch: true, showCompass: true }), 'top-left');
     map.addControl(new ScaleControl({ unit: 'metric', maxWidth: 96 }), 'bottom-right');
     map.addControl(new AttributionControl({ compact: true }), 'bottom-right');
 
@@ -381,14 +402,14 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
 
       setTerrain(map, true);
       const camera = map.cameraForBounds(bounds, {
-        padding: 28,
+        padding: MAP_FIT_PADDING,
         pitch: HOME_PITCH,
         bearing: HOME_BEARING,
       });
       if (camera?.center && typeof camera.zoom === 'number') {
         map.jumpTo({
           center: camera.center,
-          zoom: camera.zoom,
+          zoom: camera.zoom + HOME_ZOOM_BOOST,
           pitch: HOME_PITCH,
           bearing: HOME_BEARING,
         });

@@ -64,6 +64,7 @@ export function PlaybackControls() {
         onClick={() => stepBy(-1)}
         disabled={atStart}
         aria-label="Previous scenario step"
+        aria-keyshortcuts="ArrowLeft"
         title="Previous step (ArrowLeft)"
       >
         <PrevIcon />
@@ -74,6 +75,7 @@ export function PlaybackControls() {
         onClick={toggle}
         disabled={!framesReady}
         aria-label={playing ? 'Pause scenario playback' : 'Play scenario playback'}
+        aria-keyshortcuts="Space"
         title={framesReady ? 'Play/pause (Space)' : 'Loading flood frames'}
       >
         {playing ? <PauseIcon /> : <PlayIcon />}
@@ -84,6 +86,7 @@ export function PlaybackControls() {
         onClick={() => stepBy(1)}
         disabled={atEnd}
         aria-label="Next scenario step"
+        aria-keyshortcuts="ArrowRight"
         title="Next step (ArrowRight)"
       >
         <NextIcon />
@@ -103,7 +106,13 @@ export function PlaybackControls() {
           </button>
         ))}
       </div>
-      <button type="button" className={styles.stepButton} onClick={() => setStep(0, 'user')}>
+      <button
+        type="button"
+        className={styles.stepButton}
+        onClick={() => setStep(0, 'user')}
+        aria-label="Jump to first scenario step"
+        aria-keyshortcuts="Home"
+      >
         First
       </button>
     </div>

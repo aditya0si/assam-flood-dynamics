@@ -42,9 +42,28 @@ function AppShell() {
 
   return (
     <div className={styles.app}>
-      <a className={styles.skipLink} href="#scenario-timeline">
-        Skip to scenario timeline
-      </a>
+      <nav className={styles.skipLinks} aria-label="Skip links">
+        <a
+          className={styles.skipLink}
+          href="#scenario-timeline"
+          onClick={(event) => {
+            event.preventDefault();
+            document.getElementById('scenario-timeline')?.focus();
+          }}
+        >
+          Skip to scenario timeline
+        </a>
+        <a
+          className={styles.skipLink}
+          href="#analysis-rail"
+          onClick={(event) => {
+            event.preventDefault();
+            document.getElementById('analysis-rail')?.focus();
+          }}
+        >
+          Skip to analysis panels
+        </a>
+      </nav>
 
       <TopBar dataset={dataset} />
 
@@ -88,7 +107,7 @@ function AppShell() {
         ) : null}
       </main>
 
-      <div id="scenario-timeline" className={styles.dockSlot}>
+      <div className={styles.dockSlot}>
         {phase === 'ready' && dataset ? <TimelineDock dataset={dataset} /> : null}
       </div>
     </div>

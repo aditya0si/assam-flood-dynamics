@@ -55,7 +55,8 @@ p {
 }
 
 :focus-visible {
-  outline: none;
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
   box-shadow: var(--focus);
   border-radius: 3px;
 }

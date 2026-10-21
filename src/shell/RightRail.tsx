@@ -34,8 +34,25 @@ export function RightRail({ dataset }: RightRailProps) {
     target?.focus();
   };
 
+  // ESC is the way back out of the panel body: focus returns to the tab that
+  // owns the panel, so keyboard users never lose their place in the rail.
+  const onRailKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape') return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !target.closest('[role="tabpanel"]')) return;
+    event.preventDefault();
+    document.getElementById(`panel-tab-${activePanel}`)?.focus();
+  };
+
   return (
-    <aside className={styles.rail} aria-label="Analysis rail" data-active-panel={activePanel}>
+    <aside
+      id="analysis-rail"
+      className={styles.rail}
+      aria-label="Analysis rail"
+      tabIndex={-1}
+      data-active-panel={activePanel}
+      onKeyDown={onRailKeyDown}
+    >
       <header className={styles.railHead}>
         <div className={styles.railTitleBlock}>
           <span className={styles.railKicker}>Analysis rail</span>
