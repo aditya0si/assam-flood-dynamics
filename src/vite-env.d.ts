@@ -39,6 +39,10 @@ interface BaanhProbe {
   readonly step: number;
   readonly frameFile: string;
   readonly isPlaying: boolean;
+  /** Painted map frames since mount; advances on every MapLibre 'render'. */
+  readonly renderSeq: number;
+  /** True once the style document and required layers/sources are installed. */
+  readonly styleLoaded: boolean;
   readonly tileHealth: 'live' | 'degraded' | 'offline';
   /** Per-host state behind the aggregate level, for diagnosing partial blocks. */
   readonly tileSources: BaanhTileSourcesProbe;

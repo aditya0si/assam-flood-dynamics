@@ -79,10 +79,12 @@ export function ChartGrid({ summary, series }: ChartGridProps) {
 
   const currentRainfall =
     rainfall?.points.find((point) => point.step === step)?.value ?? current.rainfall_mm_day;
+  // Units are rendered once, by the chartMuted span; formatting only the number
+  // here avoids labels such as "10010.6 km² km²".
   const currentValues: Record<string, string> = {
-    area: `${formatArea(current.inundated_area_km2)} km²`,
-    stage: `${formatStage(current.stage_m)} m`,
-    rainfall: `${formatMmDay(currentRainfall)} mm/day`,
+    area: formatArea(current.inundated_area_km2),
+    stage: formatStage(current.stage_m),
+    rainfall: formatMmDay(currentRainfall),
   };
 
   return (

@@ -1,16 +1,20 @@
 import type { FrameIndex } from '../data/schemas';
 
 /**
- * B4 depth ramp: shallow cyan -> teal -> indigo -> violet. The committed PNG
+ * B4 depth ramp: shallow cyan -> teal -> indigo -> blue. The committed PNG
  * bakes four blues into its pixels, so the controller recolours each decoded
  * frame at runtime. This is a presentation transform: class ids, extents and
  * depths are untouched, and public/data is never rewritten.
+ *
+ * B8: the deepest band moved from violet to blue. Violet sat in the same
+ * magenta family as the very_high risk class (#d95f9b), so one hue carried two
+ * meanings; blue is reserved for scenario depth only.
  */
 export const DEPTH_PRESENTATION: Record<number, { color: string; name: string }> = {
   1: { color: '#49d6e8', name: 'Cyan' },
   2: { color: '#23b39f', name: 'Teal' },
   3: { color: '#5c63d8', name: 'Indigo' },
-  4: { color: '#a45fe6', name: 'Violet' },
+  4: { color: '#2f63e6', name: 'Blue' },
 };
 
 export function depthPresentationColor(classId: number, fallback: string): string {

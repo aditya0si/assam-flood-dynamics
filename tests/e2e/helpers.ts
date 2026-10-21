@@ -12,6 +12,10 @@ export interface Probe {
   frameFile: string;
   ready: boolean;
   isPlaying: boolean;
+  /** Painted map frames since mount; advances on every MapLibre 'render'. */
+  renderSeq: number;
+  /** True once the style document and required layers/sources are installed. */
+  styleLoaded: boolean;
   tileHealth: 'live' | 'degraded' | 'offline';
   tileSources: { dem: TileSourceStatus; imagery: TileSourceStatus };
   tileHealthHistory: string[];
@@ -52,6 +56,12 @@ export type AppErrors = string[];
 
 /** Per-assertion budget for host-bound state transitions (B7). */
 export const POLL_TIMEOUT = 30_000;
+
+/**
+ * B8 capture budget. The settle predicate no longer observes tile health, so it
+ * gets its own generous ceiling instead of borrowing the host-transition budget.
+ */
+export const SETTLE_TIMEOUT = 60_000;
 
 export function collectErrors(page: Page): AppErrors {
   const errors: string[] = [];
@@ -176,37 +186,37 @@ export async function setFloodVisible(page: Page, visible: boolean): Promise<voi
   await setLayerVisible(page, 'flood', 'Show Scenario flood extent', visible);
 }
 
-/** Wait for two consecutive animation frames with the same committed frame file. */
-export async function waitForStableFrameFile(page: Page, timeout = POLL_TIMEOUT): Promise<void> {
-  await page.evaluate(() => {
-    delete (window as typeof window & { __e2ePreviousFrameFile?: string }).__e2ePreviousFrameFile;
-  });
+/**
+ * B8 capture precondition, for A6 and R6 only: the style document is loaded and
+ * the map has painted at least two more frames. No dependence on tile network
+ * state, so it behaves the same on headless Linux CI as on a live machine.
+ *
+ * While waiting, the predicate asks MapLibre for a repaint through its window
+ * 'online' listener, which calls map._update()/triggerRepaint() without moving
+ * the camera or changing layer state. That makes the two-frame advance
+ * deterministic even after the map has gone idle, and still observes real
+ * painted frames rather than a timer.
+ */
+export async function waitForSettledFrame(page: Page, timeout = SETTLE_TIMEOUT): Promise<void> {
+  await expect.poll(() => probeValue(page, 'styleLoaded'), { timeout }).toBe(true);
+  const startSeq = (await probeValue(page, 'renderSeq')) ?? 0;
   await page.waitForFunction(
-    () => {
-      const current =
-        document.querySelector('#map-viewport')?.getAttribute('data-frame-file') ?? '';
-      const scope = window as typeof window & { __e2ePreviousFrameFile?: string };
-      const previous = scope.__e2ePreviousFrameFile;
-      scope.__e2ePreviousFrameFile = current;
-      return current !== '' && current === previous;
+    (target) => {
+      const probe = window.__baanh;
+      if (probe?.styleLoaded !== true) return false;
+      if ((probe.renderSeq ?? 0) >= target) return true;
+      window.dispatchEvent(new Event('online'));
+      return false;
     },
-    undefined,
+    startSeq + 2,
     { timeout, polling: 'raf' },
   );
 }
 
-/** B7 capture precondition: health is not loading and the frame file is stable. */
-export async function waitForSettledFrame(page: Page, timeout = POLL_TIMEOUT): Promise<void> {
-  await expect
-    .poll(async () => (await probeValue(page, 'tileHealth')) ?? 'loading', { timeout })
-    .not.toBe('loading');
-  await waitForStableFrameFile(page, timeout);
-}
-
 /**
- * B7: settle A6/R6 on the committed hillshade raster. Imagery tiles stream in
- * asynchronously and contaminate a flood-on/flood-off pixel diff, so wait for
- * the base switch, a non-loading health state and a stable frame before capture.
+ * B7/B8: settle A6/R6 on the committed hillshade raster. Imagery tiles stream in
+ * asynchronously and contaminate a flood-on/flood-off pixel diff, so switch to
+ * the committed base, then wait for the deterministic style/render predicate.
  */
 export async function settleHillshadeBasemap(page: Page): Promise<void> {
   await openPanel(page, 'Layers');

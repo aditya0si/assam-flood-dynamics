@@ -69,7 +69,7 @@ export function TimelineDock({ dataset }: TimelineDockProps) {
           <Metric label="Scenario stage" value={formatStage(current.stage_m)} unit="m" />
           <Metric label="Inundated area" value={formatArea(current.inundated_area_km2)} unit="km²" />
           <Metric label="Share of Assam" value={formatPercent(current.share_of_assam)} />
-          <Metric label="Share of flood-prone area" value={formatPercent(current.share_of_flood_prone_area)} />
+          <Metric label="Flood-prone share" value={formatPercent(current.share_of_flood_prone_area)} />
         </div>
 
         <div className={styles.decileSlot}>

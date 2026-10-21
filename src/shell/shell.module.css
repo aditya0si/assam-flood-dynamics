@@ -194,13 +194,14 @@
 /*
  * REVIEW-08 R6: the analysis rail floats over the map instead of shrinking it.
  * The map keeps the full viewport width; the rail is a translucent instrument
- * panel pinned to the right edge, stopping above the map attribution.
+ * panel pinned to the right edge, stopping above the tile-health pill and the
+ * map attribution/scale stack.
  */
 .viewport > aside {
   position: absolute;
   top: 10px;
   right: 10px;
-  bottom: 50px;
+  bottom: 96px;
   z-index: 15;
   width: clamp(320px, 21vw, 388px);
   height: auto;
@@ -398,11 +399,10 @@
 
 .statusBar {
   position: absolute;
-  left: 50%;
-  bottom: 34px;
+  right: 10px;
+  bottom: 62px;
   z-index: 8;
-  transform: translateX(-50%);
-  max-width: min(52%, 340px);
+  max-width: min(46%, 340px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -476,7 +476,7 @@
   .viewport > aside {
     top: 8px;
     right: 8px;
-    bottom: 46px;
+    bottom: 96px;
     width: min(360px, calc(100% - 16px));
   }
 }

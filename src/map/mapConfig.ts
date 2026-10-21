@@ -60,7 +60,7 @@ export const TILE_HEALTH_TIMEOUT_MS = 6000;
 
 /**
  * Palette separation (REVIEW-07 B2 + REVIEW-09 B4):
- * - Depth classes are recoloured at runtime to cyan -> teal -> indigo -> violet.
+ * - Depth classes are recoloured at runtime to cyan -> teal -> indigo -> blue.
  * - Rivers are warm sand, not cyan, so a mapped channel can never be confused with water.
  * - Hillshade is lower-contrast and desaturated so it does not compete at valley scale.
  */

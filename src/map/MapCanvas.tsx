@@ -112,6 +112,11 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
   const floodRef = useRef<FloodController | null>(null);
   const visibleFrameRef = useRef('');
   const readyRef = useRef(false);
+  // B8: deterministic settle hooks. renderSeq counts painted map frames;
+  // styleLoaded is set once the style document and required layers exist, so
+  // neither depends on remote tile network state.
+  const renderSeqRef = useRef(0);
+  const styleLoadedRef = useRef(false);
   const [webglError, setWebglError] = useState(false);
   const [frameError, setFrameError] = useState(false);
   const health = useTileHealthStore((state) => state.snapshot);
@@ -162,6 +167,8 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     useTileHealthStore.getState().reset();
     readyRef.current = false;
     visibleFrameRef.current = '';
+    renderSeqRef.current = 0;
+    styleLoadedRef.current = false;
     container.setAttribute('data-ready', 'false');
     container.setAttribute('data-step', String(useTimelineStore.getState().step));
     container.setAttribute('data-frame-file', '');
@@ -188,6 +195,12 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       },
       get ready(): boolean {
         return readyRef.current;
+      },
+      get styleLoaded(): boolean {
+        return styleLoadedRef.current;
+      },
+      get renderSeq(): number {
+        return renderSeqRef.current;
       },
       get isPlaying(): boolean {
         return useTimelineStore.getState().playing;
@@ -262,6 +275,12 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
     }
 
     mapRef.current = map;
+    // B8: one increment per painted map frame. The E2E settle helper waits for
+    // this counter to advance; it never waits on tile load state.
+    const onRender = () => {
+      renderSeqRef.current += 1;
+    };
+    map.on('render', onRender);
     // R6: the rail overlays the right edge, so map controls live top-left.
     map.addControl(new NavigationControl({ visualizePitch: true, showCompass: true }), 'top-left');
     map.addControl(new ScaleControl({ unit: 'metric', maxWidth: 96 }), 'bottom-right');
@@ -427,6 +446,7 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       // this does not wait for remote tiles to settle.
       if (!map.getLayer(BACKGROUND_LAYER_ID) || !map.getSource(FLOOD_CURRENT_SOURCE_ID)) return;
       sceneStarted = true;
+      styleLoadedRef.current = true;
       map.off('styledata', startScene);
       map.off('style.load', startScene);
 
@@ -491,6 +511,7 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
       floodRef.current = null;
       map.off('styledata', startScene);
       map.off('style.load', startScene);
+      map.off('render', onRender);
       map.off('zoom', updateLabelVisibility);
       map.off('click', HOTSPOTS_LAYER_ID, onHotspotClick);
       map.off('mouseenter', HOTSPOTS_LAYER_ID, onHotspotEnter);

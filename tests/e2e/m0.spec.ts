@@ -27,6 +27,8 @@ test.describe('M0 acceptance', () => {
     expect(await probeValue(page, 'stepLabel')).toBe('01 Jun');
     expect(await probeValue(page, 'phase')).toBe('onset');
     expect(await probeValue(page, 'frameFile')).toMatch(/frames\/step-00\.png$/);
+    expect(await probeValue(page, 'styleLoaded')).toBe(true);
+    expect(await probeValue(page, 'renderSeq')).toBeGreaterThan(0);
     expect(await probeValue(page, 'panel')).toBe('risk');
     expect((await probeValue(page, 'layers'))?.visible).toEqual(
       expect.arrayContaining(['flood', 'risk-zones', 'rivers', 'districts', 'hillshade', 'hotspots']),
