@@ -1,18 +1,22 @@
 """Stage 16 — Sentinel-1 GRD calibration and validation scorecard.
 
-REVIEW-17 P1.1/P1.2.  The stage:
+REVIEW-17 P1.1/P1.2, corrected by REVIEW-18.  The stage:
 
 * searches Earth Search for ``sentinel-1-grd`` items over the AOI in Jun–Jul 2022;
 * selects the earliest and latest usable acquisitions covering the AOI core;
 * reads each VV COG decimated by ~1/9 with ``Resampling.average`` (never at
   native resolution), assigns EPSG:32646 from ``proj:centroid`` (the COG itself
-  reports no CRS), and converts DN to ``10*log10(DN)``;
-* chooses a water threshold with Otsu **over AOI core pixels only**, plus a
-  ±2 dB sensitivity band;
+  reports no CRS), and applies the SAFE ``schema-calibration-vv`` LUT:
+  ``sigma0_db = 20*log10(DN / A)`` with ``A = sigmaNought`` interpolated from
+  the 27 vectors x 642 samples in ``calibration-iw-vv.xml``;
+* uses a **fixed** -16 dB sigma0 water threshold, with the stated monsoon-VV
+  rationale, and publishes sensitivity at -14/-16/-18 dB in sigma0 space;
 * drops water components smaller than 5 analysis cells and masks DEM slope
   greater than 10 degrees;
 * reprojects the masks to the 90 m frame grid (nearest) and keeps a fractional
   coverage raster so partial cells are explicit;
+* publishes ``validity_area_km2`` and ``modelled_in_validity_km2`` per scene so
+  every ratio has a visible denominator;
 * scores the existing committed PNG frames (decoded with frame-index placement)
   against the observed mask at every step, reporting the best-matching step and
   the scenario peak step S07.
@@ -38,6 +42,8 @@ import json
 import math
 import re
 import threading
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Iterable
@@ -67,15 +73,148 @@ from .util import (
 
 STAC_LIMIT = 250
 EIGHT_CONNECTED = np.ones((3, 3), dtype=np.int8)
+CALIBRATION_ASSET = "schema-calibration-vv"
+DEFAULT_THRESHOLD_DB = -16.0
+DEFAULT_SENSITIVITY_DB = [-14.0, -16.0, -18.0]
+THRESHOLD_RATIONALE = (
+    "Fixed -16 dB sigma0 threshold for C-band VV open water in monsoon conditions: "
+    "it sits in the low tail of the calibrated land/water distribution and is stated "
+    "before scoring; threshold choice, not the LUT, is the dominant residual "
+    "uncertainty, so -14/-16/-18 dB are all published."
+)
 
 
 class CalibrationError(RuntimeError):
     """A measured failure that must be reported, never substituted."""
 
 
+@dataclass
+class CalibrationLUT:
+    """Parsed ``sigmaNought`` calibration vectors from a SAFE annotation."""
+
+    lines: np.ndarray
+    pixels: list[np.ndarray]
+    sigma_nought: list[np.ndarray]
+    source: str
+    samples_per_vector: int
+    A_median: float
+
+    @property
+    def vectors(self) -> int:
+        return int(self.lines.size)
+
+
 # ---------------------------------------------------------------------------
 # Pure helpers (unit-tested without network access)
 # ---------------------------------------------------------------------------
+
+
+def parse_calibration(xml_bytes: bytes, source: str) -> CalibrationLUT:
+    """Parse every ``calibrationVector`` and return the sigmaNought LUT.
+
+    The SAFE GRD annotation carries one ``sigmaNought`` sample per range pixel
+    in each vector and one vector per azimuth block.  We keep the raw vectors;
+    interpolation to the analysis grid happens in ``calibration_scale_grid``.
+    A missing or malformed LUT is an error, never a silent fallback.
+    """
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError as exc:
+        raise CalibrationError(f"calibration XML is malformed: {exc}") from exc
+    nodes = root.findall(".//calibrationVectorList/calibrationVector")
+    if not nodes:
+        raise CalibrationError("calibration XML has no calibrationVector entries")
+    lines: list[int] = []
+    pixels: list[np.ndarray] = []
+    sigma: list[np.ndarray] = []
+    sample_counts: set[int] = set()
+    for index, node in enumerate(nodes):
+        line_text = node.findtext("line")
+        pixel_text = node.findtext("pixel")
+        sigma_text = node.findtext("sigmaNought")
+        if line_text is None or pixel_text is None or sigma_text is None:
+            raise CalibrationError(f"calibration vector {index} is missing line/pixel/sigmaNought")
+        line = int(line_text)
+        pixel_values = np.fromstring(pixel_text, sep=" ", dtype=np.int64)
+        sigma_values = np.fromstring(sigma_text, sep=" ", dtype=np.float64)
+        if pixel_values.size == 0 or pixel_values.size != sigma_values.size:
+            raise CalibrationError(
+                f"calibration vector {index} has {pixel_values.size} pixels and "
+                f"{sigma_values.size} sigmaNought samples"
+            )
+        if not np.all(np.isfinite(sigma_values)) or np.any(sigma_values <= 0):
+            raise CalibrationError(f"calibration vector {index} has non-positive sigmaNought")
+        lines.append(line)
+        pixels.append(pixel_values)
+        sigma.append(sigma_values)
+        sample_counts.add(int(sigma_values.size))
+    if len(sample_counts) != 1:
+        raise CalibrationError(f"calibration vectors disagree on sample count: {sorted(sample_counts)}")
+    sigma_all = np.concatenate(sigma)
+    A_median = float(np.median(sigma_all))
+    if not math.isfinite(A_median) or A_median <= 0:
+        raise CalibrationError("calibration LUT produced a non-positive A_median")
+    return CalibrationLUT(
+        lines=np.asarray(lines, dtype=np.float64),
+        pixels=pixels,
+        sigma_nought=sigma,
+        source=source,
+        samples_per_vector=int(sample_counts.pop()),
+        A_median=A_median,
+    )
+
+
+def calibration_scale_grid(
+    lut: CalibrationLUT,
+    height: int,
+    width: int,
+    scale_y: float,
+    scale_x: float,
+) -> np.ndarray:
+    """Interpolate ``A`` onto the decimated analysis grid.
+
+    Calibration vectors are sampled along azimuth (``line``) and range
+    (``pixel``).  A decimated cell centre maps to native coordinates
+    ``(row + 0.5) * scale_y`` and ``(col + 0.5) * scale_x``; we interpolate
+    linearly between bracketing vectors and along each vector's samples.
+    """
+    if height <= 0 or width <= 0:
+        raise CalibrationError(f"invalid calibration grid {height}x{width}")
+    order = np.argsort(lut.lines, kind="stable")
+    lines = lut.lines[order]
+    columns = (np.arange(width, dtype=np.float64) + 0.5) * float(scale_x)
+    profiles = np.vstack(
+        [
+            np.interp(columns, lut.pixels[index].astype(np.float64), lut.sigma_nought[index])
+            for index in order
+        ]
+    ).astype(np.float32)
+    rows = (np.arange(height, dtype=np.float64) + 0.5) * float(scale_y)
+    if lines.size == 1:
+        return np.broadcast_to(profiles[0], (height, width)).astype(np.float32)
+    upper = np.clip(np.searchsorted(lines, rows, side="right"), 1, lines.size - 1)
+    lower = upper - 1
+    span = lines[upper] - lines[lower]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        weight = np.where(span > 0, (rows - lines[lower]) / span, 0.0)
+    weight = np.clip(weight, 0.0, 1.0).astype(np.float32)
+    grid = (
+        profiles[lower] * (1.0 - weight)[:, None]
+        + profiles[upper] * weight[:, None]
+    )
+    return grid.astype(np.float32)
+
+
+def sigma0_db(data: np.ndarray, scale: np.ndarray) -> np.ndarray:
+    """Convert DN to sigma0 dB with ``20*log10(DN/A)``; NaN outside valid data."""
+    values = np.asarray(data, dtype=np.float32)
+    lut = np.asarray(scale, dtype=np.float32)
+    if values.shape != lut.shape:
+        raise ValueError(f"sigma0 shape mismatch: {values.shape} vs {lut.shape}")
+    finite = np.isfinite(values) & (values > 0) & np.isfinite(lut) & (lut > 0)
+    out = np.full(values.shape, np.nan, dtype=np.float32)
+    out[finite] = 20.0 * np.log10(values[finite] / lut[finite])
+    return out
 
 
 def otsu_threshold(values: np.ndarray, bins: int = 256) -> float:
@@ -382,6 +521,48 @@ def _close_dataset(dataset) -> None:
             env.__exit__(None, None, None)
 
 
+def _s3_https_url(href: str) -> str:
+    bucket, key = _split_s3(href)
+    return f"https://{bucket}.s3.amazonaws.com/{key}"
+
+
+def _fetch_calibration(scene: dict[str, Any], cache_dir: Path) -> CalibrationLUT:
+    """Download (or reuse) the SAFE sigmaNought LUT and parse it.
+
+    REVIEW-18 measured that ``schema-calibration-vv`` is exposed anonymously
+    for both scenes.  A missing asset or a failed download is a stage error:
+    calibration is available and must not be described as unavailable.
+    """
+    href = str(scene.get("assets", {}).get(CALIBRATION_ASSET, ""))
+    if not href:
+        raise CalibrationError(
+            f"scene {scene['scene_id']} has no {CALIBRATION_ASSET} STAC asset; "
+            "cannot calibrate DN to sigma0"
+        )
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    destination = cache_dir / f"{CALIBRATION_ASSET}.xml"
+    if destination.exists() and destination.stat().st_size > 1024:
+        return parse_calibration(destination.read_bytes(), href)
+    print(f"[16] {scene['scene_id']}: fetching {CALIBRATION_ASSET}", flush=True)
+    try:
+        response = requests.get(_s3_https_url(href), timeout=120)
+        response.raise_for_status()
+    except Exception as exc:
+        raise CalibrationError(
+            f"could not fetch {CALIBRATION_ASSET} for {scene['scene_id']}: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+    if len(response.content) <= 1024:
+        raise CalibrationError(
+            f"{CALIBRATION_ASSET} for {scene['scene_id']} is only "
+            f"{len(response.content)} bytes"
+        )
+    temporary = destination.with_suffix(".xml.tmp")
+    temporary.write_bytes(response.content)
+    temporary.replace(destination)
+    return parse_calibration(response.content, href)
+
+
 # ---------------------------------------------------------------------------
 # STAC
 # ---------------------------------------------------------------------------
@@ -482,7 +663,7 @@ def _scene_record(item: dict[str, Any]) -> dict[str, Any]:
         "epsg": epsg,
         "assets": {
             key: str(item.get("assets", {}).get(key, {}).get("href", ""))
-            for key in ("vv", "vh", "safe-manifest")
+            for key in ("vv", "vh", "safe-manifest", CALIBRATION_ASSET)
         },
         "stac_item": f"https://earth-search.aws.element84.com/v1/collections/sentinel-1-grd/items/{item['id']}",
     }
@@ -524,7 +705,7 @@ def _scene_source_transform(src, scene: dict[str, Any]) -> tuple[Affine, str]:
 
 def _read_decimated_vv(
     dataset, scene: dict[str, Any], factor: int
-) -> tuple[np.ndarray, Affine, str, int, int]:
+) -> tuple[np.ndarray, Affine, str, int, int, float, float]:
     src_transform, src_crs = _scene_source_transform(dataset, scene)
     out_height = max(1, dataset.height // factor)
     out_width = max(1, dataset.width // factor)
@@ -537,7 +718,7 @@ def _read_decimated_vv(
     scale_x = dataset.width / out_width
     scale_y = dataset.height / out_height
     decimated_transform = src_transform * Affine.scale(scale_x, scale_y)
-    return data, decimated_transform, src_crs, out_height, out_width
+    return data, decimated_transform, src_crs, out_height, out_width, scale_y, scale_x
 
 
 def _reproject_mask(
@@ -646,14 +827,22 @@ def _core_bbox_wgs84(core: np.ndarray, transform: Affine) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def _cache_paths(cache_dir: Path) -> dict[str, Path]:
-    return {
+def _threshold_label(value: float) -> str:
+    """Stable cache label for a sigma0 threshold: -14 -> ``m14``."""
+    sign = "m" if value < 0 else "p"
+    return f"{sign}{abs(value):g}".replace(".", "p")
+
+
+def _cache_paths(cache_dir: Path, thresholds: Iterable[float]) -> dict[str, Path]:
+    paths = {
         "coverage": cache_dir / "coverage-90m.tif",
-        "otsu": cache_dir / "water-otsu-90m.tif",
-        "minus2db": cache_dir / "water-minus2db-90m.tif",
-        "plus2db": cache_dir / "water-plus2db-90m.tif",
         "metadata": cache_dir / "metadata.json",
     }
+    for threshold in thresholds:
+        paths[_threshold_label(float(threshold))] = (
+            cache_dir / f"water-sigma0-{_threshold_label(float(threshold))}-90m.tif"
+        )
+    return paths
 
 
 def _write_mask(path: Path, mask: np.ndarray, transform: Affine, crs: str) -> None:
@@ -712,35 +901,47 @@ def _process_scene(
 ) -> dict[str, Any]:
     sentinel = cfg.sources["sentinel1"]
     factor = int(sentinel.get("decimation", 9))
-    sensitivity = [float(value) for value in sentinel.get("sensitivity_db", [-2, 0, 2])]
-    if sensitivity != [-2.0, 0.0, 2.0]:
-        raise CalibrationError(f"sensitivity_db must be [-2, 0, 2], got {sensitivity}")
+    sensitivity = [
+        float(value) for value in sentinel.get("sensitivity_db", DEFAULT_SENSITIVITY_DB)
+    ]
+    if len(sensitivity) != 3:
+        raise CalibrationError(
+            f"sensitivity_db must list exactly three sigma0 thresholds, got {sensitivity}"
+        )
+    threshold = float(sentinel.get("threshold_db", DEFAULT_THRESHOLD_DB))
+    if threshold not in sensitivity:
+        raise CalibrationError(
+            f"threshold_db {threshold} is not one of the sensitivity thresholds {sensitivity}"
+        )
+    rationale = str(sentinel.get("threshold_rationale", THRESHOLD_RATIONALE))
     min_cells = int(sentinel.get("min_component_cells", 5))
     slope_limit = float(sentinel.get("slope_mask_deg", 10.0))
     coverage_min = float(sentinel.get("coverage_min", 0.90))
     cache_dir = cache_root / scene["scene_id"]
-    paths = _cache_paths(cache_dir)
+    paths = _cache_paths(cache_dir, sensitivity)
     height = int(grid["height"])
     width = int(grid["width"])
     core = grid["core"]
     frame_transform = grid["transform"]
+    labels = [_threshold_label(value) for value in sensitivity]
 
     if not refresh and all(path.exists() for path in paths.values()):
         metadata = json.loads(paths["metadata"].read_text(encoding="utf-8"))
-        coverage = _read_coverage(paths["coverage"])
-        masks = {
-            "otsu": _read_mask(paths["otsu"]),
-            "minus2db": _read_mask(paths["minus2db"]),
-            "plus2db": _read_mask(paths["plus2db"]),
-        }
-        print(f"[16] {scene['scene_id']}: cache hit ({metadata['threshold_db']:.3f} dB)")
-        return {
-            "scene": scene,
-            "metadata": metadata,
-            "coverage": coverage,
-            "masks": masks,
-            "cache": cache_dir,
-        }
+        cached = [float(value) for value in metadata.get("sensitivity_db", [])]
+        if metadata.get("threshold_method") == "fixed_sigma0" and cached == sensitivity:
+            coverage = _read_coverage(paths["coverage"])
+            masks = {label: _read_mask(paths[label]) for label in labels}
+            print(
+                f"[16] {scene['scene_id']}: cache hit (sigma0 {threshold:g} dB, "
+                f"A median {metadata['calibration']['A_median']:.2f})"
+            )
+            return {
+                "scene": scene,
+                "metadata": metadata,
+                "coverage": coverage,
+                "masks": masks,
+                "cache": cache_dir,
+            }
 
     href = scene["assets"]["vv"]
     if not href:
@@ -750,7 +951,9 @@ def _process_scene(
         dataset = reader.open(href)
         try:
             print(f"[16] {scene['scene_id']}: reading decimated VV (~1/{factor})", flush=True)
-            data, src_transform, src_crs, out_h, out_w = _read_decimated_vv(dataset, scene, factor)
+            data, src_transform, src_crs, out_h, out_w, scale_y, scale_x = _read_decimated_vv(
+                dataset, scene, factor
+            )
             opened_via = reader._opened_via
         finally:
             _close_dataset(dataset)
@@ -759,14 +962,14 @@ def _process_scene(
         flush=True,
     )
 
-    valid = np.isfinite(data) & (data > 0)
+    lut = _fetch_calibration(scene, cache_dir)
+    scale = calibration_scale_grid(lut, out_h, out_w, scale_y, scale_x)
+    db = sigma0_db(data, scale)
+    valid = np.isfinite(db)
     if not valid.any():
-        raise CalibrationError(f"scene {scene['scene_id']} has no positive VV samples")
-    with np.errstate(invalid="ignore", divide="ignore"):
-        db = np.full(data.shape, np.nan, dtype=np.float32)
-        db[valid] = 10.0 * np.log10(data[valid].astype(np.float32))
+        raise CalibrationError(f"scene {scene['scene_id']} has no valid calibrated VV samples")
 
-    # Restrict Otsu to AOI core pixels, not the whole radar slice.
+    # Restrict statistics to AOI core pixels, not the whole radar slice.
     source_aoi = _reproject_mask(
         core.astype(np.uint8),
         frame_transform,
@@ -782,7 +985,7 @@ def _process_scene(
         raise CalibrationError(
             f"scene {scene['scene_id']} intersects only {int(values.size)} AOI core pixels"
         )
-    threshold = otsu_threshold(values)
+    p05, p50, p95 = (float(value) for value in np.percentile(values, [5, 50, 95]))
 
     coverage = _reproject_mask(
         selected.astype(np.uint8),
@@ -793,10 +996,11 @@ def _process_scene(
         (height, width),
         WarpResampling.average,
     )
+    observed_domain = (coverage >= 0.5) & core & (slope <= slope_limit)
     raw_masks: dict[str, np.ndarray] = {}
     audit: dict[str, dict[str, int]] = {}
-    for label, offset in (("otsu", 0.0), ("minus2db", -2.0), ("plus2db", 2.0)):
-        source_water = selected & (db <= threshold + offset)
+    for value, label in zip(sensitivity, labels):
+        source_water = selected & (db <= value)
         projected = _reproject_mask(
             source_water.astype(np.uint8),
             src_transform,
@@ -806,8 +1010,7 @@ def _process_scene(
             (height, width),
             WarpResampling.nearest,
         ) > 0
-        observed = (coverage >= 0.5) & core & (slope <= slope_limit)
-        water = projected & observed
+        water = projected & observed_domain
         filtered, counts = _component_filter(water, min_cells)
         raw_masks[label] = filtered
         audit[label] = counts
@@ -828,8 +1031,21 @@ def _process_scene(
 
     metadata = {
         **scene,
+        "threshold_method": "fixed_sigma0",
         "threshold_db": float(threshold),
+        "threshold_rationale": rationale,
         "sensitivity_db": sensitivity,
+        "calibration": {
+            "source": lut.source,
+            "vectors": lut.vectors,
+            "samples_per_vector": lut.samples_per_vector,
+            "A_median": round(lut.A_median, 6),
+        },
+        "sigma0_db_percentiles": {
+            "p05": round(p05, 4),
+            "p50": round(p50, 4),
+            "p95": round(p95, 4),
+        },
         "slope_mask_deg": slope_limit,
         "min_component_cells": min_cells,
         "decimation_factor": factor,
@@ -846,10 +1062,11 @@ def _process_scene(
     }
     atomic_write_json(paths["metadata"], metadata, indent=2, sort_keys=True)
     print(
-        f"[16] {scene['scene_id']} {scene['datetime'][:10]}: Otsu {threshold:.3f} dB, "
+        f"[16] {scene['scene_id']} {scene['datetime'][:10]}: sigma0 {threshold:g} dB "
+        f"(A median {lut.A_median:.2f}, {lut.vectors}x{lut.samples_per_vector} LUT), "
         f"coverage {valid_area:.1%} of footprint ({aoi_footprint_share:.1%} of full AOI core), "
-        f"water {int(raw_masks['otsu'].sum()):,} cells (Otsu), "
-        f"via {opened_via}"
+        f"water {int(raw_masks[labels[sensitivity.index(threshold)]].sum()):,} cells, "
+        f"sigma0 p05/p50/p95 {p05:.1f}/{p50:.1f}/{p95:.1f} dB, via {opened_via}"
     )
     return {
         "scene": scene,
@@ -876,12 +1093,22 @@ def _score_scene(
     if not domain.any():
         raise CalibrationError(f"scene {scene['scene_id']} has no observed comparison cells")
     area_2d = grid["areas"]
-    observed = masks["otsu"] & domain
+    metadata = processed["metadata"]
+    thresholds = [float(value) for value in metadata["sensitivity_db"]]
+    threshold = float(metadata["threshold_db"])
+    primary_label = _threshold_label(threshold)
+    if primary_label not in masks:
+        raise CalibrationError(
+            f"scene {scene['scene_id']} has no mask for primary threshold {threshold} dB"
+        )
+    observed = masks[primary_label] & domain
+    validity_area = float(area_2d[domain].sum())
     observed_area = float(area_2d[observed].sum())
-    domain_area = float(area_2d[domain].sum())
     if observed_area <= 0:
-        raise CalibrationError(f"scene {scene['scene_id']} Otsu mask is empty over the AOI")
-    observed_fraction = observed_area / domain_area
+        raise CalibrationError(
+            f"scene {scene['scene_id']} sigma0 {threshold:g} dB mask is empty over the AOI"
+        )
+    observed_fraction = observed_area / validity_area
 
     height = int(grid["height"])
     width = int(grid["width"])
@@ -908,32 +1135,52 @@ def _score_scene(
     if best_model is None or peak_model is None:
         raise CalibrationError(f"scene {scene['scene_id']} could not be scored")
     peak_metrics = mask_metrics(observed, peak_model)
-    model_area = float(area_2d[peak_model].sum())
-    area_bias = 100.0 * (model_area - observed_area) / observed_area
+    modelled_area = float(area_2d[peak_model].sum())
+    area_bias = 100.0 * (modelled_area - observed_area) / observed_area
 
-    sensitivity: dict[str, dict[str, float]] = {}
-    for label in ("minus2db", "plus2db"):
+    sensitivity: list[dict[str, Any]] = []
+    for value in thresholds:
+        label = _threshold_label(value)
+        if label not in masks:
+            raise CalibrationError(
+                f"scene {scene['scene_id']} has no mask for sensitivity threshold {value} dB"
+            )
         mask = masks[label] & domain
         metrics = mask_metrics(observed=mask, modelled=peak_model)
-        sensitivity[label] = {
-            "iou": round(metrics["iou"], 6),
-            "precision": round(metrics["precision"], 6),
-            "recall": round(metrics["recall"], 6),
-        }
+        threshold_area = float(area_2d[mask].sum())
+        sensitivity.append(
+            {
+                "threshold_db": round(float(value), 6),
+                "observed_area_km2": round(threshold_area, 4),
+                "observed_water_fraction_of_validity": round(
+                    threshold_area / validity_area, 6
+                ),
+                "true_positive_km2": round(float(area_2d[mask & peak_model].sum()), 4),
+                "false_positive_km2": round(float(area_2d[~mask & peak_model].sum()), 4),
+                "false_negative_km2": round(float(area_2d[mask & ~peak_model].sum()), 4),
+                "iou": round(float(metrics["iou"]), 6),
+                "precision": round(float(metrics["precision"]), 6),
+                "recall": round(float(metrics["recall"]), 6),
+                "f1": round(float(metrics["f1"]), 6),
+            }
+        )
 
     return {
         "scene_id": scene["scene_id"],
         "datetime": scene["datetime"],
         "platform": scene["platform"],
         "relative_orbit": int(scene["relative_orbit"]),
-        "threshold_db": round(float(processed["metadata"]["threshold_db"]), 6),
+        "threshold_db": round(threshold, 6),
+        "threshold_rationale": metadata["threshold_rationale"],
+        "validity_area_km2": round(validity_area, 4),
+        "modelled_in_validity_km2": round(modelled_area, 4),
         "observed_area_km2": round(observed_area, 4),
         "observed_water_fraction_of_aoi": round(observed_fraction, 6),
         "best_match_step": int(best_step),
         "best_match_iou": round(float(best_metrics["iou"]), 6),
         "peak_step": {
             "step": peak_step,
-            "modelled_area_km2": round(model_area, 4),
+            "modelled_area_km2": round(modelled_area, 4),
             "iou": round(float(peak_metrics["iou"]), 6),
             "precision": round(float(peak_metrics["precision"]), 6),
             "recall": round(float(peak_metrics["recall"]), 6),
@@ -947,7 +1194,9 @@ def _score_scene(
 CAVEATS = [
     "This is an extent-shape comparison against real Sentinel-1 acquisitions, not an event "
     "hindcast. The scenario's stage and duration were not fitted to these dates.",
-    "Absolute SAR calibration was unavailable; masks use an Otsu threshold with a ±2 dB band.",
+    "σ0 calibration applied from the SAFE calibration LUT. Residual uncertainty is threshold "
+    "choice (reported across −14/−16/−18 dB) and GRD geometries co-registered with a "
+    "GCP-derived affine, not a rigorous terrain-corrected warp.",
 ]
 
 
@@ -996,8 +1245,10 @@ def run(
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     scored: list[dict[str, Any]] = []
+    processed_scenes: list[dict[str, Any]] = []
     for scene in scenes:
         processed = _process_scene(cfg, scene, grid, grid["slope"], cache_dir, refresh)
+        processed_scenes.append(processed)
         scored.append(_score_scene(cfg, processed, grid, frames_dir))
         stage.metric(
             f"{scene['scene_id']}_threshold_db",
@@ -1012,13 +1263,35 @@ def run(
     mean_precision = float(np.mean([scene["peak_step"]["precision"] for scene in scored]))
     mean_recall = float(np.mean([scene["peak_step"]["recall"] for scene in scored]))
     worst = min(scored, key=lambda scene: scene["best_match_iou"])
+    calibrations = [processed["metadata"]["calibration"] for processed in processed_scenes]
+    vector_counts = {int(item["vectors"]) for item in calibrations}
+    sample_counts = {int(item["samples_per_vector"]) for item in calibrations}
+    if len(vector_counts) != 1 or len(sample_counts) != 1:
+        raise CalibrationError(
+            f"calibration LUT shape disagrees between scenes: {vector_counts} vectors, "
+            f"{sample_counts} samples"
+        )
+    a_medians = [float(item["A_median"]) for item in calibrations]
     scorecard = {
         "schema_version": "1.0.0",
         "generated_at": utc_now(),
         "method": {
             "collection": str(sentinel["collection"]),
-            "threshold_method": "otsu",
-            "sensitivity_db": [-2, 0, 2],
+            "threshold_method": "fixed_sigma0",
+            "threshold_db": round(float(scored[0]["threshold_db"]), 6),
+            "threshold_rationale": scored[0]["threshold_rationale"],
+            "sensitivity_db": [
+                round(float(entry["threshold_db"]), 6) for entry in scored[0]["sensitivity"]
+            ],
+            "calibration": {
+                "source": (
+                    "Sentinel-1 SAFE annotation/calibration/calibration-iw-vv.xml "
+                    "(STAC asset schema-calibration-vv; anonymous S3)"
+                ),
+                "vectors": vector_counts.pop(),
+                "samples_per_vector": sample_counts.pop(),
+                "A_median": round(float(np.median(a_medians)), 6),
+            },
             "slope_mask_deg": float(sentinel.get("slope_mask_deg", 10.0)),
             "min_component_cells": int(sentinel.get("min_component_cells", 5)),
             "resampling": "average→nearest",
@@ -1046,13 +1319,16 @@ def run(
     stage.metric("mean_recall", scorecard["summary"]["mean_recall"])
     stage.metric("worst_scene", worst["scene_id"])
     stage.finish(
-        "REVIEW-17 P1.1/P1.2: Sentinel-1 GRD VV decimated 1/9 with average resampling, "
-        "Otsu on 10*log10(DN) over AOI core pixels, ±2 dB sensitivity, >10° DEM slope "
-        "masked, components <5 analysis cells dropped, masks reprojected nearest to the "
-        "90 m frame grid with a fractional coverage raster. Metrics compare the committed "
-        "PNG frames with frame-index placement; the scenario stage is not fitted to these "
-        "dates and this is not an event hindcast. Scene binaries and masks stay in "
-        "pipeline/cache/s1/ and are not committed."
+        "REVIEW-17 P1.1/P1.2 corrected by REVIEW-18: Sentinel-1 GRD VV decimated 1/9 with "
+        "average resampling; sigmaNought LUT from schema-calibration-vv applied as "
+        "20*log10(DN/A); fixed -16 dB sigma0 water threshold with -14/-16/-18 dB "
+        "sensitivity in sigma0 space; >10° DEM slope masked; components <5 analysis cells "
+        "dropped; masks reprojected nearest to the 90 m frame grid with a fractional "
+        "coverage raster. validity_area_km2 and modelled_in_validity_km2 make every ratio "
+        "denominator visible. Metrics compare the committed PNG frames with frame-index "
+        "placement; the scenario stage is not fitted to these dates and this is not an "
+        "event hindcast. Scene binaries and masks stay in pipeline/cache/s1/ and are not "
+        "committed."
     )
     print(
         f"[16] ok: {len(scored)} scenes, mean IoU {mean_iou:.4f}, "

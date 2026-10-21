@@ -1,9 +1,66 @@
-"""REVIEW-17 P1.1/P1.2 unit tests: Otsu and scorecard metric maths."""
+"""REVIEW-17 P1.1/P1.2 and REVIEW-18 unit tests: calibration and metric maths."""
 from __future__ import annotations
 
 import numpy as np
 
-from baanh_pipeline.calibration_s1 import mask_metrics, otsu_threshold
+from baanh_pipeline.calibration_s1 import (
+    CalibrationError,
+    calibration_scale_grid,
+    mask_metrics,
+    otsu_threshold,
+    parse_calibration,
+    sigma0_db,
+)
+
+
+def _synthetic_calibration_xml() -> bytes:
+    return b"""<calibration>
+  <calibrationVectorList count="2">
+    <calibrationVector>
+      <line>0</line>
+      <pixel count="3">0 100 200</pixel>
+      <sigmaNought count="3">500 500 500</sigmaNought>
+    </calibrationVector>
+    <calibrationVector>
+      <line>100</line>
+      <pixel count="3">0 100 200</pixel>
+      <sigmaNought count="3">700 700 700</sigmaNought>
+    </calibrationVector>
+  </calibrationVectorList>
+</calibration>"""
+
+
+def test_parse_calibration_reads_vectors_and_median_A():
+    lut = parse_calibration(_synthetic_calibration_xml(), "test-lut")
+    assert lut.vectors == 2
+    assert lut.samples_per_vector == 3
+    assert lut.A_median == 600.0
+
+
+def test_parse_calibration_rejects_a_missing_lut():
+    try:
+        parse_calibration(b"<calibration/>", "test-lut")
+    except CalibrationError as exc:
+        assert "calibrationVector" in str(exc)
+    else:  # pragma: no cover - the assertion above must fire
+        raise AssertionError("a calibration XML without vectors was accepted")
+
+
+def test_calibration_scale_grid_interpolates_between_vectors():
+    lut = parse_calibration(_synthetic_calibration_xml(), "test-lut")
+    grid = calibration_scale_grid(lut, height=2, width=3, scale_y=50.0, scale_x=50.0)
+    # Row centres 25 and 75 lie 25 % / 75 % between the two vectors.
+    assert np.allclose(grid[0], 550.0)
+    assert np.allclose(grid[1], 650.0)
+
+
+def test_sigma0_db_is_twenty_log10_dn_over_a():
+    scale = np.full((2, 2), 595.42415, dtype=np.float32)
+    data = np.array([[595.42415, 1190.8483], [0.0, 300.0]], dtype=np.float32)
+    db = sigma0_db(data, scale)
+    assert abs(float(db[0, 0])) < 1e-4
+    assert abs(float(db[0, 1]) - 6.0206) < 1e-4
+    assert np.isnan(db[1, 0])
 
 
 def test_otsu_separates_synthetic_bimodal_sample():

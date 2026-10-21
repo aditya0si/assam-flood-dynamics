@@ -3,7 +3,7 @@
   "dataset_version": "2026.10.0",
   "app_min_version": "0.1.0",
   "scenario_id": "assam-monsoon-composite-v1",
-  "generated_at": "2026-10-21T18:42:12Z",
+  "generated_at": "2026-10-21T19:45:55Z",
   "crs": "EPSG:4326",
   "analysis_crs": "EPSG:32646",
   "bbox": [
@@ -226,8 +226,8 @@
     },
     {
       "path": "data/provenance.json",
-      "bytes": 22913,
-      "sha256": "159ac60cd3718fb2403e2f82111d72dd288522e568c9cb2d02f1fff763751f2a",
+      "bytes": 23029,
+      "sha256": "0b3e163b7170f3e02538bcc3e83b8fd7d87843c02e879ff125c05bf59cb271c7",
       "class": "derived",
       "tier": "critical",
       "description": "Source → stage → file provenance for every dataset."
@@ -282,16 +282,16 @@
     },
     {
       "path": "data/validation/scorecard.json",
-      "bytes": 2656,
-      "sha256": "1d874bbf231c981948a37e017c9d1693ed2f27c5f84b05482b406ea4425b26d7",
+      "bytes": 6040,
+      "sha256": "e08ceb6f39e8c5a2a85d440083dc6195473fab1a9063d5903320c7cd966fd1b2",
       "class": "derived",
       "tier": "critical",
-      "description": "Sentinel-1 GRD validation scorecard: extent-shape IoU/precision/recall at Otsu and ±2 dB, not an event hindcast."
+      "description": "Sentinel-1 GRD validation scorecard: calibrated sigma0 extent-shape IoU/precision/recall at fixed -16 dB, sensitivity at -14/-16/-18 dB, not an event hindcast."
     },
     {
       "path": "data/validation-report.json",
       "bytes": 10476,
-      "sha256": "8ee49902044fbc3379ee5947c1da38f146edf7779527743bdb6b5f04cb611aee",
+      "sha256": "df5e379f0b153eea02c90b7e3db97223305fc5b3bdf8cde0c77186da8f001741",
       "class": "derived",
       "tier": "critical",
       "description": "V01–V20 plus V-A1–V-A10 validation report for the committed data."

@@ -1,14 +1,22 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-10-21T18:37:46Z",
+  "generated_at": "2026-10-21T19:40:45Z",
   "method": {
     "collection": "sentinel-1-grd",
-    "threshold_method": "otsu",
+    "threshold_method": "fixed_sigma0",
+    "threshold_db": -16.0,
+    "threshold_rationale": "Fixed -16 dB sigma0 threshold for C-band VV open water in monsoon conditions: it sits in the low tail of the calibrated land/water distribution and is stated before scoring; threshold choice, not the LUT, is the dominant residual uncertainty, so -14/-16/-18 dB are all published.",
     "sensitivity_db": [
-      -2,
-      0,
-      2
+      -14.0,
+      -16.0,
+      -18.0
     ],
+    "calibration": {
+      "source": "Sentinel-1 SAFE annotation/calibration/calibration-iw-vv.xml (STAC asset schema-calibration-vv; anonymous S3)",
+      "vectors": 27,
+      "samples_per_vector": 642,
+      "A_median": 595.42265
+    },
     "slope_mask_deg": 10.0,
     "min_component_cells": 5,
     "resampling": "average→nearest",
@@ -21,74 +29,132 @@
       "datetime": "2022-06-01T23:39:20.965799Z",
       "platform": "sentinel-1a",
       "relative_orbit": 4,
-      "threshold_db": 20.035442,
-      "observed_area_km2": 202.6602,
-      "observed_water_fraction_of_aoi": 0.054224,
+      "threshold_db": -16.0,
+      "threshold_rationale": "Fixed -16 dB sigma0 threshold for C-band VV open water in monsoon conditions: it sits in the low tail of the calibrated land/water distribution and is stated before scoring; threshold choice, not the LUT, is the dominant residual uncertainty, so -14/-16/-18 dB are all published.",
+      "validity_area_km2": 3737.4381,
+      "modelled_in_validity_km2": 552.2886,
+      "observed_area_km2": 187.6361,
+      "observed_water_fraction_of_aoi": 0.050204,
       "best_match_step": 9,
-      "best_match_iou": 0.12335,
+      "best_match_iou": 0.118948,
       "peak_step": {
         "step": 7,
         "modelled_area_km2": 552.2886,
-        "iou": 0.120288,
-        "precision": 0.146773,
-        "recall": 0.399984,
-        "f1": 0.214745,
-        "area_bias_pct": 172.5195
+        "iou": 0.11446,
+        "precision": 0.137597,
+        "recall": 0.405005,
+        "f1": 0.205409,
+        "area_bias_pct": 194.3403
       },
-      "sensitivity": {
-        "minus2db": {
-          "iou": 0.09991,
-          "precision": 0.116511,
-          "recall": 0.412176
+      "sensitivity": [
+        {
+          "threshold_db": -14.0,
+          "observed_area_km2": 223.5275,
+          "observed_water_fraction_of_validity": 0.059808,
+          "true_positive_km2": 87.0818,
+          "false_positive_km2": 465.2068,
+          "false_negative_km2": 136.4457,
+          "iou": 0.126437,
+          "precision": 0.157674,
+          "recall": 0.38958,
+          "f1": 0.224491
         },
-        "plus2db": {
-          "iou": 0.182627,
-          "precision": 0.279717,
-          "recall": 0.344756
+        {
+          "threshold_db": -16.0,
+          "observed_area_km2": 187.6361,
+          "observed_water_fraction_of_validity": 0.050204,
+          "true_positive_km2": 75.9935,
+          "false_positive_km2": 476.2951,
+          "false_negative_km2": 111.6425,
+          "iou": 0.11446,
+          "precision": 0.137597,
+          "recall": 0.405005,
+          "f1": 0.205409
+        },
+        {
+          "threshold_db": -18.0,
+          "observed_area_km2": 165.1362,
+          "observed_water_fraction_of_validity": 0.044184,
+          "true_positive_km2": 68.041,
+          "false_positive_km2": 484.2476,
+          "false_negative_km2": 97.0952,
+          "iou": 0.104778,
+          "precision": 0.123198,
+          "recall": 0.41203,
+          "f1": 0.189681
         }
-      }
+      ]
     },
     {
       "scene_id": "S1A_IW_GRDH_1SDV_20220731T233912_20220731T233937_044351_054B00",
       "datetime": "2022-07-31T23:39:24.699506Z",
       "platform": "sentinel-1a",
       "relative_orbit": 4,
-      "threshold_db": 19.970899,
-      "observed_area_km2": 262.3284,
-      "observed_water_fraction_of_aoi": 0.070233,
-      "best_match_step": 7,
-      "best_match_iou": 0.139986,
+      "threshold_db": -16.0,
+      "threshold_rationale": "Fixed -16 dB sigma0 threshold for C-band VV open water in monsoon conditions: it sits in the low tail of the calibrated land/water distribution and is stated before scoring; threshold choice, not the LUT, is the dominant residual uncertainty, so -14/-16/-18 dB are all published.",
+      "validity_area_km2": 3735.0944,
+      "modelled_in_validity_km2": 551.8684,
+      "observed_area_km2": 240.0468,
+      "observed_water_fraction_of_aoi": 0.064268,
+      "best_match_step": 6,
+      "best_match_iou": 0.13515,
       "peak_step": {
         "step": 7,
         "modelled_area_km2": 551.8684,
-        "iou": 0.139986,
-        "precision": 0.181167,
-        "recall": 0.381127,
-        "f1": 0.245593,
-        "area_bias_pct": 110.3731
+        "iou": 0.134765,
+        "precision": 0.170418,
+        "recall": 0.391792,
+        "f1": 0.237521,
+        "area_bias_pct": 129.9003
       },
-      "sensitivity": {
-        "minus2db": {
-          "iou": 0.118177,
-          "precision": 0.142872,
-          "recall": 0.406077
+      "sensitivity": [
+        {
+          "threshold_db": -14.0,
+          "observed_area_km2": 316.9132,
+          "observed_water_fraction_of_validity": 0.084847,
+          "true_positive_km2": 111.2627,
+          "false_positive_km2": 440.6057,
+          "false_negative_km2": 205.6505,
+          "iou": 0.146878,
+          "precision": 0.201611,
+          "recall": 0.351083,
+          "f1": 0.256135
         },
-        "plus2db": {
-          "iou": 0.180781,
-          "precision": 0.357048,
-          "recall": 0.268038
+        {
+          "threshold_db": -16.0,
+          "observed_area_km2": 240.0468,
+          "observed_water_fraction_of_validity": 0.064268,
+          "true_positive_km2": 94.0484,
+          "false_positive_km2": 457.82,
+          "false_negative_km2": 145.9984,
+          "iou": 0.134765,
+          "precision": 0.170418,
+          "recall": 0.391792,
+          "f1": 0.237521
+        },
+        {
+          "threshold_db": -18.0,
+          "observed_area_km2": 207.7275,
+          "observed_water_fraction_of_validity": 0.055615,
+          "true_positive_km2": 83.6632,
+          "false_positive_km2": 468.2052,
+          "false_negative_km2": 124.0643,
+          "iou": 0.123774,
+          "precision": 0.1516,
+          "recall": 0.402755,
+          "f1": 0.220283
         }
-      }
+      ]
     }
   ],
   "summary": {
-    "mean_iou_over_scenes": 0.131668,
-    "mean_precision": 0.16397,
-    "mean_recall": 0.390555,
+    "mean_iou_over_scenes": 0.127049,
+    "mean_precision": 0.154007,
+    "mean_recall": 0.398398,
     "worst_scene": "S1A_IW_GRDH_1SDV_20220601T233908_20220601T233933_043476_0530F2",
     "caveats": [
       "This is an extent-shape comparison against real Sentinel-1 acquisitions, not an event hindcast. The scenario's stage and duration were not fitted to these dates.",
-      "Absolute SAR calibration was unavailable; masks use an Otsu threshold with a ±2 dB band."
+      "σ0 calibration applied from the SAFE calibration LUT. Residual uncertainty is threshold choice (reported across −14/−16/−18 dB) and GRD geometries co-registered with a GCP-derived affine, not a rigorous terrain-corrected warp."
     ]
   }
 }

@@ -184,6 +184,12 @@ export async function loadDataset(): Promise<Dataset> {
       'the required "not an event hindcast" caveat is missing',
     );
   }
+  if (scorecard.summary.caveats.some((caveat) => /calibration was unavailable/i.test(caveat))) {
+    throw new DataContractError(
+      'validation/scorecard.json',
+      'a caveat claims calibration was unavailable, but the SAFE LUT is applied',
+    );
+  }
   for (const entry of provenance.entries) {
     if (entry.class === 'source' && entry.pipeline.length === 0) {
       throw new DataContractError('provenance.json', `${entry.id} has no processing stage`);

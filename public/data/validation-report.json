@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-10-21T18:42:05Z",
+  "generated_at": "2026-10-21T19:45:47Z",
   "dataset_version": "2026.10.0",
   "status": "pass",
   "checks": [
@@ -73,7 +73,7 @@
       "name": "File caps",
       "status": "pass",
       "expected": "every file ≤ its §11 raw cap; every frame PNG ≤400 KB raw; JSON gzip caps respected; public/data ≤9.0 MB",
-      "actual": "total 4.64 MB; meta 51 KB; 12 PNGs, max 249 KB; 0 over cap",
+      "actual": "total 4.65 MB; meta 51 KB; 12 PNGs, max 249 KB; 0 over cap",
       "detail": "all raw and gzip file caps satisfied"
     },
     {
@@ -161,7 +161,7 @@
       "name": "First-paint budget",
       "status": "pass",
       "expected": "critical ≤3.5 MB; animation (12 PNGs + frame-index + summary + risk-zones) ≤4.0 MB raw; optional/fallback ≤3.0 MB",
-      "actual": "critical 1.19 MB, animation 2.24 MB raw, optional/fallback 1.20 MB",
+      "actual": "critical 1.20 MB, animation 2.24 MB raw, optional/fallback 1.20 MB",
       "detail": "all tier budgets satisfied"
     },
     {

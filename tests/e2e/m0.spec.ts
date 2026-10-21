@@ -265,7 +265,7 @@ test.describe('M0 acceptance', () => {
     await expect(panel).toBeVisible();
     await expect(panel.locator('[data-validation-scene]')).toHaveCount(2);
     await expect(panel.getByText(/not an event hindcast/i).first()).toBeVisible();
-    await expect(panel.getByText(/Absolute SAR calibration was unavailable/i).first()).toBeVisible();
+    await expect(panel.getByText(/σ0 calibration applied from the SAFE calibration LUT/i).first()).toBeVisible();
 
     await openPanel(page, 'Risk');
     const first = page.getByRole('button', { name: /extent score [\d.]+ of 100/i }).first();

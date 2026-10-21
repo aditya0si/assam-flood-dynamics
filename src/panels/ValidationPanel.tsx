@@ -29,10 +29,12 @@ export function ValidationPanel({ scorecard }: ValidationPanelProps) {
           This is an extent-shape comparison, not an event hindcast.
         </p>
         <p className={styles.formulaNote}>
-          {method.collection} · VV decimated with {method.resampling} · {method.threshold_method}{' '}
-          threshold over AOI pixels · sensitivity {method.sensitivity_db.join(' / ')} dB · slope &gt;{' '}
-          {method.slope_mask_deg}° masked · components &lt; {method.min_component_cells} cells
-          dropped · {method.crs} at {method.resolution_m} m.
+          {method.collection} · VV decimated with {method.resampling} · σ0 calibration from
+          SAFE LUT (A median {formatScore(method.calibration.A_median)}) · fixed{' '}
+          {formatScore(method.threshold_db)} dB threshold · sensitivity{' '}
+          {method.sensitivity_db.join(' / ')} dB · slope &gt; {method.slope_mask_deg}° masked ·
+          components &lt; {method.min_component_cells} cells dropped · {method.crs} at{' '}
+          {method.resolution_m} m.
         </p>
       </div>
 
@@ -60,7 +62,7 @@ export function ValidationPanel({ scorecard }: ValidationPanelProps) {
           <h3 className={styles.subTitle}>{scene.scene_id}</h3>
           <p className={styles.validationMeta}>
             {formatUtc(scene.datetime)} · {scene.platform} · relative orbit{' '}
-            {scene.relative_orbit} · Otsu {formatScore(scene.threshold_db)} dB
+            {scene.relative_orbit} · σ0 {formatScore(scene.threshold_db)} dB
           </p>
           <dl className={styles.validationGrid}>
             <div>
@@ -69,7 +71,10 @@ export function ValidationPanel({ scorecard }: ValidationPanelProps) {
             </div>
             <div>
               <dt>Observed fraction</dt>
-              <dd>{formatPercent(scene.observed_water_fraction_of_aoi)} of observed AOI</dd>
+              <dd>
+                {formatPercent(scene.observed_water_fraction_of_aoi)} of{' '}
+                {formatArea(scene.validity_area_km2)} km² validity
+              </dd>
             </div>
             <div>
               <dt>Best match</dt>
@@ -80,7 +85,8 @@ export function ValidationPanel({ scorecard }: ValidationPanelProps) {
             <div>
               <dt>Peak {formatStepCode(scene.peak_step.step)}</dt>
               <dd>
-                {formatArea(scene.peak_step.modelled_area_km2)} km² modelled · IoU{' '}
+                {formatArea(scene.peak_step.modelled_area_km2)} km² modelled of{' '}
+                {formatArea(scene.validity_area_km2)} km² validity · IoU{' '}
                 {formatScore(scene.peak_step.iou)}
               </dd>
             </div>
@@ -110,24 +116,14 @@ export function ValidationPanel({ scorecard }: ValidationPanelProps) {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <th scope="row">Otsu − 2 dB</th>
-                <td>{formatScore(scene.sensitivity.minus2db.iou)}</td>
-                <td>{formatScore(scene.sensitivity.minus2db.precision)}</td>
-                <td>{formatScore(scene.sensitivity.minus2db.recall)}</td>
-              </tr>
-              <tr>
-                <th scope="row">Otsu</th>
-                <td>{formatScore(scene.peak_step.iou)}</td>
-                <td>{formatScore(scene.peak_step.precision)}</td>
-                <td>{formatScore(scene.peak_step.recall)}</td>
-              </tr>
-              <tr>
-                <th scope="row">Otsu + 2 dB</th>
-                <td>{formatScore(scene.sensitivity.plus2db.iou)}</td>
-                <td>{formatScore(scene.sensitivity.plus2db.precision)}</td>
-                <td>{formatScore(scene.sensitivity.plus2db.recall)}</td>
-              </tr>
+              {scene.sensitivity.map((entry) => (
+                <tr key={entry.threshold_db}>
+                  <th scope="row">σ0 ≤ {formatScore(entry.threshold_db)} dB</th>
+                  <td>{formatScore(entry.iou)}</td>
+                  <td>{formatScore(entry.precision)}</td>
+                  <td>{formatScore(entry.recall)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </section>

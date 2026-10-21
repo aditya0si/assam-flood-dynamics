@@ -9,17 +9,29 @@ The STAC search was `sentinel-1-grd` on `https://earth-search.aws.element84.com/
 `config/aoi.json`, datetime `2022-06-01/2022-07-31`, IW GRD, VV asset required. The earliest and
 latest usable acquisitions over the AOI core were selected:
 
-| Scene ID | Date | Platform | Relative orbit | Direction | Otsu threshold | Observed water | Observed fraction |
-|---|---|---|---|---|---|---|---|
-| `S1A_IW_GRDH_1SDV_20220601T233908_20220601T233933_043476_0530F2` | 2022-06-01T23:39:20Z | sentinel-1a | 4 | descending | 20.035 dB | 202.66 km² | 5.42 % of observed AOI |
-| `S1A_IW_GRDH_1SDV_20220731T233912_20220731T233937_044351_054B00` | 2022-07-31T23:39:24Z | sentinel-1a | 4 | descending | 19.971 dB | 262.33 km² | 7.02 % of observed AOI |
+| Scene ID | Date | Platform | Relative orbit | Direction | Fixed σ0 threshold | Observed water | Observed fraction | Validity area | Modelled in validity |
+|---|---|---|---|---|---|---|---|---|---|
+| `S1A_IW_GRDH_1SDV_20220601T233908_20220601T233933_043476_0530F2` | 2022-06-01T23:39:20Z | sentinel-1a | 4 | descending | −16 dB | 187.64 km² | 5.02 % of validity | 3,737.44 km² | 552.29 km² |
+| `S1A_IW_GRDH_1SDV_20220731T233912_20220731T233937_044351_054B00` | 2022-07-31T23:39:24Z | sentinel-1a | 4 | descending | −16 dB | 240.05 km² | 6.43 % of validity | 3,735.09 km² | 551.87 km² |
 
 Each VV COG reports `crs: None` and carries WGS84 GCPs. The stage transformed the GCPs into
 EPSG:32646 (zone 46N from `proj:centroid`) and assigned that CRS before reprojection. VV was read
-at ~1/9 with `Resampling.average`, never at native resolution. Otsu was computed on
-`10·log10(DN)` over AOI core pixels only; water components smaller than 5 analysis cells and DEM
-slope >10° were removed. Masks were reprojected nearest to the 90 m frame grid with a fractional
-coverage raster.
+at ~1/9 with `Resampling.average`, never at native resolution.
+
+**Calibration (REVIEW-18 fix).** Both STAC items expose `schema-calibration-vv`; the stage
+downloads `annotation/calibration/calibration-iw-vv.xml`, parses `sigmaNought` per vector
+(**27 vectors × 642 samples**, median **A = 595.42415** for the 2022-06-01 scene and 595.42115 for
+2022-07-31; the scorecard publishes their median 595.42265), interpolates A over the decimated
+grid, and converts **σ0 dB = 20·log10(DN / A)**. Over AOI-core pixels the calibrated distribution
+is p05/p50/p95 = −16.3/−8.6/−6.9 dB (2022-06-01) and −19.8/−9.1/−7.0 dB (2022-07-31); these are
+measured on the ~90 m average-decimated DN, so they are narrower than a native-pixel sample.
+
+**Threshold.** Water is `σ0 ≤ −16 dB`, a fixed, pre-stated conservative C-band VV open-water
+threshold for monsoon conditions; the rationale is published in `method.threshold_rationale`.
+Sensitivity is reported at −14/−16/−18 dB in σ0 space. Water components smaller than 5 analysis
+cells and DEM slope >10° were removed. Masks were reprojected nearest to the 90 m frame grid with
+a fractional coverage raster; `validity_area_km2` is that comparison domain and
+`modelled_in_validity_km2` is the S07 model area inside it.
 
 **Coverage note.** A single Sentinel-1 GRD slice covers about 7.3 % of the full 52,240 km² AOI
 core. The valid observed share of each slice's AOI footprint is 98.3 %, above the 90 % stop bar;
@@ -34,23 +46,34 @@ scenario peak. Sensitivity is at S07.
 
 | Scene | Best step | Best IoU | S07 modelled | S07 IoU | S07 precision | S07 recall | S07 F1 | S07 area bias |
 |---|---|---|---|---|---|---|---|---|
-| 2022-06-01 | S09 | 0.1234 | 552.29 km² | 0.1203 | 0.1468 | 0.4000 | 0.2147 | +172.5 % |
-| 2022-07-31 | S07 | 0.1400 | 551.87 km² | 0.1400 | 0.1812 | 0.3811 | 0.2456 | +110.4 % |
+| 2022-06-01 | S09 | 0.1189 | 552.29 km² | 0.1145 | 0.1376 | 0.4050 | 0.2054 | +194.3 % |
+| 2022-07-31 | S06 | 0.1352 | 551.87 km² | 0.1348 | 0.1704 | 0.3918 | 0.2375 | +129.9 % |
 
-Sensitivity at S07 (observed mask at Otsu ±2 dB, same modelled frame, same domain):
+Sensitivity at S07 in **σ0 space** (fixed thresholds, same modelled frame, same validity domain):
 
-| Scene | Otsu−2 dB IoU / P / R | Otsu IoU / P / R | Otsu+2 dB IoU / P / R |
-|---|---|---|---|
-| 2022-06-01 | 0.0999 / 0.1165 / 0.4122 | 0.1203 / 0.1468 / 0.4000 | 0.1826 / 0.2797 / 0.3448 |
-| 2022-07-31 | 0.1182 / 0.1429 / 0.4061 | 0.1400 / 0.1812 / 0.3811 | 0.1808 / 0.3570 / 0.2680 |
+| Scene | σ0 threshold | Observed | IoU | Precision | Recall | F1 |
+|---|---|---|---|---|---|---|
+| 2022-06-01 | −14 dB | 223.53 km² | 0.1264 | 0.1577 | 0.3896 | 0.2245 |
+| 2022-06-01 | −16 dB | 187.64 km² | 0.1145 | 0.1376 | 0.4050 | 0.2054 |
+| 2022-06-01 | −18 dB | 165.14 km² | 0.1048 | 0.1232 | 0.4120 | 0.1897 |
+| 2022-07-31 | −14 dB | 316.91 km² | 0.1469 | 0.2016 | 0.3511 | 0.2561 |
+| 2022-07-31 | −16 dB | 240.05 km² | 0.1348 | 0.1704 | 0.3918 | 0.2375 |
+| 2022-07-31 | −18 dB | 207.73 km² | 0.1238 | 0.1516 | 0.4028 | 0.2203 |
 
-Summary: mean best-match IoU 0.1317, mean S07 precision 0.1640, mean S07 recall 0.3906, worst
-scene 2022-06-01. The modelled area is roughly 2× the observed water area on the same domain,
-and the overlap is low. These are the findings and are not tuned.
+The observed extent moves 1.35–1.53× across this 4 dB band on the 90 m averaged grid. Precision
+stays ≤0.202 and recall ≤0.412 across the band: the model puts most of its extent where SAR sees
+dry land and captures at most ~41 % of observed water. The sign of the threshold effect is
+consistent with REVIEW-18, and the smaller spread is a property of thresholding the ~90 m
+average-decimated DN rather than native pixels; both are published rather than tuned.
 
-The two required caveats ship verbatim in `scorecard.json`: this is an extent-shape comparison,
-not an event hindcast, and absolute SAR calibration was unavailable; masks use an Otsu threshold
-with a ±2 dB band.
+Summary: mean best-match IoU 0.1270, mean S07 precision 0.1540, mean S07 recall 0.3984, worst
+scene 2022-06-01. The modelled area is roughly 2–3× the observed water area on the same validity
+domain, and the overlap is low. These are the findings and are not tuned.
+
+`scorecard.json` publishes the corrected caveat: *"σ0 calibration applied from the SAFE
+calibration LUT. Residual uncertainty is threshold choice (reported across −14/−16/−18 dB) and
+GRD geometries co-registered with a GCP-derived affine, not a rigorous terrain-corrected warp."*
+The not-an-event-hindcast caveat is unchanged.
 
 ## Severity vs extent ranks
 

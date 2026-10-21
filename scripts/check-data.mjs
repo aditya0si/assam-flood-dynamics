@@ -342,10 +342,35 @@ check('P1.2 Sentinel-1 scorecard: schema, method, metrics and caveats', () => {
   assert(parsed.success, `scorecard: ${parsed.error?.issues[0]?.message ?? 'schema failed'}`);
   const method = scorecard.method;
   assert(method.collection === 'sentinel-1-grd', `collection is ${method.collection}`);
-  assert(method.threshold_method === 'otsu', `threshold_method is ${method.threshold_method}`);
   assert(
-    JSON.stringify(method.sensitivity_db) === JSON.stringify([-2, 0, 2]),
+    method.threshold_method === 'fixed_sigma0',
+    `threshold_method is ${method.threshold_method}`,
+  );
+  assert(method.threshold_db === -16, `threshold_db is ${method.threshold_db}, expected -16`);
+  assert(
+    JSON.stringify(method.sensitivity_db) === JSON.stringify([-14, -16, -18]),
     `sensitivity_db is ${JSON.stringify(method.sensitivity_db)}`,
+  );
+  assert(
+    method.calibration && typeof method.calibration === 'object',
+    'method.calibration is missing',
+  );
+  assert(
+    Number.isFinite(method.calibration.A_median) && method.calibration.A_median !== null,
+    `method.calibration.A_median is not a finite number (${method.calibration.A_median})`,
+  );
+  assert(
+    method.calibration.vectors === 27,
+    `method.calibration.vectors is ${method.calibration.vectors}, expected 27`,
+  );
+  assert(
+    method.calibration.samples_per_vector === 642,
+    `method.calibration.samples_per_vector is ${method.calibration.samples_per_vector}, expected 642`,
+  );
+  assert(
+    typeof method.calibration.source === 'string' &&
+      method.calibration.source.includes('schema-calibration-vv'),
+    `method.calibration.source does not name schema-calibration-vv: ${method.calibration.source}`,
   );
   assert(method.slope_mask_deg === 10, `slope_mask_deg is ${method.slope_mask_deg}`);
   assert(method.min_component_cells === 5, `min_component_cells is ${method.min_component_cells}`);
@@ -359,8 +384,28 @@ check('P1.2 Sentinel-1 scorecard: schema, method, metrics and caveats', () => {
     assert(typeof scene.scene_id === 'string' && scene.scene_id.length > 0, 'scene has no id');
     assert(!sceneIds.has(scene.scene_id), `duplicate scene ${scene.scene_id}`);
     sceneIds.add(scene.scene_id);
-    assert(Number.isFinite(scene.threshold_db), `${scene.scene_id}: threshold_db is not finite`);
+    assert(scene.threshold_db === -16, `${scene.scene_id}: threshold_db is ${scene.threshold_db}`);
+    assert(
+      typeof scene.threshold_rationale === 'string' && scene.threshold_rationale.length > 0,
+      `${scene.scene_id}: threshold_rationale is missing`,
+    );
+    assert(
+      Number.isFinite(scene.validity_area_km2) && scene.validity_area_km2 > 0,
+      `${scene.scene_id}: validity_area_km2 must be > 0`,
+    );
+    assert(
+      Number.isFinite(scene.modelled_in_validity_km2) && scene.modelled_in_validity_km2 >= 0,
+      `${scene.scene_id}: modelled_in_validity_km2 is invalid`,
+    );
+    assert(
+      scene.modelled_in_validity_km2 <= scene.validity_area_km2 + 1e-6,
+      `${scene.scene_id}: modelled_in_validity_km2 exceeds validity_area_km2`,
+    );
     assert(scene.observed_area_km2 > 0, `${scene.scene_id}: observed_area_km2 must be > 0`);
+    assert(
+      scene.observed_area_km2 <= scene.validity_area_km2 + 1e-6,
+      `${scene.scene_id}: observed_area_km2 exceeds validity_area_km2`,
+    );
     assert(
       scene.observed_water_fraction_of_aoi >= 0 && scene.observed_water_fraction_of_aoi <= 1,
       `${scene.scene_id}: invalid observed water fraction`,
@@ -369,23 +414,16 @@ check('P1.2 Sentinel-1 scorecard: schema, method, metrics and caveats', () => {
       Number.isInteger(scene.best_match_step) && scene.best_match_step >= 0 && scene.best_match_step <= 11,
       `${scene.scene_id}: invalid best_match_step`,
     );
-    for (const [label, metrics] of [
-      ['best_match_iou', { iou: scene.best_match_iou }],
-      ['peak_step', scene.peak_step],
-      ['sensitivity.minus2db', scene.sensitivity.minus2db],
-      ['sensitivity.plus2db', scene.sensitivity.plus2db],
-    ]) {
-      for (const key of label === 'peak_step'
-        ? ['iou', 'precision', 'recall', 'f1']
-        : label === 'best_match_iou'
-          ? ['iou']
-          : ['iou', 'precision', 'recall']) {
-        const value = metrics[key];
-        assert(
-          Number.isFinite(value) && value >= 0 && value <= 1,
-          `${scene.scene_id} ${label}.${key} outside [0,1]: ${value}`,
-        );
-      }
+    assert(
+      Number.isFinite(scene.best_match_iou) && scene.best_match_iou >= 0 && scene.best_match_iou <= 1,
+      `${scene.scene_id}: best_match_iou outside [0,1]`,
+    );
+    for (const key of ['iou', 'precision', 'recall', 'f1']) {
+      const value = scene.peak_step[key];
+      assert(
+        Number.isFinite(value) && value >= 0 && value <= 1,
+        `${scene.scene_id} peak_step.${key} outside [0,1]: ${value}`,
+      );
     }
     assert(
       Number.isFinite(scene.peak_step.area_bias_pct),
@@ -396,6 +434,46 @@ check('P1.2 Sentinel-1 scorecard: schema, method, metrics and caveats', () => {
       `${scene.scene_id}: peak_step ${scene.peak_step.step} != summary ${summary.peak_step}`,
     );
     assert(scene.peak_step.modelled_area_km2 >= 0, `${scene.scene_id}: negative modelled area`);
+
+    assert(
+      Array.isArray(scene.sensitivity) && scene.sensitivity.length === 3,
+      `${scene.scene_id}: sensitivity must have exactly three sigma0 thresholds`,
+    );
+    const thresholds = scene.sensitivity.map((entry) => entry.threshold_db);
+    assert(
+      JSON.stringify(thresholds) === JSON.stringify([-14, -16, -18]),
+      `${scene.scene_id}: sensitivity thresholds are ${JSON.stringify(thresholds)}`,
+    );
+    for (const entry of scene.sensitivity) {
+      for (const key of ['iou', 'precision', 'recall', 'f1']) {
+        const value = entry[key];
+        assert(
+          Number.isFinite(value) && value >= 0 && value <= 1,
+          `${scene.scene_id} sensitivity ${entry.threshold_db} dB ${key} outside [0,1]: ${value}`,
+        );
+      }
+      assert(
+        Number.isFinite(entry.observed_area_km2) && entry.observed_area_km2 >= 0,
+        `${scene.scene_id} sensitivity ${entry.threshold_db} dB observed_area_km2 is invalid`,
+      );
+      assert(
+        entry.observed_water_fraction_of_validity >= 0 &&
+          entry.observed_water_fraction_of_validity <= 1,
+        `${scene.scene_id} sensitivity ${entry.threshold_db} dB fraction is invalid`,
+      );
+      for (const key of ['true_positive_km2', 'false_positive_km2', 'false_negative_km2']) {
+        assert(
+          Number.isFinite(entry[key]) && entry[key] >= 0,
+          `${scene.scene_id} sensitivity ${entry.threshold_db} dB ${key} is invalid`,
+        );
+      }
+    }
+    const primary = scene.sensitivity.find((entry) => entry.threshold_db === -16);
+    assert(primary, `${scene.scene_id}: sensitivity has no -16 dB row`);
+    close(primary.observed_area_km2, scene.observed_area_km2, 1e-6, `${scene.scene_id} primary observed area`);
+    close(primary.iou, scene.peak_step.iou, 1e-6, `${scene.scene_id} primary IoU`);
+    close(primary.precision, scene.peak_step.precision, 1e-6, `${scene.scene_id} primary precision`);
+    close(primary.recall, scene.peak_step.recall, 1e-6, `${scene.scene_id} primary recall`);
   }
 
   for (const key of ['mean_iou_over_scenes', 'mean_precision', 'mean_recall']) {
@@ -408,8 +486,12 @@ check('P1.2 Sentinel-1 scorecard: schema, method, metrics and caveats', () => {
   const caveats = scorecard.summary.caveats.join(' ').toLowerCase();
   assert(caveats.includes('not an event hindcast'), 'caveats must contain "not an event hindcast"');
   assert(
-    caveats.includes('absolute sar calibration was unavailable'),
-    'caveats must state that absolute SAR calibration was unavailable',
+    !caveats.includes('calibration was unavailable'),
+    'no caveat may claim calibration was unavailable',
+  );
+  assert(
+    caveats.includes('σ0 calibration applied from the safe calibration lut'),
+    'caveats must state that sigma0 calibration was applied from the SAFE calibration LUT',
   );
 });
 

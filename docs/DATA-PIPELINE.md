@@ -617,11 +617,20 @@ python -m baanh_pipeline.cli build-validation `
   used.
 - **Decimation:** VV is read at `out_shape = (height // 9, width // 9)` with
   `Resampling.average` (native 10 m → ~90 m). It is never read at native resolution.
-- **Water mask:** `10·log10(DN)` for positive DN, Otsu **over AOI core pixels only** (not the
-  whole radar slice), water where dB ≤ threshold, plus a **−2 dB / +2 dB** sensitivity band. No
-  absolute dB threshold is hard-coded. Components smaller than **5 analysis cells** (≈4 ha at
-  90 m) are dropped. Cells whose DEM slope exceeds **10°** are excluded; the slope is derived
-  from `pipeline/work/dem-90m.tif`, not a new DEM.
+- **Calibration:** the STAC asset `schema-calibration-vv` is downloaded from the SAFE annotation
+  (`annotation/calibration/calibration-iw-vv.xml`) and parsed per vector. Both scenes expose
+  **27 vectors × 642 samples**; `A` is `sigmaNought`, interpolated over the decimated grid, and
+  the scene is converted to **σ0 dB = 20·log10(DN / A)**. `method.calibration` publishes the
+  source, vector count, samples per vector and `A_median` (595.42 for the 2022 scenes). Missing
+  calibration is a stage error, never a silent fallback.
+- **Water mask:** a **fixed −16 dB σ0** threshold, stated before scoring: it is a conservative
+  C-band VV open-water threshold for monsoon conditions, in the low tail of the calibrated
+  land/water distribution. The rationale is published in `method.threshold_rationale`; threshold
+  choice, not the LUT, is the dominant residual uncertainty. Sensitivity is published at
+  **−14 / −16 / −18 dB in σ0 space**, each row with observed area, TP/FP/FN area and
+  IoU/precision/recall/F1. Components smaller than **5 analysis cells** (≈4 ha at 90 m) are
+  dropped. Cells whose DEM slope exceeds **10°** are excluded; the slope is derived from
+  `pipeline/work/dem-90m.tif`, not a new DEM.
 - **Grid:** masks reproject to **EPSG:32646, 90 m, aligned to the frame grid** with nearest
   resampling. A fractional coverage raster (`Resampling.average` of the valid source mask) is
   kept so partial cells are explicit. Comparison domain = coverage ≥ 0.5, AOI core, slope
@@ -634,12 +643,15 @@ python -m baanh_pipeline.cli build-validation `
   in each scene's metadata.
 - **Scoring:** the committed PNG frames are decoded with frame-index placement (paletted class
   >0 = wet) and compared with the observed mask at every step. The stage reports the
-  best-matching step (IoU) and the scenario peak S07 (IoU, precision, recall, F1, area bias).
-  Sensitivity at −2/+2 dB is scored at S07, so the spread is directly comparable with the peak
-  row. Observed area, modelled area and area bias use the same observed comparison domain.
-- **Stop/report:** the Otsu threshold, observed water area, observed water fraction (of the
-  observed AOI footprint), best-match step/IoU, peak metrics and ±2 dB metrics are written to
-  `validation/scorecard.json`. A bad IoU is the finding; it is not improved to fit.
+  best-matching step (IoU) and the scenario peak S07 (IoU, precision, recall, F1, area bias) at
+  the fixed −16 dB threshold. Sensitivity at −14/−16/−18 dB is scored against the same S07 model
+  on the same validity domain, so the rows are directly comparable. Observed area,
+  `modelled_in_validity_km2` and area bias use the same domain; `validity_area_km2` is published
+  per scene so every ratio denominator is visible.
+- **Stop/report:** the calibration LUT summary, fixed σ0 threshold and rationale, per-threshold
+  sensitivity, observed water area/fraction, validity area, modelled area inside validity,
+  best-match step/IoU and peak metrics are written to `validation/scorecard.json`. A bad IoU is
+  the finding; it is not improved to fit.
 - **Output:** `public/data/validation/scorecard.json` (≤128 KB) only. No scene, mask or cache
   file is committed.
 
@@ -1298,19 +1310,26 @@ labels, no water, no flood extent—only relief—so it cannot be mistaken for a
 
 ### 6.18 `validation/scorecard.json` (P1)
 
-The exact schema required by REVIEW-17 P1.2, with one additive field per scene
-(`threshold_db`) because the Otsu threshold must be reported. The scorecard is `derived`, not
+The schema required by REVIEW-17 P1.2 and corrected by REVIEW-18. The scorecard is `derived`, not
 `source`: it compares a scenario extent shape with real Sentinel-1 acquisitions and is not an
 event hindcast.
 
 ```json
 {
   "schema_version": "1.0.0",
-  "generated_at": "2022-10-21T00:00:00Z",
+  "generated_at": "2026-10-21T19:40:45Z",
   "method": {
     "collection": "sentinel-1-grd",
-    "threshold_method": "otsu",
-    "sensitivity_db": [-2, 0, 2],
+    "threshold_method": "fixed_sigma0",
+    "threshold_db": -16.0,
+    "threshold_rationale": "Fixed -16 dB sigma0 threshold for C-band VV open water in monsoon conditions: …",
+    "sensitivity_db": [-14.0, -16.0, -18.0],
+    "calibration": {
+      "source": "Sentinel-1 SAFE annotation/calibration/calibration-iw-vv.xml (STAC asset schema-calibration-vv; anonymous S3)",
+      "vectors": 27,
+      "samples_per_vector": 642,
+      "A_median": 595.42265
+    },
     "slope_mask_deg": 10.0,
     "min_component_cells": 5,
     "resampling": "average→nearest",
@@ -1323,55 +1342,73 @@ event hindcast.
       "datetime": "2022-06-01T23:39:20.965799Z",
       "platform": "sentinel-1a",
       "relative_orbit": 4,
-      "threshold_db": 20.035442,
-      "observed_area_km2": 202.6602,
-      "observed_water_fraction_of_aoi": 0.054224,
+      "threshold_db": -16.0,
+      "threshold_rationale": "Fixed -16 dB sigma0 threshold for C-band VV open water in monsoon conditions: …",
+      "validity_area_km2": 3737.4381,
+      "modelled_in_validity_km2": 552.2886,
+      "observed_area_km2": 187.6361,
+      "observed_water_fraction_of_aoi": 0.050204,
       "best_match_step": 9,
-      "best_match_iou": 0.12335,
+      "best_match_iou": 0.118948,
       "peak_step": {
         "step": 7,
         "modelled_area_km2": 552.2886,
-        "iou": 0.120288,
-        "precision": 0.146773,
-        "recall": 0.399984,
-        "f1": 0.214745,
-        "area_bias_pct": 172.5195
+        "iou": 0.11446,
+        "precision": 0.137597,
+        "recall": 0.405005,
+        "f1": 0.205409,
+        "area_bias_pct": 194.3403
       },
-      "sensitivity": {
-        "minus2db": { "iou": 0.09991, "precision": 0.116511, "recall": 0.412176 },
-        "plus2db": { "iou": 0.182627, "precision": 0.279717, "recall": 0.344756 }
-      }
+      "sensitivity": [
+        {
+          "threshold_db": -14.0,
+          "observed_area_km2": 223.5275,
+          "observed_water_fraction_of_validity": 0.059808,
+          "true_positive_km2": 87.0818,
+          "false_positive_km2": 465.2068,
+          "false_negative_km2": 136.4457,
+          "iou": 0.126437,
+          "precision": 0.157674,
+          "recall": 0.38958,
+          "f1": 0.224491
+        }
+      ]
     }
   ],
   "summary": {
-    "mean_iou_over_scenes": 0.131668,
-    "mean_precision": 0.16397,
-    "mean_recall": 0.390555,
+    "mean_iou_over_scenes": 0.127049,
+    "mean_precision": 0.154007,
+    "mean_recall": 0.398398,
     "worst_scene": "S1A_IW_GRDH_1SDV_…",
     "caveats": [
       "This is an extent-shape comparison against real Sentinel-1 acquisitions, not an event hindcast. The scenario's stage and duration were not fitted to these dates.",
-      "Absolute SAR calibration was unavailable; masks use an Otsu threshold with a ±2 dB band."
+      "σ0 calibration applied from the SAFE calibration LUT. Residual uncertainty is threshold choice (reported across −14/−16/−18 dB) and GRD geometries co-registered with a GCP-derived affine, not a rigorous terrain-corrected warp."
     ]
   }
 }
 ```
 
-- `observed_area_km2` is the Otsu water area over the observed comparison domain. The domain is
-  the scene footprint ∩ AOI core with coverage ≥0.5 and slope ≤10°; it is not the full AOI.
-- `observed_water_fraction_of_aoi` is `observed_area_km2 / observed_domain_area`. The denominator
-  is the observed AOI footprint (the part of the AOI the slice actually sees), not the full
-  52,240 km² AOI core. This is stated because one GRD slice covers only a fraction of the AOI;
-  the full-AOI footprint share (~7 %) is recorded in the scene cache metadata and the stage log.
+- `method.calibration` records the `schema-calibration-vv` source, `vectors` (27),
+  `samples_per_vector` (642) and `A_median` (595.42); `check-data` requires all four.
+- `validity_area_km2` is the observed comparison domain: scene footprint ∩ AOI core with
+  coverage ≥0.5 and slope ≤10°. It is not the full AOI. `modelled_in_validity_km2` is the S07
+  model area measured inside that same domain; together they make every ratio denominator
+  visible.
+- `observed_area_km2` is the fixed −16 dB σ0 water area over the validity domain.
+- `observed_water_fraction_of_aoi` is `observed_area_km2 / validity_area_km2`. The denominator
+  is the observed AOI footprint, not the full 52,240 km² AOI core. One GRD slice covers only a
+  fraction of the AOI; the full-AOI footprint share (~7 %) is in the scene cache metadata.
 - `best_match_step` and `best_match_iou` are the best of the 12 committed frames. `peak_step`
-  is always S07 and carries the full precision/recall/F1/area-bias row. `modelled_area_km2` is
-  measured on the same observed domain, not on the full frame.
-- `sensitivity.minus2db` and `plus2db` recompute the observed mask at Otsu−2 and Otsu+2 dB and
-  score it against the S07 frame on the same domain. The Otsu row is the `peak_step` metrics.
+  is always S07 and carries the full precision/recall/F1/area-bias row.
+- `sensitivity` is an array of exactly three rows, one per fixed σ0 threshold
+  (−14/−16/−18 dB). Each row publishes `observed_area_km2`, its validity fraction, TP/FP/FN
+  area, IoU, precision, recall and F1, all scored against the same S07 model and domain. The
+  −16 dB row equals the `peak_step` metrics.
 - `summary.mean_iou_over_scenes` is the mean of the per-scene best-match IoU. `mean_precision`
-  and `mean_recall` are the mean of the per-scene **S07** precision/recall. `worst_scene` is the
-  scene with the lowest best-match IoU.
-- The two caveat sentences are required and checked by `check-data`. A low IoU is the finding
-  and ships unchanged.
+  and `mean_recall` are the mean of the per-scene **S07** precision/recall at −16 dB.
+  `worst_scene` is the scene with the lowest best-match IoU.
+- The two caveat sentences are required and checked by `check-data`; no caveat may claim
+  calibration was unavailable. A low IoU is the finding and ships unchanged.
 
 ## 7. Inundation model specification
 
@@ -1924,13 +1961,18 @@ to 1.0 ± 0.01.
 `check-data` also gates the two Phase 1a artifacts:
 
 - `validation/scorecard.json` exists and matches the schema; `collection` is
-  `sentinel-1-grd`, `threshold_method` is `otsu`, `sensitivity_db` is `[-2,0,2]`,
-  `slope_mask_deg` is 10, `min_component_cells` is 5, resampling is `average→nearest`, CRS is
-  `EPSG:32646`, resolution is 90 m; exactly two scenes are present.
-- every `iou`/`precision`/`recall`/`f1` is in `[0,1]`; `observed_area_km2 > 0`;
+  `sentinel-1-grd`, `threshold_method` is `fixed_sigma0`, `threshold_db` is −16,
+  `sensitivity_db` is `[-14,-16,-18]`, `slope_mask_deg` is 10, `min_component_cells` is 5,
+  resampling is `average→nearest`, CRS is `EPSG:32646`, resolution is 90 m; exactly two scenes
+  are present.
+- `method.calibration` is present with a finite, non-null `A_median`, 27 vectors and 642
+  samples per vector; the source names `schema-calibration-vv`.
+- each scene has exactly three sensitivity rows with σ0 thresholds `[-14,-16,-18]`, observed
+  area and all metrics; `validity_area_km2` and `modelled_in_validity_km2` are finite;
+  every `iou`/`precision`/`recall`/`f1` is in `[0,1]`; `observed_area_km2 > 0`;
   `peak_step.step` equals the scenario peak; `worst_scene` names a listed scene; the caveats
-  are non-empty and contain "not an event hindcast" and the missing-absolute-calibration
-  sentence.
+  are non-empty, contain "not an event hindcast", and **no caveat contains "calibration was
+  unavailable"**.
 - every district has a finite `severity_index` in `[0,100]` and a positive `severity_rank`, as
   well as the existing extent `rank`; severity has more than five distinct values; both ranks
   are dense; the published z-score means/stds, product min/max and the min–max formula

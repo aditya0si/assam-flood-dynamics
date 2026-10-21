@@ -67,12 +67,15 @@
     "aws_region": "us-west-2",
     "decimation": 9,
     "resampling": "average",
-    "sensitivity_db": [-2, 0, 2],
+    "calibration_asset": "schema-calibration-vv",
+    "threshold_db": -16.0,
+    "threshold_rationale": "Fixed -16 dB sigma0 threshold for C-band VV open water in monsoon conditions: it sits in the low tail of the calibrated land/water distribution and is stated before scoring; threshold choice, not the LUT, is the dominant residual uncertainty, so -14/-16/-18 dB are all published.",
+    "sensitivity_db": [-14, -16, -18],
     "slope_mask_deg": 10,
     "min_component_cells": 5,
     "coverage_min": 0.90,
     "licence": "Copernicus Sentinel data; Earth Search STAC; anonymous S3 access",
-    "note": "Review 17 P1.1. The measurement COG reports crs None but carries WGS84 GCPs; the stage assigns EPSG:32646 from proj:centroid before reprojection. Otsu is computed on 10*log10(DN) over AOI core pixels only. No absolute dB threshold is hard-coded."
+    "note": "Review 18 fix. The measurement COG reports crs None but carries WGS84 GCPs; the stage assigns EPSG:32646 from proj:centroid before reprojection. The SAFE schema-calibration-vv asset is parsed per vector (27 vectors x 642 samples) and applied as 20*log10(DN/A) with the interpolated sigmaNought LUT. Water is a fixed -16 dB sigma0 threshold; sensitivity is reported at -14/-16/-18 dB in sigma0 space."
   },
   "flood_prone_area": {
     "name": "Government of Assam, Water Resources Department — flood-prone area",

@@ -171,6 +171,6 @@
     "data/risk/hotspots.geojson": { "class": "derived", "tier": "optional", "description": "Derived low-HAND backwater pockets (not breaches)." },
     "data/assets/critical-facilities.geojson": { "class": "source", "tier": "optional", "description": "OSM hospitals/clinics/schools with scenario depth exposure; completeness incomplete-osm." },
     "data/gauges/virtual-gauges.geojson": { "class": "synthetic", "tier": "optional", "description": "Virtual stations on mapped rivers with the synthetic scenario stage; no agency or datum." },
-    "data/validation/scorecard.json": { "class": "derived", "tier": "critical", "description": "Sentinel-1 GRD validation scorecard: extent-shape IoU/precision/recall at Otsu and ±2 dB, not an event hindcast." }
+    "data/validation/scorecard.json": { "class": "derived", "tier": "critical", "description": "Sentinel-1 GRD validation scorecard: calibrated sigma0 extent-shape IoU/precision/recall at fixed -16 dB, sensitivity at -14/-16/-18 dB, not an event hindcast." }
   }
 }

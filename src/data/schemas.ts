@@ -281,9 +281,17 @@ export const districtRiskSchema = z.object({
 });
 
 export const scorecardSensitivitySchema = z.object({
+  /** Fixed sigma0 threshold this row scores, in dB. */
+  threshold_db: z.number(),
+  observed_area_km2: z.number().nonnegative(),
+  observed_water_fraction_of_validity: z.number().min(0).max(1),
+  true_positive_km2: z.number().nonnegative(),
+  false_positive_km2: z.number().nonnegative(),
+  false_negative_km2: z.number().nonnegative(),
   iou: z.number().min(0).max(1),
   precision: z.number().min(0).max(1),
   recall: z.number().min(0).max(1),
+  f1: z.number().min(0).max(1),
 });
 
 export const scorecardPeakSchema = z.object({
@@ -301,17 +309,20 @@ export const scorecardSceneSchema = z.object({
   datetime: z.string().min(1),
   platform: z.string().min(1),
   relative_orbit: z.number().int(),
-  /** REVIEW-17 addition: the Otsu threshold the scene actually chose, in dB. */
+  /** REVIEW-18: fixed sigma0 threshold applied to this scene, in dB. */
   threshold_db: z.number(),
+  threshold_rationale: z.string().min(1),
+  /** Observed comparison domain (coverage >= 0.5, AOI core, slope <= 10 dB). */
+  validity_area_km2: z.number().positive(),
+  /** Peak S07 model area measured inside that same validity domain. */
+  modelled_in_validity_km2: z.number().nonnegative(),
   observed_area_km2: z.number().positive(),
   observed_water_fraction_of_aoi: z.number().min(0).max(1),
   best_match_step: z.number().int().min(0).max(11),
   best_match_iou: z.number().min(0).max(1),
   peak_step: scorecardPeakSchema,
-  sensitivity: z.object({
-    minus2db: scorecardSensitivitySchema,
-    plus2db: scorecardSensitivitySchema,
-  }),
+  /** REVIEW-18: one row per fixed sigma0 threshold (-14/-16/-18 dB). */
+  sensitivity: z.array(scorecardSensitivitySchema).length(3),
 });
 
 export const scorecardSchema = z.object({
@@ -319,8 +330,16 @@ export const scorecardSchema = z.object({
   generated_at: z.string(),
   method: z.object({
     collection: z.literal('sentinel-1-grd'),
-    threshold_method: z.literal('otsu'),
-    sensitivity_db: z.tuple([z.literal(-2), z.literal(0), z.literal(2)]),
+    threshold_method: z.literal('fixed_sigma0'),
+    threshold_db: z.number(),
+    threshold_rationale: z.string().min(1),
+    sensitivity_db: z.tuple([z.literal(-14), z.literal(-16), z.literal(-18)]),
+    calibration: z.object({
+      source: z.string().min(1),
+      vectors: z.number().int().positive(),
+      samples_per_vector: z.number().int().positive(),
+      A_median: z.number().positive(),
+    }),
     slope_mask_deg: z.number(),
     min_component_cells: z.number().int(),
     resampling: z.literal('average→nearest'),

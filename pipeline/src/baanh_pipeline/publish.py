@@ -177,13 +177,15 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
             "notes": (
                 "Two Sentinel-1 IW GRD VV acquisitions (earliest and latest usable "
                 "Jun–Jul 2022 acquisitions over the AOI core). VV is decimated ~1/9 "
-                "with average resampling and converted to 10*log10(DN); the Otsu "
-                "threshold is computed over AOI core pixels only, with a ±2 dB band. "
-                "Water components below 5 analysis cells and DEM slope >10° are "
-                "removed; masks are reprojected nearest to the 90 m frame grid with a "
-                "fractional coverage raster. This is an extent-shape comparison, not "
-                "an event hindcast; absolute SAR calibration was unavailable. Scene "
-                "binaries and masks remain in the gitignored pipeline cache."
+                "with average resampling; the SAFE schema-calibration-vv sigmaNought "
+                "LUT (27 vectors x 642 samples) is applied as 20*log10(DN/A), with the "
+                "sigma0 water mask at a fixed -16 dB and sensitivity published at "
+                "-14/-16/-18 dB. Water components below 5 analysis cells and DEM slope "
+                ">10° are removed; masks are reprojected nearest to the 90 m frame grid "
+                "with a fractional coverage raster. validity_area_km2 and "
+                "modelled_in_validity_km2 are published per scene. This is an "
+                "extent-shape comparison, not an event hindcast; scene binaries and "
+                "masks remain in the gitignored pipeline cache."
             ),
         },
         {
