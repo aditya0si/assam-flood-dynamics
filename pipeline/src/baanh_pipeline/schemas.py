@@ -698,6 +698,90 @@ VALIDATION_SCHEMA = {
     },
 }
 
+VALIDITY_ATTRITION_STEP_SCHEMA = {
+    "type": "object",
+    "required": ["area_km2", "removed_km2", "applied_to_final", "reason"],
+    "properties": {
+        "area_km2": {"type": "number", "minimum": 0},
+        "removed_km2": {"type": "number", "minimum": 0},
+        "applied_to_final": {"type": "boolean"},
+        "reason": {"type": "string", "minLength": 1},
+        "components_before": {"type": "integer", "minimum": 0},
+        "components_after": {"type": "integer", "minimum": 0},
+        "legacy_aoi_core_area_km2": {"type": "number", "minimum": 0},
+        "legacy_aoi_core_removed_km2": {"type": "number", "minimum": 0},
+    },
+}
+
+VALIDITY_ATTRITION_SCHEMA = {
+    "type": "object",
+    "required": [
+        "raw_sar_valid",
+        "slope_filtered",
+        "aoi_clipped",
+        "component_filtered",
+        "final",
+        "with_slope_area_km2",
+        "without_slope_area_km2",
+    ],
+    "properties": {
+        "raw_sar_valid": VALIDITY_ATTRITION_STEP_SCHEMA,
+        "slope_filtered": VALIDITY_ATTRITION_STEP_SCHEMA,
+        "aoi_clipped": VALIDITY_ATTRITION_STEP_SCHEMA,
+        "component_filtered": VALIDITY_ATTRITION_STEP_SCHEMA,
+        "final": VALIDITY_ATTRITION_STEP_SCHEMA,
+        "with_slope_area_km2": {"type": "number", "minimum": 0},
+        "without_slope_area_km2": {"type": "number", "minimum": 0},
+        "legacy_aoi_core_clipped_area_km2": {"type": "number", "minimum": 0},
+        "note": {"type": "string"},
+        "shipped_path": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+SLOPE_FILTER_SCHEMA = {
+    "type": "object",
+    "required": [
+        "operator",
+        "unit",
+        "threshold_deg",
+        "applied_to_validity",
+        "with_slope_area_km2",
+        "without_slope_area_km2",
+        "removed_by_slope_km2",
+        "reason",
+    ],
+    "properties": {
+        "operator": {"type": "string", "minLength": 1},
+        "unit": {"const": "degrees"},
+        "threshold_deg": {"type": "number"},
+        "applied_to_validity": {"type": "boolean"},
+        "with_slope_area_km2": {"type": "number", "minimum": 0},
+        "without_slope_area_km2": {"type": "number", "minimum": 0},
+        "removed_by_slope_km2": {"type": "number", "minimum": 0},
+        "reason": {"type": "string", "minLength": 1},
+    },
+}
+
+MASK_PROVENANCE_SCHEMA = {
+    "type": "object",
+    "required": ["allowed_inputs", "prohibited_inputs", "model_conditioned", "note"],
+    "properties": {
+        "allowed_inputs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"},
+        },
+        "prohibited_inputs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"},
+        },
+        "model_conditioned": {"const": False},
+        "note": {"type": "string", "minLength": 1},
+    },
+}
+
+
 SCORECARD_SCHEMA = {
     "type": "object",
     "required": ["schema_version", "generated_at", "method", "scenes", "summary"],
@@ -714,6 +798,11 @@ SCORECARD_SCHEMA = {
                 "sensitivity_db",
                 "calibration",
                 "slope_mask_deg",
+                "slope_filter",
+                "validity_definition",
+                "mask_stack_version",
+                "scene_area_method",
+                "mask_provenance",
                 "min_component_cells",
                 "resampling",
                 "crs",
@@ -741,6 +830,11 @@ SCORECARD_SCHEMA = {
                     },
                 },
                 "slope_mask_deg": {"const": 10.0},
+                "slope_filter": SLOPE_FILTER_SCHEMA,
+                "validity_definition": {"type": "string", "minLength": 1},
+                "mask_stack_version": {"type": "string", "minLength": 1},
+                "scene_area_method": {"type": "string", "minLength": 1},
+                "mask_provenance": MASK_PROVENANCE_SCHEMA,
                 "min_component_cells": {"const": 5},
                 "resampling": {"const": "average→nearest"},
                 "crs": {"const": "EPSG:32646"},

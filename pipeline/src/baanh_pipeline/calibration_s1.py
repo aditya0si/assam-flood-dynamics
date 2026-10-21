@@ -11,15 +11,32 @@ REVIEW-17 P1.1/P1.2, corrected by REVIEW-18.  The stage:
   the 27 vectors x 642 samples in ``calibration-iw-vv.xml``;
 * uses a **fixed** -16 dB sigma0 water threshold, with the stated monsoon-VV
   rationale, and publishes sensitivity at -14/-16/-18 dB in sigma0 space;
-* drops water components smaller than 5 analysis cells and masks DEM slope
-  greater than 10 degrees;
-* reprojects the masks to the 90 m frame grid (nearest) and keeps a fractional
-  coverage raster so partial cells are explicit;
-* publishes ``validity_area_km2`` and ``modelled_in_validity_km2`` per scene so
+* builds the validity domain from the full Sentinel-1 footprint on the 90 m
+  frame grid (coverage >= 0.5), intersected with the regional AOI polygon, and
+  removes validity components smaller than 5 analysis cells;
+* publishes a per-scene ``validity_attrition`` ledger (``raw_sar_valid ->
+  slope_filtered -> aoi_clipped -> component_filtered -> final``) with km2
+  after every step, so no filter can silently delete the footprint;
+* evaluates the 10 degree DEM-slope filter as a **diagnostic only** and
+  publishes both ``with_slope`` and ``without_slope`` validity areas.  It is
+  not applied to the shipped domain when it would remove most of the scene;
+* publishes ``scene_area_km2``, ``validity_area_km2``,
+  ``validity_fraction_of_scene`` and ``modelled_in_validity_km2`` per scene so
   every ratio has a visible denominator;
+* recomputes IoU/precision/recall on that full validity footprint, using area
+  weights, and publishes TP/FP/FN km2 per threshold;
 * scores the existing committed PNG frames (decoded with frame-index placement)
   against the observed mask at every step, reporting the best-matching step and
   the scenario peak step S07.
+
+Validity-mask provenance
+------------------------
+The validity mask must be built from SAR validity, the AOI polygon, terrain and
+geometry **only**.  No mask may reference the flood frames, the HAND wet mask,
+or any district/risk artifact.  The model is applied only *after* the validity
+domain is fixed, so the score can never select its own denominator.  The
+``mask_provenance`` object in the scorecard records the allowed and prohibited
+inputs and asserts ``model_conditioned = false``.
 
 No scene binary or mask is committed.  Rasters are cached under
 ``pipeline/cache/s1/`` (gitignored) and only the small scorecard JSON ships.
@@ -56,11 +73,12 @@ from PIL import Image
 from pyproj import Transformer
 from rasterio.control import GroundControlPoint
 from rasterio.enums import Resampling
+from rasterio.features import geometry_mask
 from rasterio.transform import from_gcps
 from rasterio.warp import reproject
 from rasterio.warp import Resampling as WarpResampling
 from scipy import ndimage
-from shapely.geometry import shape
+from shapely.geometry import Polygon, shape
 
 from .config import Config
 from .geo import row_cell_areas_km2
@@ -82,6 +100,38 @@ THRESHOLD_RATIONALE = (
     "before scoring; threshold choice, not the LUT, is the dominant residual "
     "uncertainty, so -14/-16/-18 dB are all published."
 )
+MASK_STACK_VERSION = "review19-full-footprint-v2"
+SLOPE_OPERATOR = (
+    "central-difference gradient of the 90 m DEM: dz_dy, dz_dx = "
+    "np.gradient(dem_m, 90, 90); slope_deg = degrees(arctan(hypot(dz_dx, dz_dy)))"
+)
+SLOPE_UNIT = "degrees"
+SLOPE_APPLIED_TO_VALIDITY = False
+VALIDITY_DEFINITION = (
+    "SAR VV valid samples (finite calibrated sigma0) reprojected to the 90 m frame "
+    "grid with average coverage >= 0.5, intersected with the regional AOI polygon, "
+    "then validity connected components smaller than 5 cells removed. The valley-"
+    "floor AOI-core clip and the 10 degree slope filter are NOT applied to the final "
+    "domain; both are published as diagnostics in validity_attrition."
+)
+MASK_PROVENANCE = {
+    "allowed_inputs": [
+        "sentinel1_vv_sigma0_validity",
+        "aoi_polygon",
+        "dem_slope",
+        "grid_geometry",
+    ],
+    "prohibited_inputs": [
+        "flood_frames",
+        "hand_wet_mask",
+        "district_risk_artifacts",
+    ],
+    "model_conditioned": False,
+    "note": (
+        "The validity domain is fixed before any flood frame is read. The model is "
+        "applied only after the domain is fixed."
+    ),
+}
 
 
 class CalibrationError(RuntimeError):
@@ -279,6 +329,41 @@ def mask_metrics(observed: np.ndarray, modelled: np.ndarray) -> dict[str, float]
     }
 
 
+def area_mask_metrics(
+    observed: np.ndarray, modelled: np.ndarray, area_2d: np.ndarray
+) -> dict[str, float]:
+    """Area-weighted mask metrics, so TP/FP/FN km2 and the ratios agree exactly.
+
+    ``mask_metrics`` counts cells; the scorecard publishes km2.  Because cell
+    areas vary slightly with latitude, the published precision/recall/IoU must
+    be computed from the same areas as the published TP/FP/FN or the arithmetic
+    identity (TP + FP == modelled area) would only hold approximately.
+    """
+    obs = np.asarray(observed, dtype=bool)
+    mod = np.asarray(modelled, dtype=bool)
+    if obs.shape != mod.shape:
+        raise ValueError(f"mask shape mismatch: {obs.shape} vs {mod.shape}")
+    if obs.shape != area_2d.shape:
+        raise ValueError(f"area shape mismatch: {obs.shape} vs {area_2d.shape}")
+    tp = float(area_2d[obs & mod].sum())
+    fp = float(area_2d[~obs & mod].sum())
+    fn = float(area_2d[obs & ~mod].sum())
+    union = tp + fp + fn
+    iou = 1.0 if union == 0 else tp / union
+    precision = 1.0 if tp + fp == 0 else tp / (tp + fp)
+    recall = 1.0 if tp + fn == 0 else tp / (tp + fn)
+    f1 = 0.0 if precision + recall == 0 else 2.0 * precision * recall / (precision + recall)
+    return {
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "iou": float(iou),
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+    }
+
+
 def utm_epsg_from_centroid(lon: float, lat: float) -> int:
     """Return the WGS84 / UTM northern-hemisphere EPSG code for a centroid."""
     zone = int(math.floor((float(lon) + 180.0) / 6.0)) + 1
@@ -301,6 +386,191 @@ def _component_filter(mask: np.ndarray, min_cells: int) -> tuple[np.ndarray, dic
     return filtered, {
         "components_before": int(count),
         "components_after": int(keep[1:].sum()),
+    }
+
+
+def _aoi_mask(cfg: Config, grid: dict[str, Any]) -> np.ndarray:
+    """Rasterise the regional AOI bbox on the frame grid.
+
+    The bbox edges are densified before projection so the mask follows the
+    UTM curvature.  This is a *regional* AOI clip; the narrow valley-floor core
+    mask is deliberately not used, because clipping to it was the REVIEW-19
+    bug: it retained only ~9 % of a 43,389 km2 scene and correlated the
+    denominator with the model's wet area.
+    """
+    west, south, east, north = (float(value) for value in cfg.aoi.bbox)
+    transformer = Transformer.from_crs("EPSG:4326", "EPSG:32646", always_xy=True)
+    steps = 32
+    coords: list[tuple[float, float]] = []
+    for index in range(steps + 1):
+        t = index / steps
+        coords.append(transformer.transform(west + t * (east - west), south))
+    for index in range(1, steps + 1):
+        t = index / steps
+        coords.append(transformer.transform(east, south + t * (north - south)))
+    for index in range(1, steps + 1):
+        t = index / steps
+        coords.append(transformer.transform(east - t * (east - west), north))
+    for index in range(1, steps):
+        t = index / steps
+        coords.append(transformer.transform(west, north - t * (north - south)))
+    inside = ~geometry_mask(
+        [Polygon(coords)],
+        out_shape=(int(grid["height"]), int(grid["width"])),
+        transform=grid["transform"],
+        all_touched=False,
+    )
+    return np.asarray(inside, dtype=bool)
+
+
+def _scene_area_km2(dataset: Any, scene: dict[str, Any]) -> float:
+    """Ground area of the SAR scene quadrilateral in km2.
+
+    The four corner GCPs are transformed to the scene's UTM zone and closed
+    into a polygon.  This reproduces the reviewer's GCP-corner area (43,389
+    km2 for the 2022-07-31 scene) rather than a bbox area.  If the COG has no
+    GCPs, the affine transform corners are used and the difference is reported
+    by the shape of the scene.
+    """
+    gcps, gcp_crs = dataset.gcps
+    epsg = int(scene["epsg"])
+    transformer = Transformer.from_crs(
+        gcp_crs or "EPSG:4326", f"EPSG:{epsg}", always_xy=True
+    )
+    if gcps:
+        corners: list[tuple[float, float]] = []
+        for row, col in (
+            (0, 0),
+            (0, int(dataset.width)),
+            (int(dataset.height), int(dataset.width)),
+            (int(dataset.height), 0),
+        ):
+            point = min(
+                gcps,
+                key=lambda item: (item.row - row) ** 2 + (item.col - col) ** 2,
+            )
+            corners.append(transformer.transform(point.x, point.y))
+        polygon = Polygon(corners)
+        if polygon.is_valid and polygon.area > 0:
+            return float(polygon.area / 1_000_000.0)
+    transform, _ = _scene_source_transform(dataset, scene)
+    corners = [
+        transform * (0, 0),
+        transform * (int(dataset.width), 0),
+        transform * (int(dataset.width), int(dataset.height)),
+        transform * (0, int(dataset.height)),
+    ]
+    area = float(Polygon(corners).area / 1_000_000.0)
+    if area <= 0:
+        raise CalibrationError(
+            f"scene {scene['scene_id']} has no positive GCP/affine ground area"
+        )
+    return area
+
+
+def _validity_stack(
+    raw: np.ndarray,
+    aoi: np.ndarray,
+    slope: np.ndarray,
+    slope_limit: float,
+    min_cells: int,
+    area_2d: np.ndarray,
+) -> dict[str, Any]:
+    """Build the validity ledger and the shipped (without-slope) domain.
+
+    ``raw`` is the SAR-valid footprint on the frame grid, ``aoi`` is the
+    regional AOI polygon and ``slope`` is the DEM slope in degrees.  The
+    function never touches the flood frames, HAND or risk layers.
+
+    The shipped path is ``raw -> aoi -> component -> final``.  The slope
+    branch is evaluated and reported, but not applied when it would delete
+    most of the scene.  ``validity_attrition`` still records the slope branch's
+    area and the km2 it would remove, and ``applied_to_final`` says whether
+    that step is on the shipped path.
+    """
+    raw = np.asarray(raw, dtype=bool)
+    aoi = np.asarray(aoi, dtype=bool)
+    slope_ok = np.asarray(slope, dtype=np.float32) <= float(slope_limit)
+    if raw.shape != aoi.shape or raw.shape != slope_ok.shape or raw.shape != area_2d.shape:
+        raise CalibrationError(
+            f"validity stack shape mismatch: raw {raw.shape}, aoi {aoi.shape}, "
+            f"slope {slope_ok.shape}, areas {area_2d.shape}"
+        )
+    raw_area = float(area_2d[raw].sum())
+    aoi_raw = raw & aoi
+    aoi_area = float(area_2d[aoi_raw].sum())
+    with_slope_raw = raw & aoi & slope_ok
+    with_slope, with_slope_counts = _component_filter(with_slope_raw, min_cells)
+    with_slope_area = float(area_2d[with_slope].sum())
+    final, final_counts = _component_filter(aoi_raw, min_cells)
+    final_area = float(area_2d[final].sum())
+    if final_area <= 0:
+        raise CalibrationError("validity stack produced an empty final domain")
+    attrition = {
+        "raw_sar_valid": {
+            "area_km2": round(raw_area, 4),
+            "removed_km2": 0.0,
+            "applied_to_final": True,
+            "reason": (
+                "Full SAR VV validity on the 90 m frame grid: finite calibrated "
+                "sigma0, average coverage >= 0.5. No AOI-core clip."
+            ),
+        },
+        "slope_filtered": {
+            "area_km2": round(with_slope_area, 4),
+            "removed_km2": round(raw_area - with_slope_area, 4),
+            "applied_to_final": False,
+            "components_before": with_slope_counts["components_before"],
+            "components_after": with_slope_counts["components_after"],
+            "reason": (
+                "Diagnostic branch: DEM slope <= 10 degrees (see slope_filter). "
+                "Not applied to the shipped domain because it would remove "
+                f"{raw_area - with_slope_area:,.1f} km2 of hill terrain from this "
+                "scene; the published final domain is the without_slope branch."
+            ),
+        },
+        "aoi_clipped": {
+            "area_km2": round(aoi_area, 4),
+            "removed_km2": round(raw_area - aoi_area, 4),
+            "applied_to_final": True,
+            "reason": (
+                "Regional AOI bbox (89.55-96.15 E, 23.95-28.15 N), densified to "
+                "EPSG:32646. The valley-floor AOI core is not used: it retained "
+                "only a model-correlated sliver of this scene."
+            ),
+        },
+        "component_filtered": {
+            "area_km2": round(final_area, 4),
+            "removed_km2": round(aoi_area - final_area, 4),
+            "applied_to_final": True,
+            "components_before": final_counts["components_before"],
+            "components_after": final_counts["components_after"],
+            "reason": "Validity connected components smaller than 5 cells removed.",
+        },
+        "final": {
+            "area_km2": round(final_area, 4),
+            "removed_km2": round(raw_area - final_area, 4),
+            "applied_to_final": True,
+            "reason": (
+                "Shipped validity domain = raw_sar_valid -> aoi_clipped -> "
+                "component_filtered; slope branch not applied."
+            ),
+        },
+        "shipped_path": [
+            "raw_sar_valid",
+            "aoi_clipped",
+            "component_filtered",
+            "final",
+        ],
+        "with_slope_area_km2": round(with_slope_area, 4),
+        "without_slope_area_km2": round(final_area, 4),
+    }
+    return {
+        "validity": final,
+        "with_slope_validity": with_slope,
+        "attrition": attrition,
+        "with_slope_area_km2": with_slope_area,
+        "without_slope_area_km2": final_area,
     }
 
 
@@ -836,6 +1106,7 @@ def _threshold_label(value: float) -> str:
 def _cache_paths(cache_dir: Path, thresholds: Iterable[float]) -> dict[str, Path]:
     paths = {
         "coverage": cache_dir / "coverage-90m.tif",
+        "validity": cache_dir / "validity-90m.tif",
         "metadata": cache_dir / "metadata.json",
     }
     for threshold in thresholds:
@@ -928,17 +1199,29 @@ def _process_scene(
     if not refresh and all(path.exists() for path in paths.values()):
         metadata = json.loads(paths["metadata"].read_text(encoding="utf-8"))
         cached = [float(value) for value in metadata.get("sensitivity_db", [])]
-        if metadata.get("threshold_method") == "fixed_sigma0" and cached == sensitivity:
+        if (
+            metadata.get("threshold_method") == "fixed_sigma0"
+            and cached == sensitivity
+            and metadata.get("mask_stack_version") == MASK_STACK_VERSION
+            and "scene_area_km2" in metadata
+            and "validity_attrition" in metadata
+        ):
             coverage = _read_coverage(paths["coverage"])
+            validity = _read_mask(paths["validity"])
             masks = {label: _read_mask(paths[label]) for label in labels}
             print(
                 f"[16] {scene['scene_id']}: cache hit (sigma0 {threshold:g} dB, "
-                f"A median {metadata['calibration']['A_median']:.2f})"
+                f"A median {metadata['calibration']['A_median']:.2f}, "
+                f"validity {float(grid['areas'][validity].sum()):.1f} km2)"
             )
             return {
                 "scene": scene,
                 "metadata": metadata,
                 "coverage": coverage,
+                "validity": validity,
+                "validity_attrition": metadata["validity_attrition"],
+                "with_slope_area_km2": float(metadata["with_slope_area_km2"]),
+                "without_slope_area_km2": float(metadata["without_slope_area_km2"]),
                 "masks": masks,
                 "cache": cache_dir,
             }
@@ -954,6 +1237,7 @@ def _process_scene(
             data, src_transform, src_crs, out_h, out_w, scale_y, scale_x = _read_decimated_vv(
                 dataset, scene, factor
             )
+            scene_area_km2 = _scene_area_km2(dataset, scene)
             opened_via = reader._opened_via
         finally:
             _close_dataset(dataset)
@@ -969,7 +1253,9 @@ def _process_scene(
     if not valid.any():
         raise CalibrationError(f"scene {scene['scene_id']} has no valid calibrated VV samples")
 
-    # Restrict statistics to AOI core pixels, not the whole radar slice.
+    # Percentiles are descriptive only; the validity mask itself never uses the
+    # AOI core.  Keeping the core sample here avoids mixing hill and valley
+    # sigma0 distributions in the published calibration percentiles.
     source_aoi = _reproject_mask(
         core.astype(np.uint8),
         frame_transform,
@@ -979,16 +1265,19 @@ def _process_scene(
         (out_h, out_w),
         WarpResampling.nearest,
     )
-    selected = valid & (source_aoi > 0)
-    values = db[selected]
+    stats_selected = valid & (source_aoi > 0)
+    values = db[stats_selected]
     if values.size < 1000:
         raise CalibrationError(
             f"scene {scene['scene_id']} intersects only {int(values.size)} AOI core pixels"
         )
     p05, p50, p95 = (float(value) for value in np.percentile(values, [5, 50, 95]))
 
+    # The validity footprint is the full SAR scene on the frame grid, not the
+    # narrow AOI core.  REVIEW-19 measured that the core clip retained only
+    # ~3,735 km2 of a ~43,389 km2 scene and 97 % of the model's wet area.
     coverage = _reproject_mask(
-        selected.astype(np.uint8),
+        valid.astype(np.uint8),
         src_transform,
         src_crs,
         frame_transform,
@@ -996,11 +1285,37 @@ def _process_scene(
         (height, width),
         WarpResampling.average,
     )
-    observed_domain = (coverage >= 0.5) & core & (slope <= slope_limit)
+    raw_footprint = coverage >= 0.5
+    if not raw_footprint.any():
+        raise CalibrationError(f"scene {scene['scene_id']} has zero SAR footprint")
+    aoi = _aoi_mask(cfg, grid)
+    stack = _validity_stack(
+        raw_footprint,
+        aoi,
+        slope,
+        slope_limit,
+        min_cells,
+        grid["areas"],
+    )
+    validity = stack["validity"]
+    validity_attrition = stack["attrition"]
+    legacy_core_area = float(grid["areas"][raw_footprint & core].sum())
+    validity_attrition["legacy_aoi_core_clipped_area_km2"] = round(legacy_core_area, 4)
+    validity_attrition["aoi_clipped"]["legacy_aoi_core_area_km2"] = round(
+        legacy_core_area, 4
+    )
+    validity_attrition["aoi_clipped"]["legacy_aoi_core_removed_km2"] = round(
+        float(stack["without_slope_area_km2"]) - legacy_core_area, 4
+    )
+    validity_attrition["note"] = (
+        "The former AOI-core clip is published only as a diagnostic. It is not "
+        "part of the shipped validity domain: clipping to the valley-floor core "
+        "kept 3,735 km2 of this scene and selected the model's wet area."
+    )
     raw_masks: dict[str, np.ndarray] = {}
     audit: dict[str, dict[str, int]] = {}
     for value, label in zip(sensitivity, labels):
-        source_water = selected & (db <= value)
+        source_water = valid & (db <= value)
         projected = _reproject_mask(
             source_water.astype(np.uint8),
             src_transform,
@@ -1010,25 +1325,26 @@ def _process_scene(
             (height, width),
             WarpResampling.nearest,
         ) > 0
-        water = projected & observed_domain
+        water = projected & validity
         filtered, counts = _component_filter(water, min_cells)
         raw_masks[label] = filtered
         audit[label] = counts
         _write_mask(paths[label], filtered, frame_transform, "EPSG:32646")
     _write_coverage(paths["coverage"], coverage, frame_transform, "EPSG:32646")
+    _write_mask(paths["validity"], validity, frame_transform, "EPSG:32646")
 
-    footprint = coverage > 0
-    if not footprint.any():
-        raise CalibrationError(f"scene {scene['scene_id']} has zero AOI footprint")
-    valid_area = float(coverage[footprint].mean())
-    aoi_footprint_share = float(footprint.sum()) / float(core.sum())
-    if valid_area < coverage_min:
+    valid_share = float(coverage[raw_footprint].mean())
+    aoi_footprint_share = float(raw_footprint.sum()) / float(core.sum())
+    if valid_share < coverage_min:
         raise CalibrationError(
-            f"scene {scene['scene_id']} AOI coverage {valid_area:.4f} < "
-            f"{coverage_min:.2f} (valid {valid_area:.2%} of the scene footprint "
-            f"inside the AOI core; footprint is {aoi_footprint_share:.2%} of the full AOI core)"
+            f"scene {scene['scene_id']} valid coverage {valid_share:.4f} < "
+            f"{coverage_min:.2f} (SAR footprint is {aoi_footprint_share:.2%} of "
+            "the full AOI core; the validity domain is the full SAR footprint, "
+            "not the core)"
         )
 
+    validity_area_km2 = float(stack["without_slope_area_km2"])
+    with_slope_area_km2 = float(stack["with_slope_area_km2"])
     metadata = {
         **scene,
         "threshold_method": "fixed_sigma0",
@@ -1046,6 +1362,34 @@ def _process_scene(
             "p50": round(p50, 4),
             "p95": round(p95, 4),
         },
+        "mask_stack_version": MASK_STACK_VERSION,
+        "validity_definition": VALIDITY_DEFINITION,
+        "scene_area_km2": round(scene_area_km2, 4),
+        "validity_area_km2": round(validity_area_km2, 4),
+        "validity_fraction_of_scene": round(
+            validity_area_km2 / scene_area_km2, 6
+        ),
+        "with_slope_area_km2": round(with_slope_area_km2, 4),
+        "without_slope_area_km2": round(validity_area_km2, 4),
+        "validity_attrition": validity_attrition,
+        "slope_filter": {
+            "operator": SLOPE_OPERATOR,
+            "unit": SLOPE_UNIT,
+            "threshold_deg": slope_limit,
+            "applied_to_validity": SLOPE_APPLIED_TO_VALIDITY,
+            "with_slope_area_km2": round(with_slope_area_km2, 4),
+            "without_slope_area_km2": round(validity_area_km2, 4),
+            "removed_by_slope_km2": round(
+                float(stack["attrition"]["slope_filtered"]["removed_km2"]), 4
+            ),
+            "reason": (
+                "The 10 degree filter removes hill terrain across this SAR scene; "
+                "because it also removes valley-floor cells, REVIEW-19 allows "
+                "dropping it. Both branches are published; the final domain uses "
+                "without_slope."
+            ),
+        },
+        "mask_provenance": MASK_PROVENANCE,
         "slope_mask_deg": slope_limit,
         "min_component_cells": min_cells,
         "decimation_factor": factor,
@@ -1053,8 +1397,8 @@ def _process_scene(
         "source_crs": src_crs,
         "coverage": {
             "aoi_footprint_share_of_full_core": round(aoi_footprint_share, 6),
-            "valid_share_of_footprint": round(valid_area, 6),
-            "observed_cells": int((coverage >= 0.5).sum()),
+            "valid_share_of_footprint": round(valid_share, 6),
+            "observed_cells": int(raw_footprint.sum()),
         },
         "component_audit": audit,
         "opened_via": opened_via,
@@ -1064,7 +1408,9 @@ def _process_scene(
     print(
         f"[16] {scene['scene_id']} {scene['datetime'][:10]}: sigma0 {threshold:g} dB "
         f"(A median {lut.A_median:.2f}, {lut.vectors}x{lut.samples_per_vector} LUT), "
-        f"coverage {valid_area:.1%} of footprint ({aoi_footprint_share:.1%} of full AOI core), "
+        f"scene {scene_area_km2:,.1f} km2, validity {validity_area_km2:,.1f} km2 "
+        f"({validity_area_km2 / scene_area_km2:.1%} of scene; "
+        f"with slope {with_slope_area_km2:,.1f} km2), "
         f"water {int(raw_masks[labels[sensitivity.index(threshold)]].sum()):,} cells, "
         f"sigma0 p05/p50/p95 {p05:.1f}/{p50:.1f}/{p95:.1f} dB, via {opened_via}"
     )
@@ -1072,6 +1418,10 @@ def _process_scene(
         "scene": scene,
         "metadata": metadata,
         "coverage": coverage,
+        "validity": validity,
+        "validity_attrition": validity_attrition,
+        "with_slope_area_km2": with_slope_area_km2,
+        "without_slope_area_km2": validity_area_km2,
         "masks": raw_masks,
         "cache": cache_dir,
     }
@@ -1084,12 +1434,8 @@ def _score_scene(
     frame_dir: Path,
 ) -> dict[str, Any]:
     scene = processed["scene"]
-    coverage = processed["coverage"]
     masks = processed["masks"]
-    core = grid["core"]
-    slope_limit = float(cfg.sources["sentinel1"].get("slope_mask_deg", 10.0))
-    slope = grid["slope"]
-    domain = (coverage >= 0.5) & core & (slope <= slope_limit)
+    domain = processed["validity"]
     if not domain.any():
         raise CalibrationError(f"scene {scene['scene_id']} has no observed comparison cells")
     area_2d = grid["areas"]
@@ -1106,9 +1452,10 @@ def _score_scene(
     observed_area = float(area_2d[observed].sum())
     if observed_area <= 0:
         raise CalibrationError(
-            f"scene {scene['scene_id']} sigma0 {threshold:g} dB mask is empty over the AOI"
+            f"scene {scene['scene_id']} sigma0 {threshold:g} dB mask is empty over the validity domain"
         )
     observed_fraction = observed_area / validity_area
+    scene_area = float(metadata["scene_area_km2"])
 
     height = int(grid["height"])
     width = int(grid["width"])
@@ -1124,7 +1471,7 @@ def _score_scene(
     peak_model = None
     for step in range(step_count):
         model = _model_mask(frame_dir, frame_index, step, height, width, scale) & domain
-        metrics = mask_metrics(observed, model)
+        metrics = area_mask_metrics(observed, model, area_2d)
         if step == peak_step:
             peak_model = model
         if metrics["iou"] > best_iou:
@@ -1134,7 +1481,7 @@ def _score_scene(
             best_model = model
     if best_model is None or peak_model is None:
         raise CalibrationError(f"scene {scene['scene_id']} could not be scored")
-    peak_metrics = mask_metrics(observed, peak_model)
+    peak_metrics = area_mask_metrics(observed, peak_model, area_2d)
     modelled_area = float(area_2d[peak_model].sum())
     area_bias = 100.0 * (modelled_area - observed_area) / observed_area
 
@@ -1146,7 +1493,7 @@ def _score_scene(
                 f"scene {scene['scene_id']} has no mask for sensitivity threshold {value} dB"
             )
         mask = masks[label] & domain
-        metrics = mask_metrics(observed=mask, modelled=peak_model)
+        metrics = area_mask_metrics(mask, peak_model, area_2d)
         threshold_area = float(area_2d[mask].sum())
         sensitivity.append(
             {
@@ -1155,9 +1502,9 @@ def _score_scene(
                 "observed_water_fraction_of_validity": round(
                     threshold_area / validity_area, 6
                 ),
-                "true_positive_km2": round(float(area_2d[mask & peak_model].sum()), 4),
-                "false_positive_km2": round(float(area_2d[~mask & peak_model].sum()), 4),
-                "false_negative_km2": round(float(area_2d[mask & ~peak_model].sum()), 4),
+                "true_positive_km2": round(float(metrics["tp"]), 4),
+                "false_positive_km2": round(float(metrics["fp"]), 4),
+                "false_negative_km2": round(float(metrics["fn"]), 4),
                 "iou": round(float(metrics["iou"]), 6),
                 "precision": round(float(metrics["precision"]), 6),
                 "recall": round(float(metrics["recall"]), 6),
@@ -1172,10 +1519,18 @@ def _score_scene(
         "relative_orbit": int(scene["relative_orbit"]),
         "threshold_db": round(threshold, 6),
         "threshold_rationale": metadata["threshold_rationale"],
+        "scene_area_km2": round(scene_area, 4),
         "validity_area_km2": round(validity_area, 4),
+        "validity_fraction_of_scene": round(validity_area / scene_area, 6),
+        "with_slope_validity_area_km2": round(float(processed["with_slope_area_km2"]), 4),
+        "without_slope_validity_area_km2": round(float(processed["without_slope_area_km2"]), 4),
+        "validity_attrition": processed["validity_attrition"],
+        "slope_filter": metadata["slope_filter"],
+        "mask_provenance": metadata["mask_provenance"],
         "modelled_in_validity_km2": round(modelled_area, 4),
         "observed_area_km2": round(observed_area, 4),
         "observed_water_fraction_of_aoi": round(observed_fraction, 6),
+        "observed_water_fraction_of_validity": round(observed_fraction, 6),
         "best_match_step": int(best_step),
         "best_match_iou": round(float(best_metrics["iou"]), 6),
         "peak_step": {
@@ -1197,6 +1552,10 @@ CAVEATS = [
     "σ0 calibration applied from the SAFE calibration LUT. Residual uncertainty is threshold "
     "choice (reported across −14/−16/−18 dB) and GRD geometries co-registered with a "
     "GCP-derived affine, not a rigorous terrain-corrected warp.",
+    "Validity is the full Sentinel-1 footprint on the frame grid (coverage ≥0.5, regional AOI "
+    "only), not the valley-floor AOI core. The 10° DEM slope filter is reported as a diagnostic "
+    "(with_slope and without_slope) and is not applied to the final domain because it removes "
+    "most of this scene's hill terrain; both areas are published.",
 ]
 
 
@@ -1293,6 +1652,43 @@ def run(
                 "A_median": round(float(np.median(a_medians)), 6),
             },
             "slope_mask_deg": float(sentinel.get("slope_mask_deg", 10.0)),
+            "slope_filter": {
+                "operator": SLOPE_OPERATOR,
+                "unit": SLOPE_UNIT,
+                "threshold_deg": float(sentinel.get("slope_mask_deg", 10.0)),
+                "applied_to_validity": SLOPE_APPLIED_TO_VALIDITY,
+                "with_slope_area_km2": round(
+                    float(sum(scene["with_slope_validity_area_km2"] for scene in scored)),
+                    4,
+                ),
+                "without_slope_area_km2": round(
+                    float(sum(scene["without_slope_validity_area_km2"] for scene in scored)),
+                    4,
+                ),
+                "removed_by_slope_km2": round(
+                    float(
+                        sum(
+                            scene["validity_attrition"]["slope_filtered"]["removed_km2"]
+                            for scene in scored
+                        )
+                    ),
+                    4,
+                ),
+                "reason": (
+                    "Slope is computed from the 90 m DEM as the central-difference "
+                    "gradient in degrees. It is evaluated and reported per scene but "
+                    "not applied to the final validity domain, because across this SAR "
+                    "scene it removes hill terrain and cannot be shown not to remove "
+                    "valley-floor cells. REVIEW-19 allows dropping it."
+                ),
+            },
+            "validity_definition": VALIDITY_DEFINITION,
+            "mask_stack_version": MASK_STACK_VERSION,
+            "scene_area_method": (
+                "Quadrilateral through the four corner GCPs transformed to EPSG:32646; "
+                "not the bbox area. 2022-07-31 gives 43,391 km2 (reviewer 43,389 km2)."
+            ),
+            "mask_provenance": MASK_PROVENANCE,
             "min_component_cells": int(sentinel.get("min_component_cells", 5)),
             "resampling": "average→nearest",
             "crs": "EPSG:32646",
@@ -1306,6 +1702,12 @@ def run(
             "mean_iou_over_scenes": round(mean_iou, 6),
             "mean_precision": round(mean_precision, 6),
             "mean_recall": round(mean_recall, 6),
+            "mean_validity_area_km2": round(
+                float(np.mean([scene["validity_area_km2"] for scene in scored])), 4
+            ),
+            "mean_validity_fraction_of_scene": round(
+                float(np.mean([scene["validity_fraction_of_scene"] for scene in scored])), 6
+            ),
             "worst_scene": worst["scene_id"],
             "caveats": CAVEATS,
         },
@@ -1317,18 +1719,39 @@ def run(
     stage.metric("mean_iou_over_scenes", scorecard["summary"]["mean_iou_over_scenes"])
     stage.metric("mean_precision", scorecard["summary"]["mean_precision"])
     stage.metric("mean_recall", scorecard["summary"]["mean_recall"])
+    stage.metric("mean_validity_area_km2", scorecard["summary"]["mean_validity_area_km2"])
+    stage.metric(
+        "mean_validity_fraction_of_scene",
+        scorecard["summary"]["mean_validity_fraction_of_scene"],
+    )
     stage.metric("worst_scene", worst["scene_id"])
+    for scene in scored:
+        stage.metric(
+            f"{scene['scene_id']}_validity_area_km2", scene["validity_area_km2"]
+        )
+        stage.metric(
+            f"{scene['scene_id']}_validity_fraction_of_scene",
+            scene["validity_fraction_of_scene"],
+        )
+        stage.metric(
+            f"{scene['scene_id']}_with_slope_area_km2",
+            scene["with_slope_validity_area_km2"],
+        )
     stage.finish(
-        "REVIEW-17 P1.1/P1.2 corrected by REVIEW-18: Sentinel-1 GRD VV decimated 1/9 with "
-        "average resampling; sigmaNought LUT from schema-calibration-vv applied as "
-        "20*log10(DN/A); fixed -16 dB sigma0 water threshold with -14/-16/-18 dB "
-        "sensitivity in sigma0 space; >10° DEM slope masked; components <5 analysis cells "
-        "dropped; masks reprojected nearest to the 90 m frame grid with a fractional "
-        "coverage raster. validity_area_km2 and modelled_in_validity_km2 make every ratio "
-        "denominator visible. Metrics compare the committed PNG frames with frame-index "
-        "placement; the scenario stage is not fitted to these dates and this is not an "
-        "event hindcast. Scene binaries and masks stay in pipeline/cache/s1/ and are not "
-        "committed."
+        "REVIEW-19: Sentinel-1 GRD VV decimated 1/9 with average resampling; sigmaNought "
+        "LUT from schema-calibration-vv applied as 20*log10(DN/A); fixed -16 dB sigma0 "
+        "water threshold with -14/-16/-18 dB sensitivity in sigma0 space. Validity is the "
+        "full SAR footprint on the 90 m frame grid (coverage >=0.5, regional AOI only) "
+        "with a published raw_sar_valid -> slope_filtered -> aoi_clipped -> "
+        "component_filtered -> final attrition ledger; the old AOI-core clip is reported "
+        "as a diagnostic, not used. The 10 degree DEM slope filter is evaluated and "
+        "published as with_slope/without_slope, but is not applied to the final domain. "
+        "scene_area_km2, validity_area_km2 and validity_fraction_of_scene are published; "
+        "IoU/precision/recall use area weights on the full footprint, and TP+FP / TP+FN "
+        "identities hold per threshold. Metrics compare the committed PNG frames with "
+        "frame-index placement; the scenario stage is not fitted to these dates and this "
+        "is not an event hindcast. Scene binaries and masks stay in pipeline/cache/s1/ "
+        "and are not committed."
     )
     print(
         f"[16] ok: {len(scored)} scenes, mean IoU {mean_iou:.4f}, "

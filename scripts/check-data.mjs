@@ -373,6 +373,39 @@ check('P1.2 Sentinel-1 scorecard: schema, method, metrics and caveats', () => {
     `method.calibration.source does not name schema-calibration-vv: ${method.calibration.source}`,
   );
   assert(method.slope_mask_deg === 10, `slope_mask_deg is ${method.slope_mask_deg}`);
+  assert(
+    method.slope_filter && typeof method.slope_filter === 'object',
+    'method.slope_filter is missing',
+  );
+  assert(
+    method.slope_filter.unit === 'degrees',
+    `method.slope_filter.unit is ${method.slope_filter.unit}, expected degrees`,
+  );
+  assert(
+    method.slope_filter.threshold_deg === 10,
+    `method.slope_filter.threshold_deg is ${method.slope_filter.threshold_deg}`,
+  );
+  assert(
+    typeof method.slope_filter.operator === 'string' &&
+      method.slope_filter.operator.includes('gradient') &&
+      method.slope_filter.operator.includes('arctan'),
+    `method.slope_filter.operator is not the documented gradient operator: ${method.slope_filter.operator}`,
+  );
+  assert(
+    method.slope_filter.applied_to_validity === false,
+    'method.slope_filter must be a diagnostic, not applied to validity',
+  );
+  assert(
+    method.mask_provenance && method.mask_provenance.model_conditioned === false,
+    'method.mask_provenance.model_conditioned must be false',
+  );
+  for (const forbidden of ['flood_frames', 'hand_wet_mask', 'district_risk_artifacts']) {
+    assert(
+      Array.isArray(method.mask_provenance.prohibited_inputs) &&
+        method.mask_provenance.prohibited_inputs.includes(forbidden),
+      `method.mask_provenance.prohibited_inputs must include ${forbidden}`,
+    );
+  }
   assert(method.min_component_cells === 5, `min_component_cells is ${method.min_component_cells}`);
   assert(method.resampling === 'average→nearest', `resampling is ${method.resampling}`);
   assert(method.crs === 'EPSG:32646', `crs is ${method.crs}`);
@@ -392,6 +425,104 @@ check('P1.2 Sentinel-1 scorecard: schema, method, metrics and caveats', () => {
     assert(
       Number.isFinite(scene.validity_area_km2) && scene.validity_area_km2 > 0,
       `${scene.scene_id}: validity_area_km2 must be > 0`,
+    );
+    assert(
+      Number.isFinite(scene.scene_area_km2) && scene.scene_area_km2 > 0,
+      `${scene.scene_id}: scene_area_km2 must be published and > 0`,
+    );
+    assert(
+      scene.validity_area_km2 <= scene.scene_area_km2 + 1e-6,
+      `${scene.scene_id}: validity_area_km2 exceeds scene_area_km2`,
+    );
+    assert(
+      Number.isFinite(scene.validity_fraction_of_scene) &&
+        scene.validity_fraction_of_scene >= 0 &&
+        scene.validity_fraction_of_scene <= 1,
+      `${scene.scene_id}: validity_fraction_of_scene is missing or outside [0,1]`,
+    );
+    close(
+      scene.validity_fraction_of_scene,
+      scene.validity_area_km2 / scene.scene_area_km2,
+      1e-3,
+      `${scene.scene_id} validity fraction`,
+    );
+    assert(
+      Number.isFinite(scene.with_slope_validity_area_km2) &&
+        Number.isFinite(scene.without_slope_validity_area_km2),
+      `${scene.scene_id}: with/without slope validity areas are missing`,
+    );
+    close(
+      scene.without_slope_validity_area_km2,
+      scene.validity_area_km2,
+      1e-3,
+      `${scene.scene_id} without_slope validity area`,
+    );
+    const attrition = scene.validity_attrition;
+    assert(
+      attrition && typeof attrition === 'object',
+      `${scene.scene_id}: validity_attrition is missing`,
+    );
+    for (const step of [
+      'raw_sar_valid',
+      'slope_filtered',
+      'aoi_clipped',
+      'component_filtered',
+      'final',
+    ]) {
+      assert(
+        attrition[step] &&
+          typeof attrition[step] === 'object' &&
+          Number.isFinite(attrition[step].area_km2) &&
+          typeof attrition[step].applied_to_final === 'boolean' &&
+          typeof attrition[step].reason === 'string' &&
+          attrition[step].reason.length > 0,
+        `${scene.scene_id}: validity_attrition.${step} must publish area_km2, applied_to_final and a reason`,
+      );
+    }
+    close(
+      attrition.final.area_km2,
+      scene.validity_area_km2,
+      1e-3,
+      `${scene.scene_id} attrition final area`,
+    );
+    close(
+      attrition.with_slope_area_km2,
+      scene.with_slope_validity_area_km2,
+      1e-3,
+      `${scene.scene_id} attrition with_slope area`,
+    );
+    close(
+      attrition.without_slope_area_km2,
+      scene.without_slope_validity_area_km2,
+      1e-3,
+      `${scene.scene_id} attrition without_slope area`,
+    );
+    // REVIEW-19: a scene covering ~43,389 km2 cannot validate on a 3,735 km2
+    // sliver.  A smaller domain is allowed only when the shipped-path steps
+    // document the filters that removed the rest.
+    const shippedSteps = [
+      'raw_sar_valid',
+      'aoi_clipped',
+      'component_filtered',
+      'final',
+    ].map((step) => attrition[step]);
+    const shippedRemoval = shippedSteps.reduce(
+      (total, step) => total + (step.applied_to_final ? step.removed_km2 : 0),
+      0,
+    );
+    const attritionJustified =
+      shippedRemoval >= 20000 &&
+      shippedSteps.every(
+        (step) =>
+          step.applied_to_final === true &&
+          typeof step.reason === 'string' &&
+          step.reason.length > 0,
+      ) &&
+      typeof attrition.final.reason === 'string' &&
+      attrition.final.reason.length > 0;
+    assert(
+      scene.validity_area_km2 >= 20000 || attritionJustified,
+      `${scene.scene_id}: validity_area_km2 ${scene.validity_area_km2} < 20000 and attrition does not justify it`,
     );
     assert(
       Number.isFinite(scene.modelled_in_validity_km2) && scene.modelled_in_validity_km2 >= 0,
@@ -465,6 +596,37 @@ check('P1.2 Sentinel-1 scorecard: schema, method, metrics and caveats', () => {
         assert(
           Number.isFinite(entry[key]) && entry[key] >= 0,
           `${scene.scene_id} sensitivity ${entry.threshold_db} dB ${key} is invalid`,
+        );
+      }
+      // REVIEW-19 arithmetic identities: TP+FP is the modelled wet area inside
+      // validity; TP+FN is the observed area for this threshold.  These are the
+      // checks that would have caught the 3,735 km2 footprint immediately.
+      close(
+        entry.true_positive_km2 + entry.false_positive_km2,
+        scene.modelled_in_validity_km2,
+        0.5,
+        `${scene.scene_id} sensitivity ${entry.threshold_db} dB TP+FP vs modelled_in_validity_km2`,
+      );
+      close(
+        entry.true_positive_km2 + entry.false_negative_km2,
+        entry.observed_area_km2,
+        0.5,
+        `${scene.scene_id} sensitivity ${entry.threshold_db} dB TP+FN vs observed_area_km2`,
+      );
+      if (scene.modelled_in_validity_km2 > 0) {
+        close(
+          entry.true_positive_km2 / scene.modelled_in_validity_km2,
+          entry.precision,
+          1e-3,
+          `${scene.scene_id} sensitivity ${entry.threshold_db} dB precision identity`,
+        );
+      }
+      if (entry.observed_area_km2 > 0) {
+        close(
+          entry.true_positive_km2 / entry.observed_area_km2,
+          entry.recall,
+          1e-3,
+          `${scene.scene_id} sensitivity ${entry.threshold_db} dB recall identity`,
         );
       }
     }

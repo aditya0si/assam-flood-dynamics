@@ -5,6 +5,8 @@ import numpy as np
 
 from baanh_pipeline.calibration_s1 import (
     CalibrationError,
+    _validity_stack,
+    area_mask_metrics,
     calibration_scale_grid,
     mask_metrics,
     otsu_threshold,
@@ -137,3 +139,49 @@ def test_mask_metrics_rejects_shape_mismatch():
         assert "shape mismatch" in str(exc)
     else:  # pragma: no cover - the assertion above must fire
         raise AssertionError("shape mismatch was accepted")
+
+
+def test_area_mask_metrics_identity_and_ratios():
+    area = np.full((4, 4), 0.5, dtype=np.float64)
+    observed = np.zeros((4, 4), dtype=bool)
+    modelled = np.zeros((4, 4), dtype=bool)
+    observed[0:2, :] = True
+    modelled[:, 1:3] = True
+    metrics = area_mask_metrics(observed, modelled, area)
+    assert metrics["tp"] == 2.0
+    assert metrics["fp"] == 2.0
+    assert metrics["fn"] == 2.0
+    assert metrics["tp"] + metrics["fp"] == 4.0
+    assert metrics["tp"] + metrics["fn"] == 4.0
+    assert metrics["precision"] == 0.5
+    assert metrics["recall"] == 0.5
+    assert metrics["iou"] == 1.0 / 3.0
+
+
+def test_validity_stack_is_monotonic_and_never_uses_the_model():
+    area = np.ones((6, 6), dtype=np.float64)
+    raw = np.zeros((6, 6), dtype=bool)
+    raw[:, :] = True
+    aoi = np.ones((6, 6), dtype=bool)
+    aoi[0, :] = False  # regional clip removes one row
+    slope = np.zeros((6, 6), dtype=np.float64)
+    slope[:, 4:] = 20.0  # slope branch removes the last two columns
+    stack = _validity_stack(raw, aoi, slope, 10.0, 2, area)
+    attrition = stack["attrition"]
+    for step in (
+        "raw_sar_valid",
+        "slope_filtered",
+        "aoi_clipped",
+        "component_filtered",
+        "final",
+    ):
+        assert step in attrition
+        assert "area_km2" in attrition[step]
+    assert attrition["raw_sar_valid"]["area_km2"] == 36.0
+    assert attrition["slope_filtered"]["area_km2"] < attrition["raw_sar_valid"]["area_km2"]
+    assert attrition["slope_filtered"]["applied_to_final"] is False
+    assert attrition["aoi_clipped"]["area_km2"] == 30.0
+    assert attrition["final"]["area_km2"] == 30.0
+    assert attrition["without_slope_area_km2"] == 30.0
+    assert attrition["with_slope_area_km2"] == 20.0
+    assert stack["validity"].sum() == 30

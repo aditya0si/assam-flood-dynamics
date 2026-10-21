@@ -3,7 +3,7 @@
   "dataset_version": "2026.10.0",
   "app_min_version": "0.1.0",
   "scenario_id": "assam-monsoon-composite-v1",
-  "generated_at": "2026-10-21T19:45:55Z",
+  "generated_at": "2026-10-21T20:27:39Z",
   "crs": "EPSG:4326",
   "analysis_crs": "EPSG:32646",
   "bbox": [
@@ -226,8 +226,8 @@
     },
     {
       "path": "data/provenance.json",
-      "bytes": 23029,
-      "sha256": "0b3e163b7170f3e02538bcc3e83b8fd7d87843c02e879ff125c05bf59cb271c7",
+      "bytes": 23019,
+      "sha256": "145d8fa506f0c1fa774ac7eb156cb2d4d3e9f0c1642946c7757e9fe88f0027c3",
       "class": "derived",
       "tier": "critical",
       "description": "Source → stage → file provenance for every dataset."
@@ -282,8 +282,8 @@
     },
     {
       "path": "data/validation/scorecard.json",
-      "bytes": 6040,
-      "sha256": "e08ceb6f39e8c5a2a85d440083dc6195473fab1a9063d5903320c7cd966fd1b2",
+      "bytes": 15564,
+      "sha256": "892864ed34754f4d088e31ec9050b3634020ab15f961a4cac3204edaaea3ee07",
       "class": "derived",
       "tier": "critical",
       "description": "Sentinel-1 GRD validation scorecard: calibrated sigma0 extent-shape IoU/precision/recall at fixed -16 dB, sensitivity at -14/-16/-18 dB, not an event hindcast."

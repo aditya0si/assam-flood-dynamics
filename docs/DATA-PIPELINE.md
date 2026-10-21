@@ -601,8 +601,10 @@ python -m baanh_pipeline.cli build-validation `
   --cache pipeline/cache/s1
 ```
 
-- **Input:** Earth Search STAC (`sentinel-1-grd`), AOI bbox and core mask, the existing DEM
-  (slope only), the committed PNG frames and frame-index, and the scenario peak step.
+- **Input:** Earth Search STAC (`sentinel-1-grd`), AOI bbox, the AOI core mask (used only
+  for scene selection and the diagnostic legacy area, never for the validity domain), the
+  existing DEM (slope diagnostic), the committed PNG frames and frame-index, and the scenario
+  peak step.
 - **STAC search:** collection `sentinel-1-grd` at
   `https://earth-search.aws.element84.com/v1`, bbox from `config/aoi.json`, datetime
   `2022-06-01/2022-07-31`, instrument mode `IW`, product type `GRD`, VV asset required. The
@@ -629,29 +631,55 @@ python -m baanh_pipeline.cli build-validation `
   choice, not the LUT, is the dominant residual uncertainty. Sensitivity is published at
   **−14 / −16 / −18 dB in σ0 space**, each row with observed area, TP/FP/FN area and
   IoU/precision/recall/F1. Components smaller than **5 analysis cells** (≈4 ha at 90 m) are
-  dropped. Cells whose DEM slope exceeds **10°** are excluded; the slope is derived from
-  `pipeline/work/dem-90m.tif`, not a new DEM.
-- **Grid:** masks reproject to **EPSG:32646, 90 m, aligned to the frame grid** with nearest
-  resampling. A fractional coverage raster (`Resampling.average` of the valid source mask) is
-  kept so partial cells are explicit. Comparison domain = coverage ≥ 0.5, AOI core, slope
-  ≤10°.
-- **Coverage rule:** if a selected scene cannot be fetched, or the valid observed share of its
-  AOI footprint is below **90 %**, the stage exits non-zero with the exact error. It does not
-  substitute another date and does not lower the bar. A single Sentinel-1 GRD slice covers only
-  ~7 % of the full 52,240 km² AOI core, so the scorecard is explicitly a comparison over the
-  observed footprint, not over the full AOI; the full-AOI footprint share is logged and cached
-  in each scene's metadata.
+  dropped. Cells whose DEM slope exceeds **10°** are **not** removed from the shipped mask;
+  the slope branch is evaluated and published as a diagnostic (REVIEW-19). The slope operator
+  and unit are documented in `method.slope_filter` (§6.18).
+- **Grid and validity domain (REVIEW-19):** masks reproject to **EPSG:32646, 90 m, aligned
+  to the frame grid** with nearest resampling. A fractional coverage raster
+  (`Resampling.average` of the valid source mask) is kept so partial cells are explicit.
+  The validity domain is the **full SAR footprint** on the frame grid: `coverage >= 0.5`,
+  intersected with the **regional AOI polygon** (`config/aoi.json` bbox, densified into
+  EPSG:32646), then validity connected components smaller than 5 cells removed. The
+  valley-floor **AOI core is not used** for validity. The old core clip retained only
+  ~3,735 km² of a ~43,389 km² scene and ~97 % of the model's wet area, so it inflated IoU
+  and recall; it is published only as
+  `validity_attrition.legacy_aoi_core_clipped_area_km2`.
+- **Validity attrition:** every scene publishes `validity_attrition` with km² after
+  `raw_sar_valid → slope_filtered → aoi_clipped → component_filtered → final`, plus
+  `with_slope_area_km2`, `without_slope_area_km2` and the shipped path. No step is silent.
+- **Slope filter (REVIEW-19):** slope is computed from `pipeline/work/dem-90m.tif`
+  (not a new DEM) as the **central-difference gradient**: `dz_dy, dz_dx =
+  np.gradient(dem_m, 90, 90)`, `slope_deg = degrees(arctan(hypot(dz_dx, dz_dy)))`. The
+  operator and unit **degrees** are published in `method.slope_filter`. The 10° filter is
+  **evaluated and reported**, not applied to the final domain: across this SAR scene it
+  removes ~25,850 km² of hill terrain and cannot be shown not to remove valley-floor
+  cells. Both `with_slope` and `without_slope` validity areas are published per scene.
+- **Mask provenance:** the validity mask is built from SAR VV validity, the AOI polygon,
+  terrain and geometry **only**. It must never reference the flood frames, the HAND wet
+  mask or any district/risk artifact. `method.mask_provenance` records the allowed and
+  prohibited inputs and asserts `model_conditioned = false`. The model is applied only
+  after the validity domain is fixed.
+- **Coverage rule:** if a selected scene cannot be fetched, or the valid observed share of
+  its SAR footprint is below **90 %**, the stage exits non-zero with the exact error. It
+  does not substitute another date and does not lower the bar. A single Sentinel-1 GRD
+  slice covers ~97.8 % of its own GCP-corner scene on this AOI (the old ~7 % figure was the
+  AOI-core intersection, not the scene); `scene_area_km2`,
+  `validity_area_km2` and `validity_fraction_of_scene` are published per scene.
 - **Scoring:** the committed PNG frames are decoded with frame-index placement (paletted class
   >0 = wet) and compared with the observed mask at every step. The stage reports the
   best-matching step (IoU) and the scenario peak S07 (IoU, precision, recall, F1, area bias) at
   the fixed −16 dB threshold. Sensitivity at −14/−16/−18 dB is scored against the same S07 model
-  on the same validity domain, so the rows are directly comparable. Observed area,
-  `modelled_in_validity_km2` and area bias use the same domain; `validity_area_km2` is published
-  per scene so every ratio denominator is visible.
+  on the same **full-footprint** validity domain, so the rows are directly comparable.
+  Metrics are **area-weighted**, not cell counts, so the published TP/FP/FN km² satisfy
+  `TP + FP = modelled_in_validity_km2` and `TP + FN = observed_area_km2` within 0.5 km²
+  per threshold. Observed area, `modelled_in_validity_km2` and area bias use the same
+  domain; `validity_area_km2` is published per scene so every ratio denominator is
+  visible.
 - **Stop/report:** the calibration LUT summary, fixed σ0 threshold and rationale, per-threshold
-  sensitivity, observed water area/fraction, validity area, modelled area inside validity,
-  best-match step/IoU and peak metrics are written to `validation/scorecard.json`. A bad IoU is
-  the finding; it is not improved to fit.
+  sensitivity, observed water area/fraction, scene/validity area and ratio, validity
+  attrition, with/without slope areas, modelled area inside validity, best-match step/IoU
+  and peak metrics are written to `validation/scorecard.json`. A bad IoU is the finding;
+  it is not improved to fit.
 - **Output:** `public/data/validation/scorecard.json` (≤128 KB) only. No scene, mask or cache
   file is committed.
 
@@ -1310,14 +1338,15 @@ labels, no water, no flood extent—only relief—so it cannot be mistaken for a
 
 ### 6.18 `validation/scorecard.json` (P1)
 
-The schema required by REVIEW-17 P1.2 and corrected by REVIEW-18. The scorecard is `derived`, not
-`source`: it compares a scenario extent shape with real Sentinel-1 acquisitions and is not an
-event hindcast.
+The schema required by REVIEW-17 P1.2, corrected by REVIEW-18 and REVIEW-19. The scorecard is
+`derived`, not `source`: it compares a scenario extent shape with real Sentinel-1 acquisitions
+and is not an event hindcast. Numbers below are the committed 2022-07-31 scene after the
+REVIEW-19 full-footprint correction.
 
 ```json
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-10-21T19:40:45Z",
+  "generated_at": "2026-10-21T20:15:46Z",
   "method": {
     "collection": "sentinel-1-grd",
     "threshold_method": "fixed_sigma0",
@@ -1331,6 +1360,25 @@ event hindcast.
       "A_median": 595.42265
     },
     "slope_mask_deg": 10.0,
+    "slope_filter": {
+      "operator": "central-difference gradient of the 90 m DEM: dz_dy, dz_dx = np.gradient(dem_m, 90, 90); slope_deg = degrees(arctan(hypot(dz_dx, dz_dy)))",
+      "unit": "degrees",
+      "threshold_deg": 10.0,
+      "applied_to_validity": false,
+      "with_slope_area_km2": 33134.4027,
+      "without_slope_area_km2": 84841.9364,
+      "removed_by_slope_km2": 51707.5336,
+      "reason": "The 10 degree filter removes hill terrain across this SAR scene; because it also removes valley-floor cells, REVIEW-19 allows dropping it. Both branches are published; the final domain uses without_slope."
+    },
+    "validity_definition": "SAR VV valid samples (finite calibrated sigma0) reprojected to the 90 m frame grid with average coverage >= 0.5, intersected with the regional AOI polygon, then validity connected components smaller than 5 cells removed. The valley-floor AOI-core clip and the 10 degree slope filter are NOT applied to the final domain; both are published as diagnostics in validity_attrition.",
+    "mask_stack_version": "review19-full-footprint-v2",
+    "scene_area_method": "Quadrilateral through the four corner GCPs transformed to EPSG:32646; not the bbox area. 2022-07-31 gives 43,391 km2 (reviewer 43,389 km2).",
+    "mask_provenance": {
+      "allowed_inputs": ["sentinel1_vv_sigma0_validity", "aoi_polygon", "dem_slope", "grid_geometry"],
+      "prohibited_inputs": ["flood_frames", "hand_wet_mask", "district_risk_artifacts"],
+      "model_conditioned": false,
+      "note": "The validity domain is fixed before any flood frame is read. The model is applied only after the domain is fixed."
+    },
     "min_component_cells": 5,
     "resampling": "average→nearest",
     "crs": "EPSG:32646",
@@ -1338,76 +1386,124 @@ event hindcast.
   },
   "scenes": [
     {
-      "scene_id": "S1A_IW_GRDH_1SDV_…",
-      "datetime": "2022-06-01T23:39:20.965799Z",
+      "scene_id": "S1A_IW_GRDH_1SDV_20220731T233912_20220731T233937_044351_054B00",
+      "datetime": "2022-07-31T23:39:24.699506Z",
       "platform": "sentinel-1a",
       "relative_orbit": 4,
       "threshold_db": -16.0,
       "threshold_rationale": "Fixed -16 dB sigma0 threshold for C-band VV open water in monsoon conditions: …",
-      "validity_area_km2": 3737.4381,
-      "modelled_in_validity_km2": 552.2886,
-      "observed_area_km2": 187.6361,
-      "observed_water_fraction_of_aoi": 0.050204,
-      "best_match_step": 9,
-      "best_match_iou": 0.118948,
+      "scene_area_km2": 43391.2866,
+      "validity_area_km2": 42419.6064,
+      "validity_fraction_of_scene": 0.977607,
+      "with_slope_validity_area_km2": 16566.2113,
+      "without_slope_validity_area_km2": 42419.6064,
+      "validity_attrition": {
+        "raw_sar_valid": {"area_km2": 42419.6064, "removed_km2": 0.0, "applied_to_final": true, "reason": "Full SAR VV validity on the 90 m frame grid: finite calibrated sigma0, average coverage >= 0.5. No AOI-core clip."},
+        "slope_filtered": {"area_km2": 16566.2113, "removed_km2": 25853.395, "applied_to_final": false, "reason": "Diagnostic branch: DEM slope <= 10 degrees. Not applied to the shipped domain; the published final domain is the without_slope branch."},
+        "aoi_clipped": {"area_km2": 42419.6064, "removed_km2": 0.0, "applied_to_final": true, "legacy_aoi_core_area_km2": 3743.0227, "legacy_aoi_core_removed_km2": 38676.5837, "reason": "Regional AOI bbox (89.55-96.15 E, 23.95-28.15 N), densified to EPSG:32646. The valley-floor AOI core is not used."},
+        "component_filtered": {"area_km2": 42419.6064, "removed_km2": 0.0, "applied_to_final": true, "reason": "Validity connected components smaller than 5 cells removed."},
+        "final": {"area_km2": 42419.6064, "removed_km2": 0.0, "applied_to_final": true, "reason": "Shipped validity domain = raw_sar_valid -> aoi_clipped -> component_filtered; slope branch not applied."},
+        "shipped_path": ["raw_sar_valid", "aoi_clipped", "component_filtered", "final"],
+        "with_slope_area_km2": 16566.2113,
+        "without_slope_area_km2": 42419.6064,
+        "legacy_aoi_core_clipped_area_km2": 3743.0227,
+        "note": "The former AOI-core clip is published only as a diagnostic. It is not part of the shipped validity domain."
+      },
+      "slope_filter": {
+        "operator": "central-difference gradient of the 90 m DEM: dz_dy, dz_dx = np.gradient(dem_m, 90, 90); slope_deg = degrees(arctan(hypot(dz_dx, dz_dy)))",
+        "unit": "degrees",
+        "threshold_deg": 10.0,
+        "applied_to_validity": false,
+        "with_slope_area_km2": 16566.2113,
+        "without_slope_area_km2": 42419.6064,
+        "removed_by_slope_km2": 25853.395,
+        "reason": "The 10 degree filter removes hill terrain across this SAR scene; because it also removes valley-floor cells, REVIEW-19 allows dropping it."
+      },
+      "mask_provenance": {
+        "allowed_inputs": ["sentinel1_vv_sigma0_validity", "aoi_polygon", "dem_slope", "grid_geometry"],
+        "prohibited_inputs": ["flood_frames", "hand_wet_mask", "district_risk_artifacts"],
+        "model_conditioned": false,
+        "note": "The validity domain is fixed before any flood frame is read. The model is applied only after the domain is fixed."
+      },
+      "modelled_in_validity_km2": 553.5251,
+      "observed_area_km2": 490.1876,
+      "observed_water_fraction_of_aoi": 0.011556,
+      "observed_water_fraction_of_validity": 0.011556,
+      "best_match_step": 7,
+      "best_match_iou": 0.099464,
       "peak_step": {
         "step": 7,
-        "modelled_area_km2": 552.2886,
-        "iou": 0.11446,
-        "precision": 0.137597,
-        "recall": 0.405005,
-        "f1": 0.205409,
-        "area_bias_pct": 194.3403
+        "modelled_area_km2": 553.5251,
+        "iou": 0.099464,
+        "precision": 0.17058,
+        "recall": 0.19262,
+        "f1": 0.180931,
+        "area_bias_pct": 12.9211
       },
       "sensitivity": [
         {
-          "threshold_db": -14.0,
-          "observed_area_km2": 223.5275,
-          "observed_water_fraction_of_validity": 0.059808,
-          "true_positive_km2": 87.0818,
-          "false_positive_km2": 465.2068,
-          "false_negative_km2": 136.4457,
-          "iou": 0.126437,
-          "precision": 0.157674,
-          "recall": 0.38958,
-          "f1": 0.224491
+          "threshold_db": -16.0,
+          "observed_area_km2": 490.1876,
+          "observed_water_fraction_of_validity": 0.011556,
+          "true_positive_km2": 94.4201,
+          "false_positive_km2": 459.105,
+          "false_negative_km2": 395.7675,
+          "iou": 0.099464,
+          "precision": 0.17058,
+          "recall": 0.19262,
+          "f1": 0.180931
         }
       ]
     }
   ],
   "summary": {
-    "mean_iou_over_scenes": 0.127049,
-    "mean_precision": 0.154007,
-    "mean_recall": 0.398398,
-    "worst_scene": "S1A_IW_GRDH_1SDV_…",
-    "caveats": [
-      "This is an extent-shape comparison against real Sentinel-1 acquisitions, not an event hindcast. The scenario's stage and duration were not fitted to these dates.",
-      "σ0 calibration applied from the SAFE calibration LUT. Residual uncertainty is threshold choice (reported across −14/−16/−18 dB) and GRD geometries co-registered with a GCP-derived affine, not a rigorous terrain-corrected warp."
-    ]
+    "mean_iou_over_scenes": 0.093433,
+    "mean_precision": 0.154183,
+    "mean_recall": 0.192766,
+    "mean_validity_area_km2": 42420.9682,
+    "mean_validity_fraction_of_scene": 0.977611,
+    "worst_scene": "S1A_IW_GRDH_1SDV_20220601T233908_20220601T233933_043476_0530F2",
+    "caveats": ["This is an extent-shape comparison against real Sentinel-1 acquisitions, not an event hindcast.", "σ0 calibration applied from the SAFE calibration LUT. …", "Validity is the full Sentinel-1 footprint on the frame grid (coverage ≥0.5, regional AOI only), not the valley-floor AOI core. …"]
   }
 }
 ```
 
 - `method.calibration` records the `schema-calibration-vv` source, `vectors` (27),
   `samples_per_vector` (642) and `A_median` (595.42); `check-data` requires all four.
-- `validity_area_km2` is the observed comparison domain: scene footprint ∩ AOI core with
-  coverage ≥0.5 and slope ≤10°. It is not the full AOI. `modelled_in_validity_km2` is the S07
+- `scene_area_km2` is the ground area of the scene quadrilateral from its four corner GCPs
+  transformed to EPSG:32646. It is **not** the STAC bbox area. `validity_fraction_of_scene =
+  validity_area_km2 / scene_area_km2`; both are required.
+- `validity_area_km2` is the **full-footprint** comparison domain: SAR VV validity on the
+  90 m frame grid (`coverage ≥0.5`) ∩ regional AOI polygon, validity components <5 cells
+  removed. It is **not** the valley-floor AOI core. `modelled_in_validity_km2` is the S07
   model area measured inside that same domain; together they make every ratio denominator
   visible.
+- `validity_attrition` publishes km² after `raw_sar_valid → slope_filtered → aoi_clipped →
+  component_filtered → final`, with `removed_km2`, `applied_to_final`, a reason per step,
+  `with_slope_area_km2`, `without_slope_area_km2`, and the legacy AOI-core area as a
+  diagnostic. `final.area_km2` must equal `validity_area_km2`.
+- `slope_filter.operator` is the central-difference gradient of the 90 m DEM; `unit` is
+  `degrees`; the 10° threshold is evaluated but `applied_to_validity = false`. Both
+  `with_slope_area_km2` and `without_slope_area_km2` are published per scene.
+- `mask_provenance` lists the allowed inputs (SAR validity, AOI polygon, DEM slope, grid
+  geometry) and prohibits the flood frames, HAND wet mask and district/risk artifacts.
+  `model_conditioned` is `false`; the model is read only after the domain is fixed.
 - `observed_area_km2` is the fixed −16 dB σ0 water area over the validity domain.
-- `observed_water_fraction_of_aoi` is `observed_area_km2 / validity_area_km2`. The denominator
-  is the observed AOI footprint, not the full 52,240 km² AOI core. One GRD slice covers only a
-  fraction of the AOI; the full-AOI footprint share (~7 %) is in the scene cache metadata.
+  `observed_water_fraction_of_validity` is `observed_area_km2 / validity_area_km2` (the
+  older `observed_water_fraction_of_aoi` key is kept equal for compatibility).
 - `best_match_step` and `best_match_iou` are the best of the 12 committed frames. `peak_step`
   is always S07 and carries the full precision/recall/F1/area-bias row.
 - `sensitivity` is an array of exactly three rows, one per fixed σ0 threshold
   (−14/−16/−18 dB). Each row publishes `observed_area_km2`, its validity fraction, TP/FP/FN
-  area, IoU, precision, recall and F1, all scored against the same S07 model and domain. The
-  −16 dB row equals the `peak_step` metrics.
+  area, IoU, precision, recall and F1, all scored against the same S07 model and domain.
+  Metrics are area-weighted, so **TP + FP = modelled_in_validity_km2** and **TP + FN =
+  observed_area_km2** within 0.5 km² per threshold; `check-data` enforces both.
+  The −16 dB row equals the `peak_step` metrics.
 - `summary.mean_iou_over_scenes` is the mean of the per-scene best-match IoU. `mean_precision`
   and `mean_recall` are the mean of the per-scene **S07** precision/recall at −16 dB.
-  `worst_scene` is the scene with the lowest best-match IoU.
-- The two caveat sentences are required and checked by `check-data`; no caveat may claim
+  `mean_validity_area_km2` and `mean_validity_fraction_of_scene` summarise the corrected
+  footprint. `worst_scene` is the scene with the lowest best-match IoU.
+- The three caveat sentences are required and checked by `check-data`; no caveat may claim
   calibration was unavailable. A low IoU is the finding and ships unchanged.
 
 ## 7. Inundation model specification
@@ -1967,12 +2063,22 @@ to 1.0 ± 0.01.
   are present.
 - `method.calibration` is present with a finite, non-null `A_median`, 27 vectors and 642
   samples per vector; the source names `schema-calibration-vv`.
+- `method.slope_filter` publishes the gradient operator, `unit = "degrees"`, threshold 10,
+  `applied_to_validity = false`, and both with/without slope areas. `method.mask_provenance`
+  lists the allowed inputs, prohibits `flood_frames`, `hand_wet_mask` and
+  `district_risk_artifacts`, and asserts `model_conditioned = false`.
+- each scene publishes `scene_area_km2`, `validity_area_km2`,
+  `validity_fraction_of_scene` (checked against the ratio), `with_slope_validity_area_km2`,
+  `without_slope_validity_area_km2`, and a `validity_attrition` ledger whose `final.area_km2`
+  equals `validity_area_km2`. `validity_area_km2 >= 20000` is required unless the attrition
+  ledger documents a filter that removed the rest.
 - each scene has exactly three sensitivity rows with σ0 thresholds `[-14,-16,-18]`, observed
   area and all metrics; `validity_area_km2` and `modelled_in_validity_km2` are finite;
   every `iou`/`precision`/`recall`/`f1` is in `[0,1]`; `observed_area_km2 > 0`;
-  `peak_step.step` equals the scenario peak; `worst_scene` names a listed scene; the caveats
-  are non-empty, contain "not an event hindcast", and **no caveat contains "calibration was
-  unavailable"**.
+  per threshold `TP + FP = modelled_in_validity_km2` and `TP + FN = observed_area_km2` within
+  0.5 km²; precision and recall are consistent with those areas; `peak_step.step` equals the
+  scenario peak; `worst_scene` names a listed scene; the caveats are non-empty, contain "not an
+  event hindcast", and **no caveat contains "calibration was unavailable"**.
 - every district has a finite `severity_index` in `[0,100]` and a positive `severity_rank`, as
   well as the existing extent `rank`; severity has more than five distinct values; both ranks
   are dense; the published z-score means/stds, product min/max and the min–max formula

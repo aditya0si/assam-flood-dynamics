@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-10-21T19:40:45Z",
+  "generated_at": "2026-10-21T20:27:33Z",
   "method": {
     "collection": "sentinel-1-grd",
     "threshold_method": "fixed_sigma0",
@@ -18,6 +18,34 @@
       "A_median": 595.42265
     },
     "slope_mask_deg": 10.0,
+    "slope_filter": {
+      "operator": "central-difference gradient of the 90 m DEM: dz_dy, dz_dx = np.gradient(dem_m, 90, 90); slope_deg = degrees(arctan(hypot(dz_dx, dz_dy)))",
+      "unit": "degrees",
+      "threshold_deg": 10.0,
+      "applied_to_validity": false,
+      "with_slope_area_km2": 33134.4027,
+      "without_slope_area_km2": 84841.9364,
+      "removed_by_slope_km2": 51707.5336,
+      "reason": "Slope is computed from the 90 m DEM as the central-difference gradient in degrees. It is evaluated and reported per scene but not applied to the final validity domain, because across this SAR scene it removes hill terrain and cannot be shown not to remove valley-floor cells. REVIEW-19 allows dropping it."
+    },
+    "validity_definition": "SAR VV valid samples (finite calibrated sigma0) reprojected to the 90 m frame grid with average coverage >= 0.5, intersected with the regional AOI polygon, then validity connected components smaller than 5 cells removed. The valley-floor AOI-core clip and the 10 degree slope filter are NOT applied to the final domain; both are published as diagnostics in validity_attrition.",
+    "mask_stack_version": "review19-full-footprint-v2",
+    "scene_area_method": "Quadrilateral through the four corner GCPs transformed to EPSG:32646; not the bbox area. 2022-07-31 gives 43,391 km2 (reviewer 43,389 km2).",
+    "mask_provenance": {
+      "allowed_inputs": [
+        "sentinel1_vv_sigma0_validity",
+        "aoi_polygon",
+        "dem_slope",
+        "grid_geometry"
+      ],
+      "prohibited_inputs": [
+        "flood_frames",
+        "hand_wet_mask",
+        "district_risk_artifacts"
+      ],
+      "model_conditioned": false,
+      "note": "The validity domain is fixed before any flood frame is read. The model is applied only after the domain is fixed."
+    },
     "min_component_cells": 5,
     "resampling": "average→nearest",
     "crs": "EPSG:32646",
@@ -31,57 +59,135 @@
       "relative_orbit": 4,
       "threshold_db": -16.0,
       "threshold_rationale": "Fixed -16 dB sigma0 threshold for C-band VV open water in monsoon conditions: it sits in the low tail of the calibrated land/water distribution and is stated before scoring; threshold choice, not the LUT, is the dominant residual uncertainty, so -14/-16/-18 dB are all published.",
-      "validity_area_km2": 3737.4381,
-      "modelled_in_validity_km2": 552.2886,
-      "observed_area_km2": 187.6361,
-      "observed_water_fraction_of_aoi": 0.050204,
-      "best_match_step": 9,
-      "best_match_iou": 0.118948,
+      "scene_area_km2": 43393.6953,
+      "validity_area_km2": 42422.33,
+      "validity_fraction_of_scene": 0.977615,
+      "with_slope_validity_area_km2": 16568.1914,
+      "without_slope_validity_area_km2": 42422.33,
+      "validity_attrition": {
+        "aoi_clipped": {
+          "applied_to_final": true,
+          "area_km2": 42422.33,
+          "legacy_aoi_core_area_km2": 3745.528,
+          "legacy_aoi_core_removed_km2": 38676.8019,
+          "reason": "Regional AOI bbox (89.55-96.15 E, 23.95-28.15 N), densified to EPSG:32646. The valley-floor AOI core is not used: it retained only a model-correlated sliver of this scene.",
+          "removed_km2": 0.0
+        },
+        "component_filtered": {
+          "applied_to_final": true,
+          "area_km2": 42422.33,
+          "components_after": 1,
+          "components_before": 1,
+          "reason": "Validity connected components smaller than 5 cells removed.",
+          "removed_km2": 0.0
+        },
+        "final": {
+          "applied_to_final": true,
+          "area_km2": 42422.33,
+          "reason": "Shipped validity domain = raw_sar_valid -> aoi_clipped -> component_filtered; slope branch not applied.",
+          "removed_km2": 0.0
+        },
+        "legacy_aoi_core_clipped_area_km2": 3745.528,
+        "note": "The former AOI-core clip is published only as a diagnostic. It is not part of the shipped validity domain: clipping to the valley-floor core kept 3,735 km2 of this scene and selected the model's wet area.",
+        "raw_sar_valid": {
+          "applied_to_final": true,
+          "area_km2": 42422.33,
+          "reason": "Full SAR VV validity on the 90 m frame grid: finite calibrated sigma0, average coverage >= 0.5. No AOI-core clip.",
+          "removed_km2": 0.0
+        },
+        "shipped_path": [
+          "raw_sar_valid",
+          "aoi_clipped",
+          "component_filtered",
+          "final"
+        ],
+        "slope_filtered": {
+          "applied_to_final": false,
+          "area_km2": 16568.1914,
+          "components_after": 11665,
+          "components_before": 48958,
+          "reason": "Diagnostic branch: DEM slope <= 10 degrees (see slope_filter). Not applied to the shipped domain because it would remove 25,854.1 km2 of hill terrain from this scene; the published final domain is the without_slope branch.",
+          "removed_km2": 25854.1386
+        },
+        "with_slope_area_km2": 16568.1914,
+        "without_slope_area_km2": 42422.33
+      },
+      "slope_filter": {
+        "applied_to_validity": false,
+        "operator": "central-difference gradient of the 90 m DEM: dz_dy, dz_dx = np.gradient(dem_m, 90, 90); slope_deg = degrees(arctan(hypot(dz_dx, dz_dy)))",
+        "reason": "The 10 degree filter removes hill terrain across this SAR scene; because it also removes valley-floor cells, REVIEW-19 allows dropping it. Both branches are published; the final domain uses without_slope.",
+        "removed_by_slope_km2": 25854.1386,
+        "threshold_deg": 10.0,
+        "unit": "degrees",
+        "with_slope_area_km2": 16568.1914,
+        "without_slope_area_km2": 42422.33
+      },
+      "mask_provenance": {
+        "allowed_inputs": [
+          "sentinel1_vv_sigma0_validity",
+          "aoi_polygon",
+          "dem_slope",
+          "grid_geometry"
+        ],
+        "model_conditioned": false,
+        "note": "The validity domain is fixed before any flood frame is read. The model is applied only after the domain is fixed.",
+        "prohibited_inputs": [
+          "flood_frames",
+          "hand_wet_mask",
+          "district_risk_artifacts"
+        ]
+      },
+      "modelled_in_validity_km2": 553.9373,
+      "observed_area_km2": 395.6463,
+      "observed_water_fraction_of_aoi": 0.009326,
+      "observed_water_fraction_of_validity": 0.009326,
+      "best_match_step": 7,
+      "best_match_iou": 0.087402,
       "peak_step": {
         "step": 7,
-        "modelled_area_km2": 552.2886,
-        "iou": 0.11446,
-        "precision": 0.137597,
-        "recall": 0.405005,
-        "f1": 0.205409,
-        "area_bias_pct": 194.3403
+        "modelled_area_km2": 553.9373,
+        "iou": 0.087402,
+        "precision": 0.137786,
+        "recall": 0.192912,
+        "f1": 0.160754,
+        "area_bias_pct": 40.0082
       },
       "sensitivity": [
         {
           "threshold_db": -14.0,
-          "observed_area_km2": 223.5275,
-          "observed_water_fraction_of_validity": 0.059808,
-          "true_positive_km2": 87.0818,
-          "false_positive_km2": 465.2068,
-          "false_negative_km2": 136.4457,
-          "iou": 0.126437,
-          "precision": 0.157674,
-          "recall": 0.38958,
-          "f1": 0.224491
+          "observed_area_km2": 861.6126,
+          "observed_water_fraction_of_validity": 0.02031,
+          "true_positive_km2": 87.4293,
+          "false_positive_km2": 466.508,
+          "false_negative_km2": 774.1833,
+          "iou": 0.065829,
+          "precision": 0.157833,
+          "recall": 0.101472,
+          "f1": 0.123527
         },
         {
           "threshold_db": -16.0,
-          "observed_area_km2": 187.6361,
-          "observed_water_fraction_of_validity": 0.050204,
-          "true_positive_km2": 75.9935,
-          "false_positive_km2": 476.2951,
-          "false_negative_km2": 111.6425,
-          "iou": 0.11446,
-          "precision": 0.137597,
-          "recall": 0.405005,
-          "f1": 0.205409
+          "observed_area_km2": 395.6463,
+          "observed_water_fraction_of_validity": 0.009326,
+          "true_positive_km2": 76.3249,
+          "false_positive_km2": 477.6124,
+          "false_negative_km2": 319.3214,
+          "iou": 0.087402,
+          "precision": 0.137786,
+          "recall": 0.192912,
+          "f1": 0.160754
         },
         {
           "threshold_db": -18.0,
-          "observed_area_km2": 165.1362,
-          "observed_water_fraction_of_validity": 0.044184,
-          "true_positive_km2": 68.041,
-          "false_positive_km2": 484.2476,
-          "false_negative_km2": 97.0952,
-          "iou": 0.104778,
-          "precision": 0.123198,
-          "recall": 0.41203,
-          "f1": 0.189681
+          "observed_area_km2": 265.3267,
+          "observed_water_fraction_of_validity": 0.006254,
+          "true_positive_km2": 68.3158,
+          "false_positive_km2": 485.6215,
+          "false_negative_km2": 197.0109,
+          "iou": 0.090973,
+          "precision": 0.123328,
+          "recall": 0.257478,
+          "f1": 0.166774
         }
       ]
     },
@@ -92,69 +198,150 @@
       "relative_orbit": 4,
       "threshold_db": -16.0,
       "threshold_rationale": "Fixed -16 dB sigma0 threshold for C-band VV open water in monsoon conditions: it sits in the low tail of the calibrated land/water distribution and is stated before scoring; threshold choice, not the LUT, is the dominant residual uncertainty, so -14/-16/-18 dB are all published.",
-      "validity_area_km2": 3735.0944,
-      "modelled_in_validity_km2": 551.8684,
-      "observed_area_km2": 240.0468,
-      "observed_water_fraction_of_aoi": 0.064268,
-      "best_match_step": 6,
-      "best_match_iou": 0.13515,
+      "scene_area_km2": 43391.2866,
+      "validity_area_km2": 42419.6064,
+      "validity_fraction_of_scene": 0.977607,
+      "with_slope_validity_area_km2": 16566.2113,
+      "without_slope_validity_area_km2": 42419.6064,
+      "validity_attrition": {
+        "aoi_clipped": {
+          "applied_to_final": true,
+          "area_km2": 42419.6064,
+          "legacy_aoi_core_area_km2": 3743.0227,
+          "legacy_aoi_core_removed_km2": 38676.5837,
+          "reason": "Regional AOI bbox (89.55-96.15 E, 23.95-28.15 N), densified to EPSG:32646. The valley-floor AOI core is not used: it retained only a model-correlated sliver of this scene.",
+          "removed_km2": 0.0
+        },
+        "component_filtered": {
+          "applied_to_final": true,
+          "area_km2": 42419.6064,
+          "components_after": 1,
+          "components_before": 1,
+          "reason": "Validity connected components smaller than 5 cells removed.",
+          "removed_km2": 0.0
+        },
+        "final": {
+          "applied_to_final": true,
+          "area_km2": 42419.6064,
+          "reason": "Shipped validity domain = raw_sar_valid -> aoi_clipped -> component_filtered; slope branch not applied.",
+          "removed_km2": 0.0
+        },
+        "legacy_aoi_core_clipped_area_km2": 3743.0227,
+        "note": "The former AOI-core clip is published only as a diagnostic. It is not part of the shipped validity domain: clipping to the valley-floor core kept 3,735 km2 of this scene and selected the model's wet area.",
+        "raw_sar_valid": {
+          "applied_to_final": true,
+          "area_km2": 42419.6064,
+          "reason": "Full SAR VV validity on the 90 m frame grid: finite calibrated sigma0, average coverage >= 0.5. No AOI-core clip.",
+          "removed_km2": 0.0
+        },
+        "shipped_path": [
+          "raw_sar_valid",
+          "aoi_clipped",
+          "component_filtered",
+          "final"
+        ],
+        "slope_filtered": {
+          "applied_to_final": false,
+          "area_km2": 16566.2113,
+          "components_after": 11665,
+          "components_before": 48954,
+          "reason": "Diagnostic branch: DEM slope <= 10 degrees (see slope_filter). Not applied to the shipped domain because it would remove 25,853.4 km2 of hill terrain from this scene; the published final domain is the without_slope branch.",
+          "removed_km2": 25853.395
+        },
+        "with_slope_area_km2": 16566.2113,
+        "without_slope_area_km2": 42419.6064
+      },
+      "slope_filter": {
+        "applied_to_validity": false,
+        "operator": "central-difference gradient of the 90 m DEM: dz_dy, dz_dx = np.gradient(dem_m, 90, 90); slope_deg = degrees(arctan(hypot(dz_dx, dz_dy)))",
+        "reason": "The 10 degree filter removes hill terrain across this SAR scene; because it also removes valley-floor cells, REVIEW-19 allows dropping it. Both branches are published; the final domain uses without_slope.",
+        "removed_by_slope_km2": 25853.395,
+        "threshold_deg": 10.0,
+        "unit": "degrees",
+        "with_slope_area_km2": 16566.2113,
+        "without_slope_area_km2": 42419.6064
+      },
+      "mask_provenance": {
+        "allowed_inputs": [
+          "sentinel1_vv_sigma0_validity",
+          "aoi_polygon",
+          "dem_slope",
+          "grid_geometry"
+        ],
+        "model_conditioned": false,
+        "note": "The validity domain is fixed before any flood frame is read. The model is applied only after the domain is fixed.",
+        "prohibited_inputs": [
+          "flood_frames",
+          "hand_wet_mask",
+          "district_risk_artifacts"
+        ]
+      },
+      "modelled_in_validity_km2": 553.5251,
+      "observed_area_km2": 490.1876,
+      "observed_water_fraction_of_aoi": 0.011556,
+      "observed_water_fraction_of_validity": 0.011556,
+      "best_match_step": 7,
+      "best_match_iou": 0.099464,
       "peak_step": {
         "step": 7,
-        "modelled_area_km2": 551.8684,
-        "iou": 0.134765,
-        "precision": 0.170418,
-        "recall": 0.391792,
-        "f1": 0.237521,
-        "area_bias_pct": 129.9003
+        "modelled_area_km2": 553.5251,
+        "iou": 0.099464,
+        "precision": 0.17058,
+        "recall": 0.19262,
+        "f1": 0.180931,
+        "area_bias_pct": 12.9211
       },
       "sensitivity": [
         {
           "threshold_db": -14.0,
-          "observed_area_km2": 316.9132,
-          "observed_water_fraction_of_validity": 0.084847,
-          "true_positive_km2": 111.2627,
-          "false_positive_km2": 440.6057,
-          "false_negative_km2": 205.6505,
-          "iou": 0.146878,
-          "precision": 0.201611,
-          "recall": 0.351083,
-          "f1": 0.256135
+          "observed_area_km2": 1113.3537,
+          "observed_water_fraction_of_validity": 0.026246,
+          "true_positive_km2": 111.6749,
+          "false_positive_km2": 441.8503,
+          "false_negative_km2": 1001.6789,
+          "iou": 0.071807,
+          "precision": 0.201752,
+          "recall": 0.100305,
+          "f1": 0.133993
         },
         {
           "threshold_db": -16.0,
-          "observed_area_km2": 240.0468,
-          "observed_water_fraction_of_validity": 0.064268,
-          "true_positive_km2": 94.0484,
-          "false_positive_km2": 457.82,
-          "false_negative_km2": 145.9984,
-          "iou": 0.134765,
-          "precision": 0.170418,
-          "recall": 0.391792,
-          "f1": 0.237521
+          "observed_area_km2": 490.1876,
+          "observed_water_fraction_of_validity": 0.011556,
+          "true_positive_km2": 94.4201,
+          "false_positive_km2": 459.105,
+          "false_negative_km2": 395.7675,
+          "iou": 0.099464,
+          "precision": 0.17058,
+          "recall": 0.19262,
+          "f1": 0.180931
         },
         {
           "threshold_db": -18.0,
-          "observed_area_km2": 207.7275,
-          "observed_water_fraction_of_validity": 0.055615,
-          "true_positive_km2": 83.6632,
-          "false_positive_km2": 468.2052,
-          "false_negative_km2": 124.0643,
-          "iou": 0.123774,
-          "precision": 0.1516,
-          "recall": 0.402755,
-          "f1": 0.220283
+          "observed_area_km2": 331.9211,
+          "observed_water_fraction_of_validity": 0.007825,
+          "true_positive_km2": 84.0107,
+          "false_positive_km2": 469.5144,
+          "false_negative_km2": 247.9103,
+          "iou": 0.104825,
+          "precision": 0.151774,
+          "recall": 0.253105,
+          "f1": 0.189759
         }
       ]
     }
   ],
   "summary": {
-    "mean_iou_over_scenes": 0.127049,
-    "mean_precision": 0.154007,
-    "mean_recall": 0.398398,
+    "mean_iou_over_scenes": 0.093433,
+    "mean_precision": 0.154183,
+    "mean_recall": 0.192766,
+    "mean_validity_area_km2": 42420.9682,
+    "mean_validity_fraction_of_scene": 0.977611,
     "worst_scene": "S1A_IW_GRDH_1SDV_20220601T233908_20220601T233933_043476_0530F2",
     "caveats": [
       "This is an extent-shape comparison against real Sentinel-1 acquisitions, not an event hindcast. The scenario's stage and duration were not fitted to these dates.",
-      "σ0 calibration applied from the SAFE calibration LUT. Residual uncertainty is threshold choice (reported across −14/−16/−18 dB) and GRD geometries co-registered with a GCP-derived affine, not a rigorous terrain-corrected warp."
+      "σ0 calibration applied from the SAFE calibration LUT. Residual uncertainty is threshold choice (reported across −14/−16/−18 dB) and GRD geometries co-registered with a GCP-derived affine, not a rigorous terrain-corrected warp.",
+      "Validity is the full Sentinel-1 footprint on the frame grid (coverage ≥0.5, regional AOI only), not the valley-floor AOI core. The 10° DEM slope filter is reported as a diagnostic (with_slope and without_slope) and is not applied to the final domain because it removes most of this scene's hill terrain; both areas are published."
     ]
   }
 }

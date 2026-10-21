@@ -304,6 +304,47 @@ export const scorecardPeakSchema = z.object({
   area_bias_pct: z.number(),
 });
 
+export const scorecardAttritionStepSchema = z.object({
+  area_km2: z.number().nonnegative(),
+  removed_km2: z.number().nonnegative(),
+  applied_to_final: z.boolean(),
+  reason: z.string().min(1),
+  components_before: z.number().int().nonnegative().optional(),
+  components_after: z.number().int().nonnegative().optional(),
+  legacy_aoi_core_area_km2: z.number().nonnegative().optional(),
+  legacy_aoi_core_removed_km2: z.number().nonnegative().optional(),
+});
+
+export const scorecardAttritionSchema = z.object({
+  raw_sar_valid: scorecardAttritionStepSchema,
+  slope_filtered: scorecardAttritionStepSchema,
+  aoi_clipped: scorecardAttritionStepSchema,
+  component_filtered: scorecardAttritionStepSchema,
+  final: scorecardAttritionStepSchema,
+  with_slope_area_km2: z.number().nonnegative(),
+  without_slope_area_km2: z.number().nonnegative(),
+  legacy_aoi_core_clipped_area_km2: z.number().nonnegative().optional(),
+  note: z.string().optional(),
+});
+
+export const scorecardSlopeFilterSchema = z.object({
+  operator: z.string().min(1),
+  unit: z.string().min(1),
+  threshold_deg: z.number(),
+  applied_to_validity: z.boolean(),
+  with_slope_area_km2: z.number().nonnegative(),
+  without_slope_area_km2: z.number().nonnegative(),
+  removed_by_slope_km2: z.number().nonnegative(),
+  reason: z.string().min(1),
+});
+
+export const scorecardMaskProvenanceSchema = z.object({
+  allowed_inputs: z.array(z.string()).min(1),
+  prohibited_inputs: z.array(z.string()).min(1),
+  model_conditioned: z.literal(false),
+  note: z.string().min(1),
+});
+
 export const scorecardSceneSchema = z.object({
   scene_id: z.string().min(1),
   datetime: z.string().min(1),
@@ -312,12 +353,22 @@ export const scorecardSceneSchema = z.object({
   /** REVIEW-18: fixed sigma0 threshold applied to this scene, in dB. */
   threshold_db: z.number(),
   threshold_rationale: z.string().min(1),
-  /** Observed comparison domain (coverage >= 0.5, AOI core, slope <= 10 dB). */
+  /** REVIEW-19: ground area of the scene quadrilateral, km2. */
+  scene_area_km2: z.number().positive(),
+  /** REVIEW-19: full-footprint validity domain, km2. */
   validity_area_km2: z.number().positive(),
+  /** REVIEW-19: validity_area_km2 / scene_area_km2. */
+  validity_fraction_of_scene: z.number().min(0).max(1),
+  with_slope_validity_area_km2: z.number().nonnegative(),
+  without_slope_validity_area_km2: z.number().nonnegative(),
+  validity_attrition: scorecardAttritionSchema,
+  slope_filter: scorecardSlopeFilterSchema,
+  mask_provenance: scorecardMaskProvenanceSchema,
   /** Peak S07 model area measured inside that same validity domain. */
   modelled_in_validity_km2: z.number().nonnegative(),
   observed_area_km2: z.number().positive(),
   observed_water_fraction_of_aoi: z.number().min(0).max(1),
+  observed_water_fraction_of_validity: z.number().min(0).max(1),
   best_match_step: z.number().int().min(0).max(11),
   best_match_iou: z.number().min(0).max(1),
   peak_step: scorecardPeakSchema,
@@ -341,6 +392,11 @@ export const scorecardSchema = z.object({
       A_median: z.number().positive(),
     }),
     slope_mask_deg: z.number(),
+    slope_filter: scorecardSlopeFilterSchema,
+    validity_definition: z.string().min(1),
+    mask_stack_version: z.string().min(1),
+    scene_area_method: z.string().min(1),
+    mask_provenance: scorecardMaskProvenanceSchema,
     min_component_cells: z.number().int(),
     resampling: z.literal('average→nearest'),
     crs: z.literal('EPSG:32646'),
@@ -351,6 +407,8 @@ export const scorecardSchema = z.object({
     mean_iou_over_scenes: z.number().min(0).max(1),
     mean_precision: z.number().min(0).max(1),
     mean_recall: z.number().min(0).max(1),
+    mean_validity_area_km2: z.number().nonnegative(),
+    mean_validity_fraction_of_scene: z.number().min(0).max(1),
     worst_scene: z.string().min(1),
     caveats: z.array(z.string()).min(1),
   }),

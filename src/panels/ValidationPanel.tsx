@@ -32,9 +32,10 @@ export function ValidationPanel({ scorecard }: ValidationPanelProps) {
           {method.collection} · VV decimated with {method.resampling} · σ0 calibration from
           SAFE LUT (A median {formatScore(method.calibration.A_median)}) · fixed{' '}
           {formatScore(method.threshold_db)} dB threshold · sensitivity{' '}
-          {method.sensitivity_db.join(' / ')} dB · slope &gt; {method.slope_mask_deg}° masked ·
-          components &lt; {method.min_component_cells} cells dropped · {method.crs} at{' '}
-          {method.resolution_m} m.
+          {method.sensitivity_db.join(' / ')} dB · {method.crs} at{' '}
+          {method.resolution_m} m. Validity is the full SAR footprint, not the AOI-core
+          sliver; the {method.slope_mask_deg}° slope filter is a per-scene diagnostic and
+          is not applied to the final domain.
         </p>
       </div>
 
@@ -72,8 +73,24 @@ export function ValidationPanel({ scorecard }: ValidationPanelProps) {
             <div>
               <dt>Observed fraction</dt>
               <dd>
-                {formatPercent(scene.observed_water_fraction_of_aoi)} of{' '}
+                {formatPercent(scene.observed_water_fraction_of_validity)} of{' '}
                 {formatArea(scene.validity_area_km2)} km² validity
+              </dd>
+            </div>
+            <div>
+              <dt>Validity footprint</dt>
+              <dd>
+                {formatArea(scene.validity_area_km2)} km² of{' '}
+                {formatArea(scene.scene_area_km2)} km² scene (
+                {formatPercent(scene.validity_fraction_of_scene)})
+              </dd>
+            </div>
+            <div>
+              <dt>Slope diagnostic</dt>
+              <dd>
+                {formatArea(scene.with_slope_validity_area_km2)} km² with slope ≤{' '}
+                {scene.slope_filter.threshold_deg}° ·{' '}
+                {formatArea(scene.without_slope_validity_area_km2)} km² without
               </dd>
             </div>
             <div>

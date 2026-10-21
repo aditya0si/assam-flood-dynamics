@@ -169,7 +169,7 @@
     {
       "class": "derived",
       "dataset": "Sentinel-1 GRD extent-shape validation scorecard",
-      "fetched_at": "2026-10-21T19:40:45Z",
+      "fetched_at": "2026-10-21T20:27:33Z",
       "id": "validation",
       "licence": "Copernicus Sentinel data; Earth Search STAC; anonymous S3 access",
       "notes": "Two Sentinel-1 IW GRD VV acquisitions (earliest and latest usable Jun–Jul 2022 acquisitions over the AOI core). VV is decimated ~1/9 with average resampling; the SAFE schema-calibration-vv sigmaNought LUT (27 vectors x 642 samples) is applied as 20*log10(DN/A), with the sigma0 water mask at a fixed -16 dB and sensitivity published at -14/-16/-18 dB. Water components below 5 analysis cells and DEM slope >10° are removed; masks are reprojected nearest to the 90 m frame grid with a fractional coverage raster. validity_area_km2 and modelled_in_validity_km2 are published per scene. This is an extent-shape comparison, not an event hindcast; scene binaries and masks remain in the gitignored pipeline cache.",
@@ -178,7 +178,7 @@
       ],
       "pipeline": [
         {
-          "command": "python -m baanh_pipeline.cli build-validation --aoi pipeline/config/aoi.json --sources pipeline/config/sources.json --core-mask pipeline/work/aoi-v2-core-90m.tif --dem pipeline/work/dem-90m.tif --frame-index public/data/flood/frame-index.json --frames public/data/flood/frames --scenario pipeline/config/scenario.json --out public/data/validation/scorecard.json --cache pipeline/cache/s1 --refresh",
+          "command": "python -m baanh_pipeline.cli build-validation --aoi pipeline/config/aoi.json --sources pipeline/config/sources.json --core-mask pipeline/work/aoi-v2-core-90m.tif --dem pipeline/work/dem-90m.tif --frame-index public/data/flood/frame-index.json --frames public/data/flood/frames --scenario pipeline/config/scenario.json --out public/data/validation/scorecard.json --cache pipeline/cache/s1",
           "stage": "16",
           "version": "1.0.0"
         }
@@ -356,7 +356,7 @@
       "source_url": "https://unosat.org/products/"
     }
   ],
-  "generated_at": "2026-10-21T19:45:55Z",
+  "generated_at": "2026-10-21T20:27:39Z",
   "schema_version": "1.0.0",
   "versions": {
     "Pillow": "12.3.0",
