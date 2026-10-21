@@ -258,7 +258,7 @@ test.describe('M0 acceptance', () => {
     const errors = collectErrors(page);
     await openApp(page);
 
-    const rows = page.locator('[data-district-id]');
+    const rows = page.getByRole('button', { name: /risk [\d.]+ of 100/i });
     await expect(rows).toHaveCount(33);
     const coverages = await rows.evaluateAll((nodes) =>
       nodes.map((node) => Number(node.getAttribute('data-coverage'))),
