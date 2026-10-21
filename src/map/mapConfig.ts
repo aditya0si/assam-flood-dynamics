@@ -23,8 +23,17 @@ export const ESRI_IMAGERY_TILES =
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 export const TERRAIN_EXAGGERATION = 1.4;
-export const HOME_PITCH = 55;
-export const HOME_BEARING = -15;
+export const HOME_PITCH = 38;
+export const HOME_BEARING = -12;
+export const HOME_ZOOM = 7.2;
+/**
+ * Subject frame for the Brahmaputra flood-prone belt (the AOI v2 core), not the
+ * state bbox. Derivation: the committed peak frame (step-07) has its wet pixels
+ * concentrated in this belt; this box is the 5th–95th percentile of those
+ * pixels in the main valley, with the Barak-valley tail excluded. No data file
+ * was changed to produce it.
+ */
+export const AOI_CORE_BOUNDS: [number, number, number, number] = [90.15, 25.95, 95.0, 27.55];
 export const MAX_BOUNDS: [[number, number], [number, number]] = [
   [88.9, 23.3],
   [96.8, 28.8],
@@ -33,7 +42,7 @@ export const MIN_ZOOM = 5.5;
 export const MAX_ZOOM = 13;
 export const MAX_PITCH = 75;
 
-export const FLOOD_OPACITY = 0.62;
+export const FLOOD_OPACITY = 0.8;
 export const CROSSFADE_MS = 220;
 export const TILE_HEALTH_TIMEOUT_MS = 6000;
 

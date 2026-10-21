@@ -109,6 +109,18 @@
   backdrop-filter: blur(7px);
 }
 
+.health-bad {
+  border-color: rgba(224, 122, 99, 0.55);
+  background: rgba(24, 17, 16, 0.9);
+  color: #f1b3a3;
+}
+
+.health-loading {
+  border-color: rgba(124, 199, 232, 0.32);
+  background: rgba(8, 19, 24, 0.86);
+  color: var(--accent);
+}
+
 .frameWarning {
   position: absolute;
   top: 14px;

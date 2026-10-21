@@ -6,7 +6,6 @@ import { TopBar } from './shell/TopBar';
 import { StatusBar } from './shell/StatusBar';
 import { ErrorBoundary } from './shell/ErrorBoundary';
 import { MapCanvas } from './map/MapCanvas';
-import type { TileHealthSnapshot } from './map/tileHealth';
 import { TimelineDock } from './timeline/TimelineDock';
 import styles from './shell/shell.module.css';
 
@@ -16,7 +15,6 @@ function AppShell() {
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [phase, setPhase] = useState<LoadPhase>('loading');
   const [failure, setFailure] = useState<LoadFailure | null>(null);
-  const [health, setHealth] = useState<TileHealthSnapshot>({ dem: 'loading', imagery: 'loading' });
 
   useEffect(() => {
     let alive = true;
@@ -80,8 +78,8 @@ function AppShell() {
 
         {phase === 'ready' && dataset ? (
           <>
-            <MapCanvas dataset={dataset} onHealthChange={setHealth} />
-            <StatusBar health={health} />
+            <MapCanvas dataset={dataset} />
+            <StatusBar />
           </>
         ) : null}
       </main>

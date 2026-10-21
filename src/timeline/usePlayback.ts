@@ -1,8 +1,5 @@
 import { useEffect } from 'react';
 import { useTimelineStore } from '../state/timelineStore';
-import { prefersReducedMotion } from '../lib/motion';
-
-const STEP_INTERVAL_MS = 1200;
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -12,14 +9,14 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * One rAF clock for playback. The map subscribes to the store transiently;
- * this hook never causes a map re-render.
+ * One rAF clock for playback. Timing lives here; the store owns the actual
+ * advance/stop decision. Reduced motion is handled by the map crossfade
+ * (instant opacity), never by freezing the transport.
  */
 export function usePlayback(): void {
   useEffect(() => {
     let animationFrame = 0;
     let lastTimestamp = 0;
-    let accumulator = 0;
 
     const stopClock = () => {
       if (animationFrame !== 0) {
@@ -27,10 +24,10 @@ export function usePlayback(): void {
         animationFrame = 0;
       }
       lastTimestamp = 0;
-      accumulator = 0;
     };
 
     const tick = (timestamp: number) => {
+      animationFrame = 0;
       const state = useTimelineStore.getState();
       if (!state.playing) {
         stopClock();
@@ -42,46 +39,30 @@ export function usePlayback(): void {
         return;
       }
 
-      if (lastTimestamp === 0) lastTimestamp = timestamp;
-      accumulator += timestamp - lastTimestamp;
+      const delta = lastTimestamp === 0 ? 0 : Math.max(0, timestamp - lastTimestamp);
       lastTimestamp = timestamp;
+      state.tick(delta);
 
-      const interval = STEP_INTERVAL_MS / state.speed;
-      while (accumulator >= interval) {
-        accumulator -= interval;
-        const before = useTimelineStore.getState().step;
-        useTimelineStore.getState().stepBy(1);
-        const after = useTimelineStore.getState().step;
-        if (after === before) {
-          useTimelineStore.getState().pause();
-          stopClock();
-          return;
-        }
-        if (after >= useTimelineStore.getState().stepCount - 1) {
-          useTimelineStore.getState().pause();
-          stopClock();
-          return;
-        }
-      }
-
-      animationFrame = requestAnimationFrame(tick);
-    };
-
-    const startClock = () => {
-      stopClock();
-      const state = useTimelineStore.getState();
-      if (prefersReducedMotion()) {
-        state.stepBy(1);
-        state.pause();
+      if (!useTimelineStore.getState().playing) {
+        stopClock();
         return;
       }
       animationFrame = requestAnimationFrame(tick);
     };
 
+    const startClock = () => {
+      stopClock();
+      animationFrame = requestAnimationFrame(tick);
+    };
+
+    // Zustand v5 calls listeners with (state, previousState).
     const unsubscribe = useTimelineStore.subscribe((state, previous) => {
       if (state.playing && !previous.playing) startClock();
       else if (!state.playing && previous.playing) stopClock();
     });
+
+    // A remount (StrictMode, HMR) must not strand a playing transport.
+    if (useTimelineStore.getState().playing) startClock();
 
     const onVisibilityChange = () => {
       if (document.hidden) useTimelineStore.getState().pause();

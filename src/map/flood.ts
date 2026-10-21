@@ -13,6 +13,8 @@ import {
 
 interface FloodHooks {
   onFrameError?: (step: number) => void;
+  /** Fires when a frame has actually been handed to both image sources. */
+  onFrameApplied?: (step: number, file: string) => void;
 }
 
 export interface FloodController {
@@ -135,27 +137,28 @@ export function createFloodController(
     return true;
   };
 
-  const applyStep = async (step: number, animate: boolean): Promise<boolean> => {
+  const applyStep = async (step: number, animate: boolean, id: number): Promise<boolean> => {
     const clamped = Math.max(0, Math.min(step, frameCount - 1));
     if (clamped === displayedStep && displayedUrl) return true;
 
     try {
       await loadFrame(clamped);
     } catch {
-      hooks.onFrameError?.(clamped);
+      if (id === requestId) hooks.onFrameError?.(clamped);
       return false;
     }
-    if (destroyed) return false;
+    if (destroyed || id !== requestId) return false;
 
     const nextUrl = frameUrl(clamped);
     const outgoingUrl = displayedUrl ?? nextUrl;
     if (!updateImageSources(outgoingUrl, nextUrl)) {
-      hooks.onFrameError?.(clamped);
+      if (id === requestId) hooks.onFrameError?.(clamped);
       return false;
     }
 
     displayedUrl = nextUrl;
     displayedStep = clamped;
+    hooks.onFrameApplied?.(clamped, frameIndex.steps[clamped].file);
 
     if (animate) crossfade();
     else applyOpacity();
@@ -167,14 +170,13 @@ export function createFloodController(
 
   const goToStep = (step: number): void => {
     const id = ++requestId;
-    void applyStep(step, true).then((applied) => {
-      if (!applied && id === requestId) hooks.onFrameError?.(step);
-    });
+    void applyStep(step, true, id);
   };
 
   return {
     start: async (initialStep: number) => {
-      const applied = await applyStep(initialStep, false);
+      const id = ++requestId;
+      const applied = await applyStep(initialStep, false, id);
       prefetch(initialStep + 1);
       return applied;
     },

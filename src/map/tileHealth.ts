@@ -1,18 +1,31 @@
-import type { ErrorEvent as MapLibreErrorEvent, Map as MapLibreMap, MapSourceDataEvent } from 'maplibre-gl';
+import type {
+  ErrorEvent as MapLibreErrorEvent,
+  Map as MapLibreMap,
+  MapSourceDataEvent,
+} from 'maplibre-gl';
 import {
-  IMAGERY_LAYER_ID,
+  BACKGROUND_LAYER_ID,
   IMAGERY_SOURCE_ID,
+  MAX_PITCH,
+  TERRAIN_EXAGGERATION,
   TERRAIN_HILLSHADE_SOURCE_ID,
   TERRAIN_SOURCE_ID,
   TILE_HEALTH_TIMEOUT_MS,
 } from './mapConfig';
+import {
+  deriveSourceStatus,
+  newSourceStats,
+  type SourceHealthStats,
+  type TileHealthSnapshot,
+} from './tileHealthState';
 
-export type TileStatus = 'loading' | 'ok' | 'degraded' | 'offline';
-
-export interface TileHealthSnapshot {
-  dem: TileStatus;
-  imagery: TileStatus;
-}
+export type {
+  HealthTone,
+  TileHealthCopy,
+  TileHealthLevel,
+  TileHealthSnapshot,
+  TileStatus,
+} from './tileHealthState';
 
 type HealthListener = (snapshot: TileHealthSnapshot) => void;
 
@@ -20,93 +33,141 @@ export interface TileHealthTracker {
   destroy: () => void;
 }
 
+interface TrackerState {
+  dem: SourceHealthStats;
+  imagery: SourceHealthStats;
+}
+
+function isDemSource(sourceId?: string): boolean {
+  return sourceId === TERRAIN_SOURCE_ID;
+}
+
+function isTrackedSource(sourceId?: string): boolean {
+  return (
+    isDemSource(sourceId) ||
+    sourceId === TERRAIN_HILLSHADE_SOURCE_ID ||
+    sourceId === IMAGERY_SOURCE_ID
+  );
+}
+
 /**
- * Keeps the fallback matrix honest: if a tile host produces no successful tile
- * within the timeout, or produces repeated errors, the matching layer is degraded
- * and the committed relief remains visible underneath.
+ * Keeps the health matrix honest: every status is an aggregate of real tile
+ * outcomes. Offline is never a timer-only verdict while a later success can
+ * still arrive, and the imagery layer is left mounted so a recovering host can
+ * be observed and recovered.
  */
 export function createTileHealthTracker(map: MapLibreMap, onChange: HealthListener): TileHealthTracker {
-  let dem: TileStatus = 'loading';
-  let imagery: TileStatus = 'loading';
-  let demSucceeded = false;
-  let imagerySucceeded = false;
-  let demErrors = 0;
-  let imageryErrors = 0;
+  const state: TrackerState = { dem: newSourceStats(), imagery: newSourceStats() };
   let destroyed = false;
   let lastKey = '';
+  let terrainDisabled = false;
 
-  const emit = () => {
-    const key = `${dem}:${imagery}`;
-    if (key === lastKey) return;
-    lastKey = key;
-    onChange({ dem, imagery });
+  const statsFor = (sourceId?: string): SourceHealthStats | null => {
+    if (isDemSource(sourceId)) return state.dem;
+    if (sourceId === IMAGERY_SOURCE_ID) return state.imagery;
+    return null;
   };
 
-  const applyOfflineFallbacks = () => {
-    if (!map.isStyleLoaded()) return;
-    if (imagery === 'offline') {
-      if (map.getLayer(IMAGERY_LAYER_ID)) map.setLayoutProperty(IMAGERY_LAYER_ID, 'visibility', 'none');
-    }
+  const snapshot = (): TileHealthSnapshot => ({
+    dem: deriveSourceStatus(state.dem),
+    imagery: deriveSourceStatus(state.imagery),
+  });
+
+  const emit = (force = false) => {
+    const next = snapshot();
+    const key = `${next.dem}:${next.imagery}`;
+    if (!force && key === lastKey) return;
+    lastKey = key;
+    onChange(next);
+  };
+
+  const applyFallbacks = () => {
+    if (!map.getLayer(BACKGROUND_LAYER_ID)) return;
+    const dem = deriveSourceStatus(state.dem);
+
     if (dem === 'offline') {
       map.setTerrain(null);
       map.setMaxPitch(24);
-      const targetPitch = imagery === 'offline' ? 0 : Math.min(map.getPitch(), 20);
-      map.jumpTo({ pitch: targetPitch });
+      map.jumpTo({ pitch: Math.min(map.getPitch(), 20) });
+      terrainDisabled = true;
+      return;
+    }
+
+    if (dem === 'live' && terrainDisabled) {
+      map.setMaxPitch(MAX_PITCH);
+      map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: TERRAIN_EXAGGERATION });
+      terrainDisabled = false;
     }
   };
 
-  const settle = (source: 'dem' | 'imagery', status: TileStatus) => {
-    if (source === 'dem') dem = status;
-    else imagery = status;
+  const settle = () => {
     emit();
-    applyOfflineFallbacks();
+    applyFallbacks();
   };
 
-  const isDemSource = (sourceId?: string): boolean =>
-    sourceId === TERRAIN_SOURCE_ID || sourceId === TERRAIN_HILLSHADE_SOURCE_ID;
+  const onSourceLoading = (event: MapSourceDataEvent) => {
+    if (destroyed) return;
+    const stats = statsFor(event.sourceId);
+    if (!stats || !event.tile) return;
+    stats.pending += 1;
+  };
 
   const onSourceData = (event: MapSourceDataEvent) => {
     if (destroyed) return;
-    if (isDemSource(event.sourceId) && event.tile && !demSucceeded) {
-      demSucceeded = true;
-      settle('dem', 'ok');
-    }
-    if (event.sourceId === IMAGERY_SOURCE_ID && event.tile && !imagerySucceeded) {
-      imagerySucceeded = true;
-      settle('imagery', 'ok');
-    }
+    const stats = statsFor(event.sourceId);
+    if (!stats || !event.tile) return;
+    // Any tile that reaches sourcedata resolved successfully.
+    stats.pending = Math.max(0, stats.pending - 1);
+    stats.successes += 1;
+    stats.consecutiveErrors = 0;
+    stats.lastOutcome = 'success';
+    settle();
+  };
+
+  const onSourceAbort = (event: MapSourceDataEvent) => {
+    if (destroyed) return;
+    const stats = statsFor(event.sourceId);
+    if (!stats || !event.tile) return;
+    stats.pending = Math.max(0, stats.pending - 1);
   };
 
   const onError = (event: MapLibreErrorEvent) => {
     if (destroyed) return;
     const sourceEvent = event as MapLibreErrorEvent & { sourceId?: string; preventDefault?: () => void };
-    if (!isDemSource(sourceEvent.sourceId) && sourceEvent.sourceId !== IMAGERY_SOURCE_ID) return;
+    if (!isTrackedSource(sourceEvent.sourceId)) return;
     sourceEvent.preventDefault?.();
-    if (isDemSource(sourceEvent.sourceId)) {
-      demErrors += 1;
-      if (!demSucceeded && demErrors >= 3) settle('dem', 'offline');
-    } else {
-      imageryErrors += 1;
-      if (!imagerySucceeded && imageryErrors >= 3) settle('imagery', 'offline');
-    }
+    const stats = statsFor(sourceEvent.sourceId);
+    if (!stats) return;
+    stats.pending = Math.max(0, stats.pending - 1);
+    stats.errors += 1;
+    stats.consecutiveErrors += 1;
+    stats.lastOutcome = 'error';
+    settle();
   };
 
+  map.on('sourcedataloading', onSourceLoading);
   map.on('sourcedata', onSourceData);
+  map.on('sourcedataabort', onSourceAbort);
   map.on('error', onError);
 
-  const timer = window.setTimeout(() => {
+  // One 6 s window is not enough to call a still-pending host offline; a second
+  // window without a single resolved tile is.
+  const timer = window.setInterval(() => {
     if (destroyed) return;
-    if (!demSucceeded) settle('dem', 'offline');
-    if (!imagerySucceeded) settle('imagery', 'offline');
+    state.dem.timeoutRounds += 1;
+    state.imagery.timeoutRounds += 1;
+    settle();
   }, TILE_HEALTH_TIMEOUT_MS);
 
-  emit();
+  emit(true);
 
   return {
     destroy: () => {
       destroyed = true;
-      window.clearTimeout(timer);
+      window.clearInterval(timer);
+      map.off('sourcedataloading', onSourceLoading);
       map.off('sourcedata', onSourceData);
+      map.off('sourcedataabort', onSourceAbort);
       map.off('error', onError);
     },
   };

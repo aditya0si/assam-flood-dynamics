@@ -5,9 +5,13 @@
   "type": "module",
   "description": "Baanh — an Assam flood-dynamics scenario explorer. Not a forecast.",
   "scripts": {
-    "dev": "node scripts/prebundle.mjs && node scripts/vite-run.mjs",
-    "build": "tsc -p tsconfig.json --noEmit && node scripts/vite-run.mjs build",
-    "preview": "node scripts/vite-run.mjs preview"
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
+    "dev:sandbox": "node scripts/prebundle.mjs && node scripts/vite-run.mjs",
+    "build:sandbox": "tsc -p tsconfig.json --noEmit && node scripts/vite-run.mjs build",
+    "preview:sandbox": "node scripts/vite-run.mjs preview",
+    "test": "tsc -p tsconfig.test.json --noEmit && node --test --test-isolation=none src/state/timelineStore.test.ts src/map/tileHealth.test.ts"
   },
   "dependencies": {
     "maplibre-gl": "^5.0.0",

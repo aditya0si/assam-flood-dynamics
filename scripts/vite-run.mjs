@@ -26,5 +26,7 @@ childProcess.exec = function sandboxSafeExec(command, options, callback) {
 syncBuiltinESMExports();
 register(new URL('./esbuild-loader.mjs', import.meta.url));
 
+// vite.config.ts reads this to enable the dev-only React/MapLibre prebundle.
+process.env.BAANH_SANDBOX = '1';
 process.argv = [process.argv[0], 'vite', ...process.argv.slice(2), '--configLoader', 'runner'];
 await import('../node_modules/vite/bin/vite.js');
