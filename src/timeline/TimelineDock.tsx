@@ -1,8 +1,8 @@
 import type { Dataset } from '../data/types';
 import { SYNTHETIC_SERIES_NOTE } from '../data/attribution';
 import { formatArea, formatPercent, formatPhase, formatStage, formatStepCode, stepAriaText } from '../data/format';
-import { badgeFor } from '../data/labels';
 import { useTimelineStore } from '../state/timelineStore';
+import { ClassBadge, DataAge } from '../shell/DataBadge';
 import { ChartGrid } from '../charts/ChartGrid';
 import { DepthDecileStrip } from '../charts/DepthDecileStrip';
 import { PlaybackControls } from './PlaybackControls';
@@ -62,7 +62,8 @@ export function TimelineDock({ dataset }: TimelineDockProps) {
             </div>
           </div>
 
-          <span className={styles.classBadge}>{badgeFor(dataset.summary.class)}</span>
+          <ClassBadge className={dataset.summary.class} />
+          <DataAge dataAsOf={dataset.summary.data_as_of} compact />
         </div>
 
         <div className={styles.metrics}>
@@ -82,10 +83,21 @@ export function TimelineDock({ dataset }: TimelineDockProps) {
       <div className={styles.chartPane}>
         <div className={styles.chartPaneHead}>
           <span className={styles.paneKicker}>Timeline analytics</span>
-          <span className={styles.syntheticBadge}>{badgeFor(dataset.summary.series_class.rainfall)}</span>
+          <span className={styles.chartPaneBadges}>
+            <ClassBadge className={dataset.summary.series_class.rainfall} />
+            <DataAge dataAsOf={dataset.summary.data_as_of} compact />
+          </span>
         </div>
-        <ChartGrid summary={dataset.summary} series={dataset.series} />
-        <p className={styles.seriesNote}>{SYNTHETIC_SERIES_NOTE} · area is scenario-derived.</p>
+        <ChartGrid
+          summary={dataset.summary}
+          series={dataset.series}
+          rainfall={dataset.rainfall}
+          forecast={dataset.rainfallForecast}
+        />
+        <p className={styles.seriesNote}>
+          {SYNTHETIC_SERIES_NOTE} · area is scenario-derived. The REANALYSIS series is ERA5, never
+          observed.
+        </p>
       </div>
 
       <p className={styles.srOnly} aria-live="polite" aria-atomic="true">

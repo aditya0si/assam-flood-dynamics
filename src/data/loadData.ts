@@ -1,6 +1,7 @@
 import type { ZodType } from 'zod';
 import {
   districtRiskSchema,
+  exposureSchema,
   featureCollectionSchema,
   floodSummarySchema,
   frameIndexSchema,
@@ -8,10 +9,13 @@ import {
   manifestSchema,
   monsoonSeriesSchema,
   provenanceSchema,
+  rainfallForecastSchema,
+  rainfallSchema,
   riskZoneFeatureCollectionSchema,
   scenarioSchema,
   scorecardSchema,
   type DistrictRisk,
+  type Exposure,
   type FeatureCollection,
   type FloodSummary,
   type FrameIndex,
@@ -19,6 +23,8 @@ import {
   type Manifest,
   type MonsoonSeries,
   type Provenance,
+  type Rainfall,
+  type RainfallForecast,
   type RiskZoneCollection,
   type Scenario,
   type Scorecard,
@@ -117,6 +123,9 @@ export async function loadDataset(): Promise<Dataset> {
     riskZones,
     hotspots,
     scorecard,
+    rainfall,
+    rainfallForecast,
+    exposure,
   ] = await Promise.all([
     getJson(scenarioSchema, 'scenario.json'),
     getJson(floodSummarySchema, 'flood/flood-summary.json'),
@@ -130,11 +139,21 @@ export async function loadDataset(): Promise<Dataset> {
     getJson(riskZoneFeatureCollectionSchema, 'risk/risk-zones.geojson'),
     getJson(hotspotFeatureCollectionSchema, 'risk/hotspots.geojson'),
     getJson(scorecardSchema, 'validation/scorecard.json'),
+    getJson(rainfallSchema, 'series/rainfall.json'),
+    getJson(rainfallForecastSchema, 'series/rainfall-forecast.json'),
+    getJson(exposureSchema, 'exposure/district-exposure.json'),
   ]);
 
   assertSameDataset('flood/frame-index.json', frameIndex.dataset_version, manifest.dataset_version);
   assertSameDataset('provenance.json', provenance.dataset_version, manifest.dataset_version);
   assertSameDataset('series/monsoon-series.json', series.dataset_version, manifest.dataset_version);
+  assertSameDataset('series/rainfall.json', rainfall.dataset_version, manifest.dataset_version);
+  assertSameDataset(
+    'series/rainfall-forecast.json',
+    rainfallForecast.dataset_version,
+    manifest.dataset_version,
+  );
+  assertSameDataset('exposure/district-exposure.json', exposure.dataset_version, manifest.dataset_version);
   assertSameDataset('risk/risk-zones.geojson', riskZones.dataset_version, manifest.dataset_version);
   assertSameDataset('risk/hotspots.geojson', hotspots.dataset_version, manifest.dataset_version);
 
@@ -153,6 +172,27 @@ export async function loadDataset(): Promise<Dataset> {
       'risk/district-risk.json',
       `counts.total ${districtRisk.counts.total} does not match ${districtRisk.districts.length} districts`,
     );
+  }
+  if (rainfall.series.some((entry) => entry.class !== 'reanalysis')) {
+    throw new DataContractError('series/rainfall.json', 'every archive series must be class reanalysis');
+  }
+  if (rainfall.class !== 'reanalysis') {
+    throw new DataContractError('series/rainfall.json', 'the ERA5 file must be class reanalysis');
+  }
+  if (exposure.districts.length !== districtRisk.districts.length) {
+    throw new DataContractError(
+      'exposure/district-exposure.json',
+      `${exposure.districts.length} exposure rows for ${districtRisk.districts.length} districts`,
+    );
+  }
+  const exposureIds = new Set(exposure.districts.map((district) => district.district_id));
+  for (const district of districtRisk.districts) {
+    if (!exposureIds.has(district.district_id)) {
+      throw new DataContractError(
+        'exposure/district-exposure.json',
+        `${district.name} has no potentially_exposed_residents row`,
+      );
+    }
   }
   const ranks = new Set<number>();
   const severityRanks = new Set<number>();
@@ -231,6 +271,9 @@ export async function loadDataset(): Promise<Dataset> {
     provenance,
     districtRisk,
     series,
+    rainfall,
+    rainfallForecast,
+    exposure,
     riskZones,
     hotspots,
     scorecard,
@@ -239,6 +282,7 @@ export async function loadDataset(): Promise<Dataset> {
 
 export type {
   DistrictRisk,
+  Exposure,
   FeatureCollection,
   FloodSummary,
   FrameIndex,
@@ -246,6 +290,8 @@ export type {
   Manifest,
   MonsoonSeries,
   Provenance,
+  Rainfall,
+  RainfallForecast,
   RiskZoneCollection,
   Scenario,
   Scorecard,

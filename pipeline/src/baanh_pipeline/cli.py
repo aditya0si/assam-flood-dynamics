@@ -141,6 +141,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--version", required=True)
     p.add_argument("--manifest", required=True)
     p.add_argument("--provenance", required=True)
+    p.add_argument("--regenerate", action="store_true",
+                   help="Regenerate manifest/provenance from current data even if the validation report is stale")
 
     p = add("build-validation", "Stage 16: Sentinel-1 validation scorecard")
     p.add_argument("--aoi", required=True)
@@ -152,6 +154,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--scenario", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--cache", required=True)
+    p.add_argument("--refresh", action="store_true")
+
+    p = add("build-rainfall", "Stage 17 (P1.3): ERA5 reanalysis rainfall and district totals")
+    p.add_argument("--cache", required=True)
+    p.add_argument("--out-rainfall", required=True)
+    p.add_argument("--out-forecast", required=True)
+    p.add_argument("--refresh", action="store_true")
+
+    p = add("build-exposure", "Stage 18 (P1.5): WorldPop population over the peak mask and districts")
+    p.add_argument("--cache", required=True)
+    p.add_argument("--masks", required=True)
+    p.add_argument("--out", required=True)
     p.add_argument("--refresh", action="store_true")
 
     return parser
@@ -282,7 +296,8 @@ def _dispatch(args) -> None:
     elif args.command == "publish":
         from . import publish
 
-        publish.run(cfg, rel(args.data), args.version, rel(args.manifest), rel(args.provenance))
+        publish.run(cfg, rel(args.data), args.version, rel(args.manifest), rel(args.provenance),
+                    allow_stale_report=getattr(args, "regenerate", False))
     elif args.command == "build-validation":
         from . import calibration_s1
 
@@ -294,6 +309,26 @@ def _dispatch(args) -> None:
             rel(args.frames),
             rel(args.out),
             rel(args.cache),
+            args.refresh,
+        )
+    elif args.command == "build-rainfall":
+        from . import rainfall
+
+        rainfall.run(
+            cfg,
+            rel(args.cache),
+            rel(args.out_rainfall),
+            rel(args.out_forecast),
+            args.refresh,
+        )
+    elif args.command == "build-exposure":
+        from . import exposure
+
+        exposure.run(
+            cfg,
+            rel(args.cache),
+            rel(args.masks),
+            rel(args.out),
             args.refresh,
         )
     else:  # pragma: no cover - argparse prevents this
@@ -310,7 +345,10 @@ def main(argv: list[str] | None = None) -> int:
         return int(exc.code or 0)
     except Exception as exc:
         print(f"\n[FAIL] {args.command}: {type(exc).__name__}: {exc}", file=sys.stderr)
-        traceback.print_exc()
+        # A rate-limited archive fetch is a resumable stop, not an unexpected
+        # crash: report the cached pairs without a traceback.
+        if type(exc).__name__ != "ArchiveRateLimited":
+            traceback.print_exc()
         return 1
     return 0
 

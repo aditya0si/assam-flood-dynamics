@@ -37,6 +37,9 @@ public/data/
 ├─ risk/hotspots.geojson                  (P1)
 ├─ series/monsoon-series.json
 ├─ series/cross-sections.json             (P1)
+├─ series/rainfall.json                    (P1.3 ERA5 reanalysis)
+├─ series/rainfall-forecast.json           (P1.3 current window, separate)
+├─ exposure/district-exposure.json         (P1.5 WorldPop derived)
 ├─ basemap/assam-hillshade.webp
 ├─ assets/critical-facilities.geojson     (P1)
 ├─ gauges/virtual-gauges.geojson          (P1)
@@ -47,7 +50,8 @@ public/data/
   places (~1 m), RFC 7946 winding.
 - All analysis happens in **EPSG:32646** at **90 m** (§3).
 - Area values are geodesic (WGS84 ellipsoid), in km², never planar degrees².
-- Every feature has `"class"` ∈ `source | reference | derived | scenario | synthetic`.
+- Every feature has `"class"`; series carry `observed | reanalysis | scenario`. UI badges are
+  `OBSERVED | REANALYSIS | DERIVED | SCENARIO` and every data surface carries a `data as of` age.
 - No output contains a field for casualties, affected people, displacement, agency id, incident
   id, relief camp, or deployment ETA. Those fields do not exist in the schema and are banned by
   validation V13.
@@ -64,15 +68,20 @@ public/data/
 | OSM Overpass | `https://overpass-api.de/api/interpreter` | River centrelines; P1 hospitals/clinics/schools | ODbL; “© OpenStreetMap contributors” shown | No; committed output |
 | Natural Earth 10m rivers | Local/committed fallback copy of the Natural Earth 10m rivers GeoJSON (exact URL/path in `sources.json`) | River fallback if Overpass fails | Public domain | No; committed output |
 | UNOSAT flood products | Portal reachable (per reference analysis) | **Not ingested in P0/P1.** Reserved for a future event-context cross-check. | UNOSAT terms; would be cited | No |
+| ERA5 via Open-Meteo archive | `https://archive-api.open-meteo.com/v1/archive` | Daily precipitation JJAS 06-01 → 09-30 for 2015–2025, district areal means; off-season days omitted because the fetch is rate-limited, not because they are unavailable | Open-Meteo; ERA5 © ECMWF/C3S, CC BY 4.0 | No; committed output |
+| Open-Meteo current window | `https://api.open-meteo.com/v1/forecast` | Current-window model guidance, stored separately | Open-Meteo, CC BY 4.0 | No; committed output |
+| WorldPop 2020 | REST catalogue `https://www.worldpop.org/rest/data/pop/wpgp?iso3=IND`; published 1 km raster from `data.worldpop.org` | Static population aggregate to peak mask and districts | WorldPop, CC BY 4.0 | No; committed output |
 
 Natural Earth is the documented fallback for the **rivers** source, not an additional layer or a
 sixth dataset. The five probed layers remain terrain, satellite basemap, districts, rivers, and
 event context; the first four are used, and UNOSAT is explicitly not used in the first build.
 
-**Source discipline.** Only the five probed sources above, or committed pipeline output, feed the
-app. No rainfall API, discharge API, gauge API, population layer, building footprint, or
-administrative unit beyond geoBoundaries ADM2 is added. If a source is unavailable, the pipeline
-uses the documented fallback or fails; it does not substitute a plausible-looking dataset.
+**Source discipline.** Only the documented sources above, or committed pipeline output, feed the
+app. Phase 1b adds exactly two: ERA5 reanalysis rainfall (with a separate current-window file) and
+WorldPop 2020 population for a derived exposure estimate. No discharge API, gauge API, building
+footprint, or administrative unit beyond geoBoundaries ADM2 is added. If a source is unavailable,
+the pipeline uses the documented fallback or fails; it does not substitute a plausible-looking
+dataset.
 
 **What is real vs synthetic.**
 
@@ -82,12 +91,15 @@ uses the documented fallback or fails; it does not substitute a plausible-lookin
 | District boundaries and state outline | `source` | geoBoundaries ADM2, dissolved for state |
 | Rivers | `source` | OSM Overpass, Natural Earth fallback |
 | Hospitals/clinics/schools (P1) | `source` | OSM Overpass, completeness unverified |
-| Rainfall series | `synthetic` | Parameterised monsoon curve; no gauge record |
-| Main-stem stage anomaly | `synthetic` | Parameterised; relative to a pre-monsoon baseline, not a gauge datum |
+| Rainfall series | `scenario` | Parameterised monsoon curve; no gauge record |
+| ERA5 daily precipitation and district monsoon totals | `reanalysis` | ERA5 model reanalysis; never observed; JJAS 06-01..09-30 only (rate-limited fetch, not unavailable data) |
+| Open-Meteo current window | `scenario` | Model current-window guidance; stored separately, not observed |
+| Population exposure | `derived` | WorldPop 2020 × synthetic peak mask, zonal-summed as `pop × wet_fraction`; `potentially_exposed_residents`, `district_population`, `exposed_share_of_district`; totals clipped to AOI v2 as `population_within_aoi` |
+| Main-stem stage anomaly | `scenario` | Parameterised; relative to a pre-monsoon baseline, not a gauge datum |
 | Stage above local drainage | `scenario` | Model driver for HAND thresholds |
 | Inundation extent/depth | `scenario` | Derived from DEM + channels + synthetic stage |
 | Risk zones, district ranking, hotspots | `derived` | Formulas in §9, no demographics |
-| Virtual gauges (P1) | `synthetic` | Stations placed on mapped rivers; no agency, code, or datum |
+| Virtual gauges (P1) | `scenario` | Stations placed on mapped rivers; no agency, code, or datum |
 
 No real 2022 (or other year) casualty, displacement, or incident figure is used. If one is ever
 quoted, it must be cited in this file and labelled `reference` in the UI.
@@ -200,12 +212,15 @@ Conventions for every stage:
 | 14 | `validate` | all public data | validation report + exit code | Yes |
 | 15 | `publish` | validated data | manifest, provenance | Yes |
 | 16 | `build-validation` (P1) | Earth Search Sentinel-1 GRD, DEM, frames | `validation/scorecard.json` | Yes (scorecard only; no scene or mask) |
+| 17 | `build-rainfall` (P1.3) | Open-Meteo archive + current window, district polygons | `series/rainfall.json`, `series/rainfall-forecast.json` | Yes |
+| 18 | `build-exposure` (P1.5) | WorldPop 2020 raster, peak mask, districts | `exposure/district-exposure.json` | Yes |
 
 M0 runs stages **01–11, 14, 15**. Stages 12–13 are optional P1 outputs; when omitted, the
 manifest simply has no entry for them and the app hides those panels. Stage 16
 (`build-validation`) is the Phase 1a Sentinel-1 scorecard and is run after stages 09–15; it
-commits only the scorecard JSON, never a scene or mask. Stages 04–11 are the minimum to produce
-the M0 data; stages 01–03 fetch its sources.
+commits only the scorecard JSON, never a scene or mask. Phase 1b adds stages 17–18: ERA5
+reanalysis rainfall (with a separate current-window file) and the WorldPop-derived exposure
+estimate. Stages 04–11 are the minimum to produce the M0 data; stages 01–03 fetch its sources.
 
 ---
 

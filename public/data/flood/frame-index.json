@@ -3,6 +3,7 @@
   "dataset_version": "2026.10.0",
   "scenario_id": "assam-monsoon-composite-v1",
   "class": "scenario",
+  "data_as_of": "2026-10-21",
   "bbox": [
     89.424203,
     23.911344,

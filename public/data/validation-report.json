@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-10-21T19:45:47Z",
+  "generated_at": "2026-10-22T22:08:00Z",
   "dataset_version": "2026.10.0",
   "status": "pass",
   "checks": [
@@ -9,7 +9,7 @@
       "name": "Schema validity",
       "status": "pass",
       "expected": "every committed JSON/GeoJSON parses and matches its §6 schema",
-      "actual": "17 files schema-checked; 0 parse error(s); 0 schema error(s)",
+      "actual": "20 files schema-checked; 0 parse error(s); 0 schema error(s)",
       "detail": "all checked files valid"
     },
     {
@@ -73,7 +73,7 @@
       "name": "File caps",
       "status": "pass",
       "expected": "every file ≤ its §11 raw cap; every frame PNG ≤400 KB raw; JSON gzip caps respected; public/data ≤9.0 MB",
-      "actual": "total 4.65 MB; meta 51 KB; 12 PNGs, max 249 KB; 0 over cap",
+      "actual": "total 4.80 MB; meta 61 KB; 12 PNGs, max 249 KB; 0 over cap",
       "detail": "all raw and gzip file caps satisfied"
     },
     {
@@ -81,7 +81,7 @@
       "name": "Manifest integrity",
       "status": "pass",
       "expected": "every file except manifest listed once; SHA-256 and bytes match; no orphan",
-      "actual": "29 manifest entries, 0 mismatch(es)",
+      "actual": "32 manifest entries, 0 mismatch(es)",
       "detail": "manifest hashes and sizes match"
     },
     {
@@ -161,7 +161,7 @@
       "name": "First-paint budget",
       "status": "pass",
       "expected": "critical ≤3.5 MB; animation (12 PNGs + frame-index + summary + risk-zones) ≤4.0 MB raw; optional/fallback ≤3.0 MB",
-      "actual": "critical 1.20 MB, animation 2.24 MB raw, optional/fallback 1.20 MB",
+      "actual": "critical 1.34 MB, animation 2.24 MB raw, optional/fallback 1.20 MB",
       "detail": "all tier budgets satisfied"
     },
     {
@@ -169,7 +169,7 @@
       "name": "Provenance completeness",
       "status": "pass",
       "expected": "every committed dataset has source/licence/stage/output; UNOSAT absence noted",
-      "actual": "13 entries, 0 violation(s)",
+      "actual": "17 entries, 0 violation(s)",
       "detail": "required source→stage→file entries present"
     },
     {
@@ -233,7 +233,7 @@
       "name": "Stage 09 performance",
       "status": "pass",
       "expected": "stage 09 wall time ≤10 min; no inundation-stack.npz above 300 MB; every stage-09 working artifact ≤300 MB",
-      "actual": "wall 29.9 s, npz 0.0 MB, masks 3.4 MB, largest 3.4 MB",
+      "actual": "wall 69.3 s, npz 0.0 MB, masks 3.4 MB, largest 3.4 MB",
       "detail": "stage 09 within time and size limits"
     },
     {
@@ -251,13 +251,29 @@
       "expected": "frame-index bbox and half-resolution reproduce every PNG extent within 1 pixel; each step area matches the PNG wet cells × cell area within 1%",
       "actual": "12 frames checked; max area delta 0.535%; max bbox delta 0.495 px",
       "detail": "frame-index and PNG agree for every step"
+    },
+    {
+      "id": "V21",
+      "name": "Class discipline and exposure naming",
+      "status": "pass",
+      "expected": "series class in {observed,reanalysis,scenario}; no ERA5 series labelled observed; only potentially_exposed_residents in exposure; data_as_of on every panel feed",
+      "actual": "0 violation(s)",
+      "detail": "class enum, ERA5-not-observed, exposure naming and data_as_of all valid"
+    },
+    {
+      "id": "V22",
+      "name": "Exposure value gates",
+      "status": "pass",
+      "expected": "sum(districts) ≈ peak mask within 1%; 20M ≤ population_within_aoi ≤ 45M; every district exposed ≤ its own district_population; peak mask < AOI total",
+      "actual": "district sum 5,801,742 vs peak 5,807,467; AOI population 32,667,772; 33 district rows",
+      "detail": "all four exposure value gates pass"
     }
   ],
   "counts": {
-    "files": 30,
+    "files": 33,
     "steps": 12,
     "features": 3852,
-    "gates": 31,
+    "gates": 33,
     "failures": 0,
     "warnings": 0
   }

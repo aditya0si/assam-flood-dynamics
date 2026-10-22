@@ -4,6 +4,7 @@
   "name": "Composite monsoon scenario (synthetic)",
   "class": "synthetic",
   "not_a_forecast": true,
+  "data_as_of": "2026-10-21",
   "year_label": null,
   "step_count": 12,
   "total_days": 136,

@@ -1,7 +1,8 @@
 import type { Dataset } from '../data/types';
-import { HONESTY_CHIP, badgeFor } from '../data/labels';
+import { HONESTY_CHIP } from '../data/labels';
 import { formatPhase, formatStepCode } from '../data/format';
 import { useTimelineStore } from '../state/timelineStore';
+import { ClassBadge, DataAge } from './DataBadge';
 import styles from './shell.module.css';
 
 interface TopBarProps {
@@ -57,8 +58,13 @@ export function TopBar({ dataset }: TopBarProps) {
         <span className={styles.notForecast} title="Explanatory synthetic scenario, not an operational product">
           {HONESTY_CHIP}
         </span>
-        <span className={styles.classBadge}>{badgeFor(scenarioClass)}</span>
-        {dataset ? <span className={styles.datasetVersion}>data {dataset.manifest.dataset_version}</span> : null}
+        <ClassBadge className={scenarioClass} />
+        {dataset ? (
+          <>
+            <span className={styles.datasetVersion}>data {dataset.manifest.dataset_version}</span>
+            <DataAge className={styles.datasetVersion} dataAsOf={dataset.summary.data_as_of} compact />
+          </>
+        ) : null}
       </div>
 
       <div className={styles.stepReadout} aria-live="off">

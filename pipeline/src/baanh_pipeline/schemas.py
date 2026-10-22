@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-CLASSES = ["source", "reference", "derived", "scenario", "synthetic"]
+CLASSES = ["source", "reference", "derived", "scenario", "synthetic", "observed", "reanalysis"]
+SERIES_CLASSES = ["observed", "reanalysis", "scenario"]
 PHASES = ["onset", "rising", "peak", "receding"]
 RISK_CLASSES = ["low", "moderate", "high", "very_high"]
 BANDS = ["0.0-0.5", "0.5-1.5", "1.5-3.0", "3.0+"]
@@ -198,6 +199,7 @@ SCENARIO_SCHEMA = {
         "name",
         "class",
         "not_a_forecast",
+        "data_as_of",
         "step_count",
         "total_days",
         "peak_step",
@@ -214,6 +216,7 @@ SCENARIO_SCHEMA = {
         "name": {"type": "string"},
         "class": {"const": "synthetic"},
         "not_a_forecast": {"const": True},
+        "data_as_of": {"type": "string", "minLength": 10},
         "step_count": {"const": 12},
         "total_days": {"type": "integer", "minimum": 1},
         "peak_step": {"type": "integer", "minimum": 0, "maximum": 11},
@@ -259,6 +262,7 @@ FLOOD_SUMMARY_SCHEMA = {
         "schema_version",
         "scenario_id",
         "class",
+        "data_as_of",
         "peak_step",
         "series_class",
         "steps",
@@ -268,6 +272,7 @@ FLOOD_SUMMARY_SCHEMA = {
         "schema_version": {"const": "1.0.0"},
         "scenario_id": {"type": "string"},
         "class": {"const": "scenario"},
+        "data_as_of": {"type": "string", "minLength": 10},
         "peak_step": {"type": "integer"},
         "series_class": {"type": "object"},
         "steps": {
@@ -379,6 +384,7 @@ FRAME_INDEX_SCHEMA = {
         "dataset_version",
         "scenario_id",
         "class",
+        "data_as_of",
         "bbox",
         "width",
         "height",
@@ -392,6 +398,7 @@ FRAME_INDEX_SCHEMA = {
         "dataset_version": {"type": "string"},
         "scenario_id": {"type": "string"},
         "class": {"const": "scenario"},
+        "data_as_of": {"type": "string", "minLength": 10},
         "bbox": {
             "type": "array",
             "minItems": 4,
@@ -447,6 +454,7 @@ DISTRICT_RISK_SCHEMA = {
         "scenario_id",
         "class",
         "generated_at",
+        "data_as_of",
         "weights_version",
         "weights",
         "reference_values",
@@ -460,6 +468,7 @@ DISTRICT_RISK_SCHEMA = {
         "scenario_id": {"type": "string"},
         "class": {"const": "derived"},
         "generated_at": {"type": "string"},
+        "data_as_of": {"type": "string", "minLength": 10},
         "weights_version": {"type": "string", "minLength": 1},
         "weights": {
             "type": "object",
@@ -563,17 +572,19 @@ DISTRICT_RISK_SCHEMA = {
 
 MONSOON_SCHEMA = {
     "type": "object",
-    "required": ["schema_version", "scenario_id", "class", "series", "threshold"],
+    "required": ["schema_version", "dataset_version", "scenario_id", "class", "data_as_of", "series", "threshold"],
     "properties": {
         "schema_version": {"const": "1.0.0"},
+        "dataset_version": {"type": "string"},
         "scenario_id": {"type": "string"},
-        "class": {"const": "synthetic"},
+        "class": {"const": "scenario"},
+        "data_as_of": {"type": "string", "minLength": 10},
         "series": {
             "type": "array",
             "minItems": 4,
             "items": {
                 "type": "object",
-                "required": ["id", "label", "unit", "class", "source_note", "points"],
+                "required": ["id", "label", "unit", "class", "source_note", "data_as_of", "points"],
                 "properties": {
                     "id": {
                         "enum": [
@@ -585,8 +596,9 @@ MONSOON_SCHEMA = {
                     },
                     "label": {"type": "string"},
                     "unit": {"type": "string"},
-                    "class": {"enum": ["synthetic", "scenario"]},
+                    "class": {"enum": SERIES_CLASSES},
                     "source_note": {"type": "string"},
+                    "data_as_of": {"type": "string", "minLength": 10},
                     "points": {
                         "type": "array",
                         "minItems": 12,
@@ -610,11 +622,12 @@ MONSOON_SCHEMA = {
 
 CROSS_SECTION_SCHEMA = {
     "type": "object",
-    "required": ["schema_version", "scenario_id", "class", "transects"],
+    "required": ["schema_version", "scenario_id", "class", "data_as_of", "transects"],
     "properties": {
         "schema_version": {"const": "1.0.0"},
         "scenario_id": {"type": "string"},
         "class": {"const": "derived"},
+        "data_as_of": {"type": "string", "minLength": 10},
         "transects": {
             "type": "array",
             "minItems": 1,
@@ -784,10 +797,11 @@ MASK_PROVENANCE_SCHEMA = {
 
 SCORECARD_SCHEMA = {
     "type": "object",
-    "required": ["schema_version", "generated_at", "method", "scenes", "summary"],
+    "required": ["schema_version", "generated_at", "data_as_of", "method", "scenes", "summary"],
     "properties": {
         "schema_version": {"const": "1.0.0"},
         "generated_at": {"type": "string"},
+        "data_as_of": {"type": "string", "minLength": 10},
         "method": {
             "type": "object",
             "required": [
@@ -1029,6 +1043,280 @@ PROVENANCE_SCHEMA = {
 }
 
 
+RAINFALL_SCHEMA = {
+    "type": "object",
+    "required": [
+        "schema_version",
+        "dataset_version",
+        "class",
+        "data_as_of",
+        "source",
+        "monsoon_definition",
+        "series",
+        "aoi_monsoon",
+        "district_monsoon",
+    ],
+    "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "dataset_version": {"type": "string"},
+        "class": {"const": "reanalysis"},
+        "data_as_of": {"type": "string", "minLength": 10},
+        "source": {
+            "type": "object",
+            "required": [
+                "name",
+                "endpoint",
+                "query",
+                "retrieved_at",
+                "model",
+                "grid_resolution_deg",
+                "grid_resolution_km",
+                "units",
+                "licence",
+                "caveat",
+            ],
+            "properties": {
+                "endpoint": {"type": "string", "minLength": 1},
+                "retrieved_at": {"type": "string", "minLength": 1},
+                "grid_resolution_deg": {"type": "number", "exclusiveMinimum": 0},
+                "grid_resolution_km": {"type": "number", "exclusiveMinimum": 0},
+                "units": {"type": "string", "minLength": 1},
+                "caveat": {"type": "string", "minLength": 1},
+            },
+        },
+        "monsoon_definition": {
+            "type": "object",
+            "required": ["months", "label", "target_year", "mean_start_year", "mean_end_year"],
+        },
+        "series": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "required": ["id", "label", "unit", "class", "source_note", "data_as_of", "points"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "label": {"type": "string"},
+                    "unit": {"type": "string"},
+                    "class": {"enum": SERIES_CLASSES},
+                    "source_note": {"type": "string"},
+                    "data_as_of": {"type": "string", "minLength": 10},
+                    "points": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "required": ["date", "value"],
+                            "properties": {
+                                "date": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+                                "value": {"type": "number", "minimum": 0},
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        "aoi_monsoon": {
+            "type": "object",
+            "required": [
+                "monsoon_2022_mm",
+                "monsoon_2015_2025_mean_mm",
+                "class",
+                "data_as_of",
+                "seasons",
+            ],
+            "properties": {
+                "monsoon_2022_mm": {"type": "number", "minimum": 0},
+                "monsoon_2015_2025_mean_mm": {"type": "number", "minimum": 0},
+                "class": {"const": "reanalysis"},
+                "data_as_of": {"type": "string", "minLength": 10},
+                "seasons": {"type": "array", "minItems": 11, "maxItems": 11},
+            },
+        },
+        "district_monsoon": {
+            "type": "array",
+            "minItems": 33,
+            "maxItems": 33,
+            "items": {
+                "type": "object",
+                "required": [
+                    "district_id",
+                    "name",
+                    "monsoon_2022_mm",
+                    "monsoon_2015_2025_mean_mm",
+                    "class",
+                    "data_as_of",
+                ],
+                "properties": {
+                    "district_id": {"type": "string", "minLength": 1},
+                    "name": {"type": "string", "minLength": 1},
+                    "monsoon_2022_mm": {"type": "number", "minimum": 0},
+                    "monsoon_2015_2025_mean_mm": {"type": "number", "minimum": 0},
+                    "class": {"const": "reanalysis"},
+                    "data_as_of": {"type": "string", "minLength": 10},
+                },
+            },
+        },
+    },
+}
+
+RAINFALL_FORECAST_SCHEMA = {
+    "type": "object",
+    "required": ["schema_version", "dataset_version", "class", "data_as_of", "source", "forecast_window"],
+    "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "dataset_version": {"type": "string"},
+        "class": {"const": "scenario"},
+        "data_as_of": {"type": "string", "minLength": 10},
+        "source": {
+            "type": "object",
+            "required": ["name", "endpoint", "query", "retrieved_at", "units", "licence", "note"],
+        },
+        "forecast_window": {
+            "type": "object",
+            "required": [
+                "id",
+                "label",
+                "class",
+                "source_kind",
+                "data_as_of",
+                "window_start",
+                "window_end",
+                "points",
+            ],
+            "properties": {
+                "id": {"type": "string"},
+                "label": {"type": "string"},
+                "class": {"enum": SERIES_CLASSES},
+                "source_kind": {"const": "model_current_window"},
+                "data_as_of": {"type": "string", "minLength": 10},
+                "window_start": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+                "window_end": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+                "points": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": ["date", "value"],
+                        "properties": {
+                            "date": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+                            "value": {"type": "number", "minimum": 0},
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
+
+EXPOSURE_SCHEMA = {
+    "type": "object",
+    "required": [
+        "schema_version",
+        "dataset_version",
+        "class",
+        "data_as_of",
+        "source",
+        "method_sentence",
+        "uncertainty_statement",
+        "caveat",
+        "peak_mask",
+        "districts",
+        "totals",
+    ],
+    "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "dataset_version": {"type": "string"},
+        "class": {"const": "derived"},
+        "data_as_of": {"type": "string", "minLength": 10},
+        "source": {
+            "type": "object",
+            "required": [
+                "name",
+                "rest_endpoint",
+                "rest_status",
+                "endpoint_used",
+                "vintage",
+                "resolution_m",
+                "units",
+                "licence",
+                "retrieved_at",
+                "method",
+                "uncertainty",
+            ],
+        },
+        "method_sentence": {"type": "string", "minLength": 1},
+        "uncertainty_statement": {"type": "string", "minLength": 1},
+        "caveat": {"type": "string", "minLength": 1},
+        "peak_mask": {
+            "type": "object",
+            "required": [
+                "step",
+                "step_label",
+                "wet_area_km2",
+                "mask_file",
+                "potentially_exposed_residents",
+                "class",
+                "data_as_of",
+            ],
+            "properties": {
+                "step": {"type": "integer", "minimum": 0, "maximum": 11},
+                "wet_area_km2": {"type": "number", "minimum": 0},
+                "potentially_exposed_residents": {"type": "integer", "minimum": 0},
+                "class": {"const": "derived"},
+                "data_as_of": {"type": "string", "minLength": 10},
+            },
+        },
+        "districts": {
+            "type": "array",
+            "minItems": 33,
+            "maxItems": 33,
+            "items": {
+                "type": "object",
+                "required": [
+                    "district_id",
+                    "name",
+                    "district_population",
+                    "potentially_exposed_residents",
+                    "exposed_share_of_district",
+                    "class",
+                    "data_as_of",
+                ],
+                "properties": {
+                    "district_id": {"type": "string", "minLength": 1},
+                    "name": {"type": "string", "minLength": 1},
+                    "district_population": {"type": "integer", "minimum": 0},
+                    "potentially_exposed_residents": {"type": "integer", "minimum": 0},
+                    "exposed_share_of_district": {"type": "number", "minimum": 0, "maximum": 1},
+                    "class": {"const": "derived"},
+                    "data_as_of": {"type": "string", "minLength": 10},
+                },
+            },
+        },
+        "totals": {
+            "type": "object",
+            "required": [
+                "potentially_exposed_residents",
+                "peak_mask_potentially_exposed_residents",
+                "district_count",
+                "population_within_aoi",
+                "population_raster_scope",
+                "worldpop_cell_count_within_aoi",
+            ],
+            "properties": {
+                "potentially_exposed_residents": {"type": "integer", "minimum": 0},
+                "peak_mask_potentially_exposed_residents": {"type": "integer", "minimum": 0},
+                "district_count": {"type": "integer", "minimum": 1},
+                "district_population_total": {"type": "integer", "minimum": 0},
+                "population_within_aoi": {"type": "integer", "minimum": 0},
+                "population_raster_scope": {"const": "AOI v2 polygon"},
+                "worldpop_cell_count_within_aoi": {"type": "integer", "minimum": 0},
+            },
+        },
+    },
+}
+
+
 SCHEMAS: dict[str, dict[str, Any]] = {
     "scenario.json": SCENARIO_SCHEMA,
     "flood/flood-summary.json": FLOOD_SUMMARY_SCHEMA,
@@ -1041,6 +1329,9 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "risk/hotspots.geojson": geojson_schema(HOTSPOT_PROPS, "derived", point_only=True),
     "series/monsoon-series.json": MONSOON_SCHEMA,
     "series/cross-sections.json": CROSS_SECTION_SCHEMA,
+    "series/rainfall.json": RAINFALL_SCHEMA,
+    "series/rainfall-forecast.json": RAINFALL_FORECAST_SCHEMA,
+    "exposure/district-exposure.json": EXPOSURE_SCHEMA,
     "assets/critical-facilities.geojson": geojson_schema(ASSET_PROPS, "source", point_only=True),
     "gauges/virtual-gauges.geojson": geojson_schema(GAUGE_PROPS, "synthetic", point_only=True),
     "validation/scorecard.json": SCORECARD_SCHEMA,

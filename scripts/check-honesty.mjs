@@ -99,6 +99,32 @@ function forecastIsQualified(text, index) {
   const notKey = /not_a_$/i.test(before);
   if (notKey) return true;
 
+  // The Open-Meteo current-window endpoint is a named model source, not a
+  // claim about the flood scenario.  It is stored in a separate file and is
+  // labelled scenario/model_current_window, never observed.
+  const local = text.slice(Math.max(0, index - 140), index + 140).toLowerCase();
+  if (local.includes('open-meteo.com') && local.includes('forecast')) return true;
+  if (local.includes('model_current_window')) return true;
+
+  // Identifiers are not claims. A CLI flag (--out-forecast), a filename
+  // (series/rainfall-forecast.json), a CSS class (forecastLine) or a DOM
+  // attribute (data-forecast-window) names a thing; it does not assert that
+  // the product issues forecasts. Prose claims are still rejected, and the
+  // banned-phrase list (flood/official/operational forecast) is unchanged.
+  let tokenStart = index;
+  while (tokenStart > 0 && /[A-Za-z0-9_\-./]/.test(text[tokenStart - 1])) tokenStart -= 1;
+  const tokenEnd = (() => {
+    const stop = text.slice(index).search(/[^A-Za-z0-9_\-./]/);
+    return stop === -1 ? text.length : index + stop;
+  })();
+  const token = text.slice(tokenStart, tokenEnd);
+  if (/[-]/.test(token)) return true;
+  // Object property shorthand / key in minified code: {rainfall:a,forecast:u}
+  if (text.slice(tokenEnd, tokenEnd + 1) === ':' && /[{,]/.test(text.slice(tokenStart - 1, tokenStart))) {
+    return true;
+  }
+  if (/^[a-z]+[A-Z][A-Za-z]*$/.test(token)) return true;
+
   const clauseStart = Math.max(
     text.lastIndexOf('.', index - 1),
     text.lastIndexOf('!', index - 1),

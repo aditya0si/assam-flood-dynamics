@@ -17,7 +17,7 @@ import { useTileHealthStore } from '../state/tileHealthStore';
 import { useLayerStore } from '../state/layerStore';
 import { usePanelStore } from '../state/panelStore';
 import { useSelectionStore } from '../state/selectionStore';
-import { badgeFor } from '../data/labels';
+import { ClassBadge, DataAge } from '../shell/DataBadge';
 import { formatArea, formatDepthValue, formatScore, formatStage, formatStepNumber } from '../data/format';
 import { hotspotDisplayName, hotspotReasonLabel, topDistrict } from '../data/risk';
 import { dataUrl } from '../data/loadData';
@@ -560,10 +560,10 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
         />
       )}
 
-      <div className={styles.legend} aria-label="Scenario flood depth classes">
+      <div className={styles.legend} aria-label="Scenario flood depth classes" data-map-legend="true">
         <div className={styles.legendHead}>
           <span>Scenario depth</span>
-          <span className={styles.legendBadge}>{badgeFor(dataset.frameIndex.class)}</span>
+          <ClassBadge className={dataset.frameIndex.class} />
         </div>
         <ul className={styles.legendList} data-flood-visible={floodVisible ? 'true' : 'false'}>
           {depthClasses.map((entry) => (
@@ -580,6 +580,7 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
           ))}
         </ul>
         <p className={styles.legendMeta}>
+          <DataAge dataAsOf={dataset.summary.data_as_of} compact /> ·{' '}
           {floodVisible
             ? `${frameWidth} × ${frameHeight} px · ${formatStage(frameResolution)} m/px · classes from frame-index.json`
             : 'Flood extent hidden in Layers; depth classes still from frame-index.json.'}

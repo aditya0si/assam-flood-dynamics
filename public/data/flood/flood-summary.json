@@ -2,11 +2,12 @@
   "schema_version": "1.0.0",
   "scenario_id": "assam-monsoon-composite-v1",
   "class": "scenario",
+  "data_as_of": "2026-10-21",
   "peak_step": 7,
   "series_class": {
-    "rainfall": "synthetic",
-    "mainstem_stage": "synthetic",
-    "backwater": "synthetic",
+    "rainfall": "scenario",
+    "mainstem_stage": "scenario",
+    "backwater": "scenario",
     "inundated_area": "scenario"
   },
   "steps": [

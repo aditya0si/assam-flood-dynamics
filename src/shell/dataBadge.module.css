@@ -1,0 +1,63 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 5px;
+  border: 1px solid rgba(124, 199, 232, 0.35);
+  border-radius: 3px;
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.observed {
+  border-color: rgba(127, 212, 176, 0.48);
+  background: rgba(127, 212, 176, 0.09);
+  color: #9fe3c7;
+}
+
+.reanalysis {
+  border-color: rgba(242, 184, 75, 0.5);
+  background: var(--amber-wash);
+  color: var(--amber-strong);
+}
+
+.derived {
+  border-color: rgba(124, 199, 232, 0.38);
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+}
+
+.scenario {
+  border-color: rgba(224, 122, 99, 0.46);
+  background: rgba(224, 122, 99, 0.09);
+  color: #f0b09f;
+}
+
+.age {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.ageCompact {
+  font-size: 9.5px;
+}
+
+.age::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}

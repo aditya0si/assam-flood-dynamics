@@ -60,7 +60,9 @@ This is the executable M0 acceptance path. It prints every gate name and runs, i
 1. `npm run build` — TypeScript and the plain Vite production build.
 2. `node scripts/check-data.mjs` — every committed JSON/GeoJSON parses and matches its schema;
    manifest sizes and SHA-256 hashes agree; the A-series invariants (V-A1…V-A10) are re-checked,
-   including a real PNG decode for frame dimensions, wet cells, and area.
+   including a real PNG decode for frame dimensions, wet cells, and area. Phase 1b additions
+   check the three-way series `class` enum, the ERA5-not-observed rule, the single
+   `potentially_exposed_residents` exposure field, and `data_as_of` on every series and panel feed.
 3. `node scripts/check-budget.mjs` — ≤400 KB per frame, ≤4 MB animation tier, ≤9 MB total.
 4. `node scripts/check-honesty.mjs` — banned fields/claims in `public/data` and `dist/`, with the
    required `NOT A FORECAST` allowed and required present.
@@ -97,7 +99,8 @@ committed tree.
 ## Model limits (read this before citing a number)
 
 - **Synthetic scenario.** The 12-step rainfall and stage curves are a composite scenario, not an
-  observed 2022 (or any-year) event. They are labelled `SYNTHETIC` at the point of use.
+  observed 2022 (or any-year) event. They are labelled `SCENARIO` at the point of use. The separate
+  ERA5 archive is `REANALYSIS`, never `OBSERVED`.
 - **HAND screening, bathtub depth.** A cell below the burnt channel datum reports the full stage.
   That is **conservative-shallow**: no levee, channel bathymetry, or flow routing is modelled, so
   the depth field is deliberately biased shallow rather than pretending to be a hydrodynamic
@@ -105,8 +108,10 @@ committed tree.
 - **No operational claims.** No casualty, displacement, incident, agency, relief-camp, ETA, or
   “warning issued” field exists in the data or UI. Risk is scenario-conditional terrain exposure,
   not expected loss.
-- **No population or assets.** The district ranking uses area share, duration, and peak depth
-  only. No demographics enter the score.
+- **Population exposure is an estimate.** WorldPop 2020 (1 km) is crossed with the synthetic peak
+  mask and district polygons. The only resident field is `potentially_exposed_residents`, class
+  `DERIVED`; it is not an impact assessment and does not estimate who was affected, who moved, or
+  loss of life.
 - **Surface-water only.** The model does not represent rainfall-runoff, sediment, embankment
   breaches, or backwater hydraulics beyond the committed stage allowance.
 - **Basemap tiles are optional.** When both remote hosts fail, the app reports `offline`, keeps
@@ -125,11 +130,14 @@ invent values.
 | Rivers | source | OSM Overpass (Natural Earth fallback) → `build-rivers` → `data/hydro/assam-rivers.geojson` |
 | Flood extent / depth | scenario | DEM + mapped channels + synthetic stage → HAND/inundation → `data/flood/frames/step-00…11.png`, `flood-summary.json`, `frame-index.json` |
 | Risk zones / ranking | derived | HAND × scenario duration/depth → `build-risk` → `data/risk/risk-zones.geojson`, `district-risk.json` (extent score + separate severity index) |
-| Rainfall / stage series | synthetic | Scenario parameters + DEM/HAND profiles → `build-series` → `data/series/monsoon-series.json` |
+| Rainfall / stage series | scenario | Scenario parameters + DEM/HAND profiles → `build-series` → `data/series/monsoon-series.json` |
+| ERA5 rainfall | reanalysis | ERA5 via Open-Meteo archive → `build-rainfall` → `data/series/rainfall.json` (JJAS 06-01..09-30 only, 2015-2025; 2022 JJAS and 2015-2025 JJAS mean per district; off-season days omitted for rate-limit reasons, not unavailability) |
+| Current-window model guidance | scenario | Open-Meteo current-window endpoint → `build-rainfall` → `data/series/rainfall-forecast.json` (stored separately; not observed) |
+| Population exposure | derived | WorldPop 2020 1 km → `build-exposure` → `data/exposure/district-exposure.json` (masked zonal `potentially_exposed_residents`, `district_population`, AOI-clipped `population_within_aoi`) |
 | Sentinel-1 validation | derived | Two Jun–Jul 2022 Sentinel-1 GRD VV acquisitions → `build-validation` → `data/validation/scorecard.json` (extent-shape IoU, not an event hindcast) |
 
 `data/provenance.json` carries the full source → stage → file record, licences, and assumptions
-for every dataset. `data/validation-report.json` records V01–V20 and V-A1…V-A10; the committed
+for every dataset. `data/validation-report.json` records V01–V22 and V-A1…V-A10; the committed
 report is `pass`. The Sentinel-1 scorecard and its two caveats are gated by `check-data`.
 
 ## Accessibility baseline

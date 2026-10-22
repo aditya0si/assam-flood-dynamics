@@ -1634,6 +1634,7 @@ def run(
     scorecard = {
         "schema_version": "1.0.0",
         "generated_at": utc_now(),
+        "data_as_of": max(str(scene["datetime"]) for scene in scored)[:10],
         "method": {
             "collection": str(sentinel["collection"]),
             "threshold_method": "fixed_sigma0",

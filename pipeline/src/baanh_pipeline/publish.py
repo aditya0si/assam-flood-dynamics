@@ -35,7 +35,8 @@ def _fetched_at(fragments: dict, stage: str) -> str | None:
     return fragment.get("finished_at") or fragment.get("started_at")
 
 
-def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provenance_path: Path) -> dict:
+def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provenance_path: Path,
+        allow_stale_report: bool = False) -> dict:
     ensure_dirs()
     data_path = data_path if data_path.is_absolute() else cfg.root / data_path
     manifest_path = manifest_path if manifest_path.is_absolute() else cfg.root / manifest_path
@@ -49,10 +50,16 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
     if not report_path.exists():
         raise RuntimeError("stage 15: validation-report.json is missing; run stage 14")
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    if report.get("status") != "pass":
+    if report.get("status") != "pass" and not allow_stale_report:
         raise RuntimeError(
             "stage 15: refusing to publish because validation-report.json status is "
             f"{report.get('status')!r}"
+        )
+    if report.get("status") != "pass":
+        print(
+            "[15] warning: regenerating manifest/provenance from current data while "
+            f"validation-report.json is {report.get('status')!r}; re-run validate then publish.",
+            flush=True,
         )
     fragments = load_fragments()
     if len(fragments) < 8:
@@ -191,7 +198,7 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
         {
             "id": "series",
             "dataset": "Synthetic monsoon series and derived cross-sections",
-            "class": "synthetic",
+            "class": "scenario",
             "source_name": "Synthetic scenario parameters + DEM/HAND profiles",
             "source_url": "pipeline/config/scenario.json",
             "licence": "Synthetic model parameters; terrain and channel licences as recorded",
@@ -200,7 +207,86 @@ def run(cfg: Config, data_path: Path, version: str, manifest_path: Path, provena
             "output_paths": present(
                 "data/series/monsoon-series.json", "data/series/cross-sections.json"
             ),
-            "notes": "Rainfall, main-stem stage and backwater values are declared synthetic; the series repeats flood-summary values exactly. Cross-sections sample DEM/HAND at 2 km and are not surveyed sections.",
+            "notes": "Rainfall, main-stem stage and backwater values are declared scenario values, never observed. The series repeats flood-summary values exactly. Cross-sections sample DEM/HAND at 2 km and are not surveyed sections.",
+            "data_as_of": "2026-10-21",
+        },
+        {
+            "id": "era5_rainfall",
+            "dataset": "ERA5 daily precipitation reanalysis and district monsoon totals",
+            "class": "reanalysis",
+            "source_name": sources["era5"]["name"],
+            "source_url": sources["era5"]["endpoint"],
+            "licence": sources["era5"]["licence"],
+            "fetched_at": _fetched_at(fragments, "17"),
+            "pipeline": _stage_pipeline(fragments, ["17"]),
+            "output_paths": present("data/series/rainfall.json"),
+            "data_as_of": sources["era5"]["end_date"],
+            "notes": (
+                "ERA5 reanalysis via the Open-Meteo archive endpoint, daily precipitation_sum "
+                "for JJAS 06-01..09-30 in each year 2015-2025 (off-season days omitted because "
+                "the fetch is rate-limited, not because they are unavailable) on a "
+                f"{sources['era5']['grid_resolution_deg']} degree grid "
+                f"({sources['era5']['grid_resolution_km']} km), area-weighted over the existing "
+                "Assam district polygons. Units are mm/day (daily totals). Published 2022 JJAS "
+                "totals and the 2015-2025 JJAS mean per district. Class is reanalysis, never "
+                "observed: " + sources["era5"]["caveat"]
+            ),
+        },
+        {
+            "id": "era5_current_window",
+            "dataset": "Open-Meteo current-window model guidance, stored separately",
+            "class": "scenario",
+            "source_name": "Open-Meteo current-window endpoint (model, not observed)",
+            "source_url": sources["era5"]["forecast_endpoint"],
+            "licence": sources["era5"]["licence"],
+            "fetched_at": _fetched_at(fragments, "17"),
+            "pipeline": _stage_pipeline(fragments, ["17"]),
+            "output_paths": present("data/series/rainfall-forecast.json"),
+            "data_as_of": _fetched_at(fragments, "17") or sources["era5"]["end_date"],
+            "notes": (
+                "The current-window response is stored in its own file and labelled "
+                "class=scenario with source_kind=model_current_window. It is model guidance, "
+                "not an observation and not an archive reanalysis; it never drives the flood "
+                "scenario and is visually separate from the ERA5 archive series."
+            ),
+        },
+        {
+            "id": "population",
+            "dataset": "WorldPop 2020 population per 1 km cell",
+            "class": "source",
+            "source_name": sources["worldpop"]["name"],
+            "source_url": sources["worldpop"]["endpoint"],
+            "licence": sources["worldpop"]["licence"],
+            "fetched_at": _fetched_at(fragments, "18"),
+            "pipeline": _stage_pipeline(fragments, ["18"]),
+            "output_paths": present("data/exposure/district-exposure.json"),
+            "data_as_of": "2020-01-01",
+            "notes": (
+                f"REST catalogue {sources['worldpop']['rest_endpoint']} was attempted; the "
+                f"published endpoint is {sources['worldpop']['endpoint']}. Vintage "
+                f"{sources['worldpop']['vintage']}, {sources['worldpop']['resolution_m']} m "
+                "Aggregated grid. Population is a static model/census input, not a live count."
+            ),
+        },
+        {
+            "id": "exposure",
+            "dataset": "Potentially exposed residents (derived exposure estimate)",
+            "class": "derived",
+            "source_name": "WorldPop population crossed with the scenario peak wet mask and districts",
+            "source_url": sources["worldpop"]["endpoint"],
+            "licence": "Derived output; WorldPop CC BY 4.0 and terrain/channel licences as recorded",
+            "fetched_at": _fetched_at(fragments, "18"),
+            "pipeline": _stage_pipeline(fragments, ["09", "18"]),
+            "output_paths": present("data/exposure/district-exposure.json"),
+            "data_as_of": "2020-01-01",
+            "notes": (
+                "The only resident-count field is potentially_exposed_residents (the totals "
+                "block repeats the peak-mask value as peak_mask_potentially_exposed_residents "
+                "for reconciliation). It is class derived. Method: "
+                + sources["worldpop"]["method"]
+                + " Uncertainty: "
+                + sources["worldpop"]["uncertainty"]
+            ),
         },
         {
             "id": "hillshade",

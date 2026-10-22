@@ -1,8 +1,8 @@
 import type { Dataset } from '../data/types';
-import { badgeFor } from '../data/labels';
 import { LAYERS } from '../map/layerRegistry';
 import { TERRAIN_EXAGGERATION } from '../map/mapConfig';
 import { useLayerStore } from '../state/layerStore';
+import { ClassBadge, DataAge } from '../shell/DataBadge';
 import styles from './panels.module.css';
 
 interface LayersPanelProps {
@@ -18,6 +18,14 @@ export function LayersPanel({ dataset }: LayersPanelProps) {
   const setBaseMode = useLayerStore((state) => state.setBaseMode);
   const reset = useLayerStore((state) => state.reset);
 
+  const dataAsOf = (layerId: string): string => {
+    if (layerId === 'flood') return dataset.summary.data_as_of;
+    if (layerId === 'risk-zones' || layerId === 'hotspots' || layerId === 'districts') {
+      return dataset.districtRisk.data_as_of;
+    }
+    return dataset.provenance.generated_at.slice(0, 10);
+  };
+
   return (
     <div className={styles.panelBody}>
       <div className={styles.panelIntro}>
@@ -25,11 +33,15 @@ export function LayersPanel({ dataset }: LayersPanelProps) {
           <h2 className={styles.panelTitle} tabIndex={-1}>
             Layers
           </h2>
-          <span className={styles.classBadge}>{badgeFor('derived')}</span>
+          <ClassBadge className="derived" />
         </div>
         <p className={styles.panelLead}>
           Toggle visibility, drag opacity, or swap the basemap. The map is not re-created; every
           control mutates the existing style layers.
+        </p>
+        <p className={styles.panelAgeLine}>
+          <DataAge dataAsOf={dataset.manifest.generated_at.slice(0, 10)} />
+          <span> · each layer row carries its own class badge and data age.</span>
         </p>
       </div>
 
@@ -87,10 +99,13 @@ export function LayersPanel({ dataset }: LayersPanelProps) {
                   </span>
                 </label>
                 <span className={styles.layerName}>{layer.label}</span>
-                <span className={styles.classBadge}>{badgeFor(layer.class)}</span>
+                <ClassBadge className={layer.class} />
               </div>
               <div className={styles.layerMeta}>
                 <span>{layer.note}</span>
+              </div>
+              <div className={styles.layerAgeRow} data-layer-age={layer.id}>
+                <DataAge dataAsOf={dataAsOf(layer.id)} compact />
               </div>
               <div className={styles.layerControls}>
                 <label className={styles.opacityLabel} htmlFor={`opacity-${layer.id}`}>

@@ -6,7 +6,11 @@
     "overpass_timeout_s": 180,
     "retries": 3,
     "overpass_attempts": 2,
-    "backoff_s": [1, 2, 4],
+    "backoff_s": [
+      1,
+      2,
+      4
+    ],
     "terrain_concurrency": 6
   },
   "terrain": {
@@ -22,7 +26,7 @@
     "name": "Esri World Imagery",
     "url_template": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     "licence": "Esri, Maxar, Earthstar Geographics and contributors",
-    "attribution": "Imagery © Esri, Maxar, Earthstar Geographics",
+    "attribution": "Imagery \u00a9 Esri, Maxar, Earthstar Geographics",
     "used_by_pipeline": false,
     "note": "Basemap only, loaded by the app; not used for analysis and not downloaded by the pipeline."
   },
@@ -41,7 +45,7 @@
     "overpass_url": "https://overpass-api.de/api/interpreter",
     "overpass_query": "[out:json][timeout:180];way[\"waterway\"=\"river\"](23.95,89.55,28.15,96.15);out geom;",
     "licence_osm": "OpenStreetMap contributors, ODbL 1.0",
-    "attribution_osm": "Rivers: © OpenStreetMap contributors (ODbL)",
+    "attribution_osm": "Rivers: \u00a9 OpenStreetMap contributors (ODbL)",
     "fallback_name": "Natural Earth 10m rivers and lake centerlines",
     "fallback_path": "pipeline/cache/rivers/ne_10m_rivers_lake_centerlines.geojson",
     "fallback_url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_rivers_lake_centerlines.geojson",
@@ -70,15 +74,58 @@
     "calibration_asset": "schema-calibration-vv",
     "threshold_db": -16.0,
     "threshold_rationale": "Fixed -16 dB sigma0 threshold for C-band VV open water in monsoon conditions: it sits in the low tail of the calibrated land/water distribution and is stated before scoring; threshold choice, not the LUT, is the dominant residual uncertainty, so -14/-16/-18 dB are all published.",
-    "sensitivity_db": [-14, -16, -18],
+    "sensitivity_db": [
+      -14,
+      -16,
+      -18
+    ],
     "slope_mask_deg": 10,
     "min_component_cells": 5,
-    "coverage_min": 0.90,
+    "coverage_min": 0.9,
     "licence": "Copernicus Sentinel data; Earth Search STAC; anonymous S3 access",
     "note": "Review 18 fix. The measurement COG reports crs None but carries WGS84 GCPs; the stage assigns EPSG:32646 from proj:centroid before reprojection. The SAFE schema-calibration-vv asset is parsed per vector (27 vectors x 642 samples) and applied as 20*log10(DN/A) with the interpolated sigmaNought LUT. Water is a fixed -16 dB sigma0 threshold; sensitivity is reported at -14/-16/-18 dB in sigma0 space."
   },
+  "era5": {
+    "name": "ERA5 reanalysis precipitation via Open-Meteo archive",
+    "endpoint": "https://archive-api.open-meteo.com/v1/archive",
+    "forecast_endpoint": "https://api.open-meteo.com/v1/forecast",
+    "model": "era5",
+    "start_date": "2015-06-01",
+    "end_date": "2025-09-30",
+    "grid_resolution_deg": 0.5,
+    "grid_resolution_km": 55.6,
+    "units": "mm/day",
+    "monsoon_months": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "target_year": 2022,
+    "mean_start_year": 2015,
+    "mean_end_year": 2025,
+    "forecast_past_days": 7,
+    "forecast_days": 16,
+    "licence": "Open-Meteo data; ERA5 (ECMWF/Copernicus Climate Change Service) reanalysis, CC BY 4.0",
+    "attribution": "Precipitation: ERA5 reanalysis via Open-Meteo archive (CC BY 4.0)",
+    "caveat": "ERA5 is a model-based reanalysis, not a gauge or satellite observation, and it is biased in complex terrain. It is sampled at 0.5 degree nodes (stride-2 of the native 0.25 degree grid) because the native request volume exceeds the free-tier rate limit; district areal means are therefore smoother than the native product, especially along the Himalayan and Barail margins.",
+    "sampling_note": "ERA5 is sampled at 0.5 degree nodes (every second native 0.25 degree node). The request volume at 0.25 degree exceeds the Open-Meteo free-tier hourly cap, so the published series is a documented stride-2 sample of the same reanalysis, not a different model."
+  },
+  "worldpop": {
+    "name": "WorldPop 2020 population per 1 km cell (India, Aggregated)",
+    "rest_endpoint": "https://www.worldpop.org/rest/data/pop/wpgp?iso3=IND",
+    "endpoint": "https://data.worldpop.org/GIS/Population/Global_2000_2020_1km/2020/IND/ind_ppp_2020_1km_Aggregated.tif",
+    "vintage": "2020",
+    "resolution_m": 1000,
+    "resolution_deg": 0.008333333333333333,
+    "units": "residents per cell",
+    "licence": "WorldPop (University of Southampton) Open Data, CC BY 4.0",
+    "attribution": "Population: WorldPop 2020 (CC BY 4.0)",
+    "method": "Static WorldPop 2020 population counts per 1 km cell. The peak-mask total uses the fractional 1 km cell area covered by the 90 m wet mask. District exposure is the zonal sum of population x wet fraction (cell-centre containment), so district values reconcile to the peak mask. district_population is the raw zonal population and exposed_share_of_district is the exposed share of it. Population totals are clipped to the AOI v2 core mask and published as population_within_aoi; the unclipped India-wide raster total is kept only under source.raster_total_unclipped with scope=India.",
+    "uncertainty": "This is a static population raster crossed with a synthetic flood mask. It is not an impact assessment: it does not estimate humanitarian impact, population movement, or loss of life, and it carries no timing, warning or response information. WorldPop 2020 itself has model and census-input uncertainty, and a 1 km cell is coarse relative to the 90 m flood mask; treat the totals as order-of-magnitude planning context."
+  },
   "flood_prone_area": {
-    "name": "Government of Assam, Water Resources Department — flood-prone area",
+    "name": "Government of Assam, Water Resources Department \u2014 flood-prone area",
     "url": "https://waterresources.assam.gov.in/portlets/flood-erosion-problems",
     "value_km2": 31050.0,
     "state_area_km2": 78523.0,
@@ -87,10 +134,40 @@
     "note": "31.05 lakh hectares of flood-prone area against a 78.523 lakh hectare state area (39.6%). This is a published flood-prone-area statistic, not a single event's observed extent; it is used only as a plausibility denominator and is not ingested as a layer."
   },
   "attribution": [
-    { "name": "AWS Terrarium / Mapzen", "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png", "licence": "Mapzen/Amazon elevation tiles; verify terms" },
-    { "name": "geoBoundaries gbOpen", "url": "https://www.geoboundaries.org/", "licence": "Licence recorded from API metadata (ADM2 ODbL 1.0; ADM1 CC BY 2.5 IN)" },
-    { "name": "OpenStreetMap contributors", "url": "https://www.openstreetmap.org/copyright", "licence": "ODbL 1.0" },
-    { "name": "Natural Earth", "url": "https://www.naturalearthdata.com/", "licence": "Public domain" },
-    { "name": "Esri, Maxar, Earthstar Geographics", "url": "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9", "licence": "Esri basemap terms; basemap only" }
+    {
+      "name": "AWS Terrarium / Mapzen",
+      "url": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+      "licence": "Mapzen/Amazon elevation tiles; verify terms"
+    },
+    {
+      "name": "geoBoundaries gbOpen",
+      "url": "https://www.geoboundaries.org/",
+      "licence": "Licence recorded from API metadata (ADM2 ODbL 1.0; ADM1 CC BY 2.5 IN)"
+    },
+    {
+      "name": "OpenStreetMap contributors",
+      "url": "https://www.openstreetmap.org/copyright",
+      "licence": "ODbL 1.0"
+    },
+    {
+      "name": "Natural Earth",
+      "url": "https://www.naturalearthdata.com/",
+      "licence": "Public domain"
+    },
+    {
+      "name": "ERA5 via Open-Meteo archive",
+      "url": "https://open-meteo.com/en/docs/historical-weather-api",
+      "licence": "CC BY 4.0; ERA5 \u00a9 ECMWF/Copernicus Climate Change Service"
+    },
+    {
+      "name": "WorldPop 2020",
+      "url": "https://www.worldpop.org/",
+      "licence": "CC BY 4.0"
+    },
+    {
+      "name": "Esri, Maxar, Earthstar Geographics",
+      "url": "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9",
+      "licence": "Esri basemap terms; basemap only"
+    }
   ]
 }

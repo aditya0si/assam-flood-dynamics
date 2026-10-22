@@ -44,6 +44,7 @@ def fetch_bytes(
     timeout_s: float | None = None,
     retries: int | None = None,
     accept: str | None = None,
+    abort_on_rate_limit: bool = False,
 ) -> FetchResult:
     http = cfg.sources["http"]
     timeout = float(timeout_s if timeout_s is not None else http["timeout_s"])
@@ -89,6 +90,20 @@ def fetch_bytes(
                 )
             if response.status_code in (429, 500, 502, 503, 504):
                 last_error = f"HTTP {response.status_code} after {elapsed:.1f}s: {response.text[:180]!r}"
+                if response.status_code == 429:
+                    # A caller that can resume from a per-chunk cache should stop
+                    # immediately rather than burn the rest of the retry budget on
+                    # a quota that will not recover within the backoff window.
+                    if abort_on_rate_limit:
+                        raise FetchError(
+                            f"fetch failed for {url} after {attempts} attempt(s): {last_error}"
+                        )
+                    retry_after = response.headers.get("Retry-After")
+                    try:
+                        delay = float(retry_after) if retry_after is not None else 60.0
+                    except ValueError:
+                        delay = 60.0
+                    time.sleep(max(5.0, min(delay, 120.0)))
             else:
                 last_error = f"HTTP {response.status_code} after {elapsed:.1f}s: {response.text[:180]!r}"
                 break

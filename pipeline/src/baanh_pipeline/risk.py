@@ -673,6 +673,7 @@ def run(
         "scenario_id": scenario.scenario_id,
         "class": "derived",
         "generated_at": utc_now(),
+        "data_as_of": str(scenario.raw.get("data_as_of", "2026-10-21")),
         "weights_version": str(district_cfg["weights_version"]),
         "weights": dict(district_cfg["weights"]),
         "reference_values": {

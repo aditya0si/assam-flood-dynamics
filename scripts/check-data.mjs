@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { decodePng, countOpaquePixels } from './lib/png.mjs';
 import {
   districtRiskSchema,
+  exposureSchema,
   featureCollectionSchema,
   floodSummarySchema,
   frameIndexSchema,
@@ -13,6 +14,8 @@ import {
   manifestSchema,
   monsoonSeriesSchema,
   provenanceSchema,
+  rainfallForecastSchema,
+  rainfallSchema,
   riskZoneFeatureCollectionSchema,
   scenarioSchema,
   scorecardSchema,
@@ -104,7 +107,15 @@ function validateFeatureCollection(relative, options = {}) {
       `${relative}: expected ${options.count} features, found ${collection.features.length}`,
     );
   }
-  const allowedClasses = new Set(['source', 'derived', 'scenario', 'synthetic', 'reference']);
+  const allowedClasses = new Set([
+    'source',
+    'derived',
+    'scenario',
+    'synthetic',
+    'reference',
+    'observed',
+    'reanalysis',
+  ]);
   const ids = new Set();
   for (const [index, feature] of collection.features.entries()) {
     assert(feature.geometry && feature.geometry.type, `${relative}: feature ${index} has no geometry`);
@@ -146,6 +157,9 @@ const summary = readJson('flood/flood-summary.json');
 const frameIndex = readJson('flood/frame-index.json');
 const risk = readJson('risk/district-risk.json');
 const series = readJson('series/monsoon-series.json');
+const rainfall = readJson('series/rainfall.json');
+const rainfallForecast = readJson('series/rainfall-forecast.json');
+const exposure = readJson('exposure/district-exposure.json');
 const provenance = readJson('provenance.json');
 const report = readJson('validation-report.json');
 const scorecard = readJson('validation/scorecard.json');
@@ -187,6 +201,9 @@ check('core JSON schemas (scenario, summary, frame index, risk, series, provenan
     ['flood/frame-index.json', frameIndexSchema, frameIndex],
     ['risk/district-risk.json', districtRiskSchema, risk],
     ['series/monsoon-series.json', monsoonSeriesSchema, series],
+    ['series/rainfall.json', rainfallSchema, rainfall],
+    ['series/rainfall-forecast.json', rainfallForecastSchema, rainfallForecast],
+    ['exposure/district-exposure.json', exposureSchema, exposure],
     ['provenance.json', provenanceSchema, provenance],
   ];
   for (const [name, schema, value] of pairs) {
@@ -219,7 +236,7 @@ check('validation report exists, is pass, and carries V-A1..V-A10', () => {
     const id = `V-A${index}`;
     assert(byId.has(id), `missing ${id} in validation report`);
   }
-  for (const id of ['V01', 'V07', 'V10', 'V13', 'V20']) {
+  for (const id of ['V01', 'V07', 'V10', 'V13', 'V20', 'V21', 'V22']) {
     assert(byId.has(id), `missing ${id} in validation report`);
   }
 });
@@ -874,6 +891,287 @@ check('shares and totals are arithmetically consistent', () => {
   close(summary.totals.median_depth_at_peak_m, summary.steps[7].median_depth_m, 1e-6, 'peak median total');
 });
 
+check('P1.3 rainfall series class enum and the ERA5-not-observed rule', () => {
+  const seriesClasses = new Set(['observed', 'reanalysis', 'scenario']);
+  for (const [name, doc] of [
+    ['series/monsoon-series.json', series],
+    ['series/rainfall.json', rainfall],
+  ]) {
+    assert(seriesClasses.has(doc.class), `${name}: envelope class ${doc.class} is outside the enum`);
+    for (const entry of doc.series ?? []) {
+      assert(
+        seriesClasses.has(entry.class),
+        `${name}: series ${entry.id} class ${entry.class} is outside observed|reanalysis|scenario`,
+      );
+      if (entry.class !== 'observed') continue;
+      const identity = `${entry.id} ${entry.label} ${entry.source_note ?? ''} ${entry.source_kind ?? ''}`.toLowerCase();
+      assert(
+        !/era5|reanalysis|open-meteo/.test(identity),
+        `${name}: ERA5/reanalysis series ${entry.id} is labelled observed`,
+      );
+    }
+  }
+  assert(rainfall.class === 'reanalysis', `series/rainfall.json: class ${rainfall.class} is not reanalysis`);
+  assert(
+    rainfall.series.every((entry) => entry.class === 'reanalysis'),
+    'every ERA5 archive series must be class reanalysis, never observed',
+  );
+  assert(
+    rainfallForecast.class === 'scenario',
+    `series/rainfall-forecast.json: class ${rainfallForecast.class} is not scenario`,
+  );
+  assert(
+    rainfallForecast.forecast_window.class === 'scenario',
+    'the current-window series must be class scenario (model, not observed)',
+  );
+  assert(
+    rainfallForecast.forecast_window.source_kind === 'model_current_window',
+    'the current-window series must declare source_kind=model_current_window',
+  );
+  assert(
+    rainfallForecast.source.endpoint !== rainfall.source.endpoint,
+    'the current window must be stored against its own endpoint, separately from the archive',
+  );
+});
+
+check('P1.3 ERA5 provenance and district monsoon totals', () => {
+  const source = rainfall.source;
+  assert(typeof source.endpoint === 'string' && source.endpoint.includes('archive-api.open-meteo.com'), 'ERA5 endpoint is missing');
+  assert(source.endpoint.includes('/v1/archive'), 'ERA5 endpoint is not the archive endpoint');
+  assert(source.query && typeof source.query === 'object', 'ERA5 query block is missing');
+  assert(source.query.start_date === '2015-06-01', `ERA5 start_date is ${source.query.start_date}`);
+  assert(source.query.end_date === '2025-09-30', `ERA5 end_date is ${source.query.end_date}`);
+  assert(
+    source.query.window === 'JJAS 06-01..09-30, 2015-2025',
+    `ERA5 window is ${source.query.window}`,
+  );
+  assert(source.query.off_season_included === false, 'off-season days must not be published');
+  assert(
+    typeof source.query.caveat === 'string' &&
+      /only the monsoon season is published/i.test(source.query.caveat) &&
+      /rate-limited/i.test(source.query.caveat) &&
+      /not because they are unavailable/i.test(source.query.caveat),
+    `ERA5 rate-limit caveat is missing or incomplete: ${source.query.caveat}`,
+  );
+  assert(source.query.models === 'era5', `ERA5 model is ${source.query.models}`);
+  assert(typeof source.retrieved_at === 'string' && source.retrieved_at.length > 0, 'retrieval timestamp is missing');
+  close(source.grid_resolution_deg, 0.5, 1e-9, 'ERA5 grid resolution (deg)');
+  assert(
+    /stride-2|sampled at 0\.5/i.test(String(source.sampling_note || '') + String(source.caveat || '')),
+    'ERA5 0.5 degree sampling must be documented as a stride-2 sample of the native 0.25 degree product',
+  );
+  close(source.grid_resolution_km, 55.6, 1e-9, 'ERA5 grid resolution (km)');
+  assert(source.units === 'mm/day', `ERA5 units are ${source.units}`);
+  assert(/reanalysis/i.test(source.caveat) && /complex terrain/i.test(source.caveat), 'ERA5 caveat must state reanalysis and complex-terrain bias');
+  assert(/rate-limited/i.test(source.caveat), 'ERA5 caveat must state the rate-limited monsoon scope');
+  assert(rainfall.data_as_of === '2025-09-30', `rainfall data_as_of is ${rainfall.data_as_of}`);
+  assert(
+    rainfall.monsoon_definition.window === '06-01..09-30' &&
+      rainfall.monsoon_definition.off_season_included === false,
+    'rainfall monsoon_definition must publish the JJAS window and off_season_included=false',
+  );
+
+  assert(rainfall.district_monsoon.length === 33, `expected 33 district totals, found ${rainfall.district_monsoon.length}`);
+  const boundaryIds = new Set(
+    validateFeatureCollection('admin/assam-districts.geojson', { idKey: 'district_id', count: 33 }).features.map(
+      (feature) => feature.properties.district_id,
+    ),
+  );
+  const riskById = new Map(risk.districts.map((district) => [district.district_id, district]));
+  const seasons = rainfall.aoi_monsoon.seasons;
+  assert(seasons.length === 11, `expected 11 monsoon seasons, found ${seasons.length}`);
+  const season2022 = seasons.find((entry) => entry.year === 2022);
+  assert(season2022, '2022 monsoon season is missing');
+  close(season2022.monsoon_mm, rainfall.aoi_monsoon.monsoon_2022_mm, 0.01, 'AOI 2022 season total');
+  const mean = seasons.reduce((sum, entry) => sum + entry.monsoon_mm, 0) / seasons.length;
+  close(mean, rainfall.aoi_monsoon.monsoon_2015_2025_mean_mm, 0.02, 'AOI 2015-2025 mean');
+  const seen = new Set();
+  for (const district of rainfall.district_monsoon) {
+    assert(boundaryIds.has(district.district_id), `${district.district_id}: no district boundary`);
+    assert(riskById.has(district.district_id), `${district.district_id}: no risk row`);
+    assert(!seen.has(district.district_id), `${district.district_id}: duplicate monsoon row`);
+    seen.add(district.district_id);
+    assert(district.class === 'reanalysis', `${district.name}: district total is not reanalysis`);
+    assert(Number.isFinite(district.monsoon_2022_mm) && district.monsoon_2022_mm > 0, `${district.name}: bad 2022 total`);
+    assert(
+      Number.isFinite(district.monsoon_2015_2025_mean_mm) && district.monsoon_2015_2025_mean_mm > 0,
+      `${district.name}: bad 2015-2025 mean`,
+    );
+    close(
+      district.anomaly_2022_vs_mean_mm,
+      district.monsoon_2022_mm - district.monsoon_2015_2025_mean_mm,
+      0.02,
+      `${district.name} anomaly`,
+    );
+  }
+  console.log(
+    `        ERA5 2022 JJAS AOI ${rainfall.aoi_monsoon.monsoon_2022_mm} mm vs ` +
+      `2015-2025 mean ${rainfall.aoi_monsoon.monsoon_2015_2025_mean_mm} mm`,
+  );
+});
+
+check('P1.5 exposure: derived class, one resident field, vintage/method/uncertainty', () => {
+  assert(exposure.class === 'derived', `exposure class is ${exposure.class}, expected derived`);
+  assert(exposure.data_as_of === '2020-01-01', `exposure data_as_of is ${exposure.data_as_of}`);
+  assert(exposure.source.vintage === '2020', `WorldPop vintage is ${exposure.source.vintage}`);
+  assert(
+    typeof exposure.source.rest_endpoint === 'string' && exposure.source.rest_endpoint.includes('worldpop.org/rest/data/pop/wpgp'),
+    `WorldPop REST endpoint missing: ${exposure.source.rest_endpoint}`,
+  );
+  assert(exposure.source.resolution_m === 1000, `resolution_m is ${exposure.source.resolution_m}`);
+  assert(typeof exposure.source.retrieved_at === 'string' && exposure.source.retrieved_at.length > 0, 'retrieval time missing');
+  assert(typeof exposure.method_sentence === 'string' && exposure.method_sentence.length > 20, 'method sentence missing');
+  assert(
+    typeof exposure.uncertainty_statement === 'string' &&
+      /not an impact assessment/i.test(exposure.uncertainty_statement),
+    'uncertainty statement must say this is not an impact assessment',
+  );
+  assert(exposure.districts.length === 33, `expected 33 exposure rows, found ${exposure.districts.length}`);
+  const forbiddenKey = /affected|displaced|casualt|death|fatalit/i;
+  const visit = (value, trail) => {
+    if (Array.isArray(value)) {
+      value.forEach((child, index) => visit(child, `${trail}[${index}]`));
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    for (const [key, child] of Object.entries(value)) {
+      assert(!forbiddenKey.test(key), `exposure: forbidden field ${trail}.${key}`);
+      if (/resident/i.test(key)) {
+        assert(
+          key === 'potentially_exposed_residents' ||
+            key === 'peak_mask_potentially_exposed_residents',
+          `exposure: resident field ${trail}.${key} must be potentially_exposed_residents ` +
+            'or its documented peak-mask alias',
+        );
+      }
+      visit(child, `${trail}.${key}`);
+    }
+  };
+  visit(exposure, '$');
+  const districtSum = exposure.districts.reduce(
+    (sum, district) => sum + district.potentially_exposed_residents,
+    0,
+  );
+  assert(
+    districtSum === exposure.totals.potentially_exposed_residents,
+    `district exposure sum ${districtSum} != totals ${exposure.totals.potentially_exposed_residents}`,
+  );
+  assert(
+    exposure.totals.peak_mask_potentially_exposed_residents ===
+      exposure.peak_mask.potentially_exposed_residents,
+    'peak-mask exposure total disagrees with peak_mask',
+  );
+  assert(
+    Number.isFinite(exposure.totals.population_within_aoi) &&
+      exposure.totals.population_within_aoi > 0,
+    'population_within_aoi is missing',
+  );
+  assert(
+    exposure.totals.population_raster_scope === 'AOI v2 polygon',
+    `population raster scope is ${exposure.totals.population_raster_scope}`,
+  );
+  for (const district of exposure.districts) {
+    assert(
+      Number.isInteger(district.district_population) && district.district_population >= 0,
+      `${district.name}: district_population is missing`,
+    );
+    assert(
+      Number.isFinite(district.exposed_share_of_district) &&
+        district.exposed_share_of_district >= 0 &&
+        district.exposed_share_of_district <= 1,
+      `${district.name}: exposed_share_of_district is invalid`,
+    );
+    close(
+      district.exposed_share_of_district,
+      district.district_population > 0
+        ? district.potentially_exposed_residents / district.district_population
+        : 0,
+      1e-6,
+      `${district.name} exposed share`,
+    );
+  }
+  console.log(
+    `        WorldPop 2020: ${exposure.totals.peak_mask_potentially_exposed_residents.toLocaleString(
+      'en-IN',
+    )} potentially exposed residents in the peak mask; ${districtSum.toLocaleString('en-IN')} district sum; ` +
+      `${exposure.totals.population_within_aoi.toLocaleString('en-IN')} within AOI v2`,
+  );
+});
+
+check('REVIEW-21 gate 1: district exposure sums to the peak mask within 1%', () => {
+  const peak = exposure.peak_mask.potentially_exposed_residents;
+  const districtSum = exposure.districts.reduce(
+    (sum, district) => sum + district.potentially_exposed_residents,
+    0,
+  );
+  assert(peak > 0, `peak mask exposure is ${peak}`);
+  close(districtSum, peak, peak * 0.01, 'district exposure sum vs peak mask');
+});
+
+check('REVIEW-21 gate 2: population_within_aoi is in the Assam band 20M-45M', () => {
+  const value = exposure.totals.population_within_aoi;
+  assert(
+    Number.isInteger(value) && value >= 20_000_000 && value <= 45_000_000,
+    `population_within_aoi ${value} is outside 20,000,000-45,000,000`,
+  );
+});
+
+check('REVIEW-21 gate 3: no district exposes more people than live in it', () => {
+  for (const district of exposure.districts) {
+    assert(
+      district.potentially_exposed_residents <= district.district_population,
+      `${district.name}: exposed ${district.potentially_exposed_residents} > population ${district.district_population}`,
+    );
+  }
+});
+
+check('REVIEW-21 gate 4: peak mask is a strict subset of the AOI population', () => {
+  assert(
+    exposure.peak_mask.potentially_exposed_residents < exposure.totals.population_within_aoi,
+    `peak mask ${exposure.peak_mask.potentially_exposed_residents} is not below AOI population ${exposure.totals.population_within_aoi}`,
+  );
+});
+
+check('P1.6 data_as_of on every published series and panel feed', () => {
+  const panelFeeds = [
+    'scenario.json',
+    'flood/flood-summary.json',
+    'flood/frame-index.json',
+    'risk/district-risk.json',
+    'series/monsoon-series.json',
+    'series/rainfall.json',
+    'series/rainfall-forecast.json',
+    'exposure/district-exposure.json',
+    'validation/scorecard.json',
+    'series/cross-sections.json',
+  ];
+  for (const name of panelFeeds) {
+    const doc = readJson(name);
+    assert(
+      typeof doc.data_as_of === 'string' && /^\d{4}-\d{2}-\d{2}/.test(doc.data_as_of),
+      `${name}: data_as_of is missing or not a date`,
+    );
+  }
+  for (const [name, doc] of [
+    ['series/monsoon-series.json', series],
+    ['series/rainfall.json', rainfall],
+  ]) {
+    for (const entry of doc.series ?? []) {
+      assert(
+        typeof entry.data_as_of === 'string' && /^\d{4}-\d{2}-\d{2}/.test(entry.data_as_of),
+        `${name}: series ${entry.id} has no data_as_of`,
+      );
+    }
+  }
+  assert(
+    /^\d{4}-\d{2}-\d{2}/.test(rainfallForecast.forecast_window.data_as_of),
+    'current-window series has no data_as_of',
+  );
+  for (const district of exposure.districts) {
+    assert(/^\d{4}-\d{2}-\d{2}/.test(district.data_as_of), `${district.name}: no data_as_of`);
+  }
+});
+
 check('monsoon series matches the summary at every step', () => {
   const byId = new Map(series.series.map((entry) => [entry.id, entry]));
   for (const id of ['rainfall', 'mainstem_stage', 'backwater', 'stage_above_drainage']) {
@@ -896,7 +1194,17 @@ check('monsoon series matches the summary at every step', () => {
 
 check('provenance covers terrain, districts, rivers, flood and risk', () => {
   const byId = new Map(provenance.entries.map((entry) => [entry.id, entry]));
-  for (const id of ['terrain', 'boundaries', 'rivers', 'flood', 'risk']) {
+  for (const id of [
+    'terrain',
+    'boundaries',
+    'rivers',
+    'flood',
+    'risk',
+    'era5_rainfall',
+    'era5_current_window',
+    'population',
+    'exposure',
+  ]) {
     const entry = byId.get(id);
     assert(entry, `missing provenance entry ${id}`);
     assert(entry.source_name.length > 0, `${id}: no source`);
@@ -908,7 +1216,15 @@ check('provenance covers terrain, districts, rivers, flood and risk', () => {
       assert(fs.existsSync(path.join(DATA, relative)), `${id}: output ${output} does not exist`);
     }
   }
-  const classes = new Set(['source', 'derived', 'scenario', 'synthetic', 'reference']);
+  const classes = new Set([
+    'source',
+    'derived',
+    'scenario',
+    'synthetic',
+    'reference',
+    'observed',
+    'reanalysis',
+  ]);
   for (const entry of provenance.entries) {
     assert(classes.has(entry.class), `${entry.id}: invalid class ${entry.class}`);
   }
@@ -946,7 +1262,12 @@ check('no forbidden field names inside committed data', () => {
     'casualties',
     'deaths',
     'displaced',
+    'affected',
     'affected_persons',
+    'affected_population',
+    'affected_residents',
+    'displaced_persons',
+    'displaced_residents',
     'incident_id',
     'agency_id',
     'relief_camp',

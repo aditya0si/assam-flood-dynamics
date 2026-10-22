@@ -1,6 +1,7 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-10-21T20:27:33Z",
+  "generated_at": "2026-10-21T21:27:06Z",
+  "data_as_of": "2022-07-31",
   "method": {
     "collection": "sentinel-1-grd",
     "threshold_method": "fixed_sigma0",

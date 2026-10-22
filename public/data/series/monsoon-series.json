@@ -2,14 +2,16 @@
   "schema_version": "1.0.0",
   "dataset_version": "2026.10.0",
   "scenario_id": "assam-monsoon-composite-v1",
-  "class": "synthetic",
+  "class": "scenario",
+  "data_as_of": "2026-10-21",
   "series": [
     {
       "id": "rainfall",
       "label": "Rainfall (synthetic)",
       "unit": "mm/day",
-      "class": "synthetic",
-      "source_note": "Parameterised monsoon curve; no gauge record.",
+      "class": "scenario",
+      "data_as_of": "2026-10-21",
+      "source_note": "Parameterised monsoon curve; no gauge record. Shown as SCENARIO; the separate ERA5 reanalysis file is the real-season comparison.",
       "points": [
         {
           "step": 0,
@@ -77,7 +79,8 @@
       "id": "mainstem_stage",
       "label": "Main-stem stage anomaly (synthetic)",
       "unit": "m",
-      "class": "synthetic",
+      "class": "scenario",
+      "data_as_of": "2026-10-21",
       "source_note": "Parameterised stage anomaly relative to a pre-monsoon baseline; not a gauge reading.",
       "points": [
         {
@@ -146,7 +149,8 @@
       "id": "backwater",
       "label": "Backwater allowance (synthetic)",
       "unit": "m",
-      "class": "synthetic",
+      "class": "scenario",
+      "data_as_of": "2026-10-21",
       "source_note": "Declared additive allowance for tributary/backwater stacking; not a solved backwater term.",
       "points": [
         {
@@ -216,6 +220,7 @@
       "label": "Stage above local drainage (scenario)",
       "unit": "m",
       "class": "scenario",
+      "data_as_of": "2026-10-21",
       "source_note": "Synthetic stage applied to the HAND threshold; not a gauge reading.",
       "points": [
         {

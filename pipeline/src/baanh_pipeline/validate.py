@@ -53,6 +53,8 @@ REQUIRED_GATE_IDS = [f"V{index:02d}" for index in range(1, 21)] + [
     "V-A8",
     "V-A9",
     "V-A10",
+    "V21",
+    "V22",
 ]
 
 
@@ -66,12 +68,15 @@ REQUIRED_JSON = [
     "risk/risk-zones.geojson",
     "risk/district-risk.json",
     "series/monsoon-series.json",
+    "series/rainfall.json",
+    "exposure/district-exposure.json",
     "validation/scorecard.json",
     "validation-report.json",
 ]
 OPTIONAL_JSON = [
     "risk/hotspots.geojson",
     "series/cross-sections.json",
+    "series/rainfall-forecast.json",
     "assets/critical-facilities.geojson",
     "gauges/virtual-gauges.geojson",
 ]
@@ -80,6 +85,11 @@ FORBIDDEN_KEYS = {
     "deaths",
     "displaced",
     "affected_persons",
+    "affected",
+    "affected_population",
+    "affected_residents",
+    "displaced_persons",
+    "displaced_residents",
     "incident_id",
     "agency_id",
     "relief_camp",
@@ -128,6 +138,19 @@ def _all_strings_and_keys(value: Any):
             yield from _all_strings_and_keys(item)
     elif isinstance(value, str):
         yield ("value", value)
+
+
+def _walk_with_path(value: Any, trail: str = "$"):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            path = f"{trail}.{key}"
+            yield path, item
+            yield from _walk_with_path(item, path)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            path = f"{trail}[{index}]"
+            yield path, item
+            yield from _walk_with_path(item, path)
 
 
 def _ring_signed_area(coords: list[list[float]]) -> float:
@@ -373,11 +396,31 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         ("flood/flood-summary.json", "class"),
         ("risk/district-risk.json", "class"),
         ("series/monsoon-series.json", "class"),
+        ("series/rainfall.json", "class"),
+        ("series/rainfall-forecast.json", "class"),
+        ("exposure/district-exposure.json", "class"),
         ("series/cross-sections.json", "class"),
     ):
         doc = docs.get(name)
         if isinstance(doc, dict) and doc.get(key) not in CLASSES:
             class_failures.append(f"{name}: class {doc.get(key)!r}")
+    series_classes = {"observed", "reanalysis", "scenario"}
+    for name in (
+        "series/monsoon-series.json",
+        "series/rainfall.json",
+        "series/rainfall-forecast.json",
+    ):
+        doc = docs.get(name) or {}
+        for item in doc.get("series", []):
+            if item.get("class") not in series_classes:
+                class_failures.append(
+                    f"{name}: series {item.get('id')} class {item.get('class')!r}"
+                )
+        window = doc.get("forecast_window")
+        if isinstance(window, dict) and window.get("class") not in series_classes:
+            class_failures.append(
+                f"{name}: forecast_window class {window.get('class')!r}"
+            )
     checks.append(
         _check(
             "V08",
@@ -600,6 +643,18 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
                     if phrase in lowered:
                         banned.append(f"{name}: claim {phrase!r}")
                 for match in re.finditer(r"forecast", lowered):
+                    # The Open-Meteo current-window endpoint is a model source
+                    # name, not a claim about the flood scenario.  It is stored
+                    # separately and labelled scenario/not observed.
+                    if "open-meteo.com" in lowered and "forecast" in lowered:
+                        continue
+                    # A filename or CLI flag such as series/rainfall-forecast.json or
+                    # --out-forecast is an identifier, not a claim; claims are what this
+                    # gate bans. Bare prose "forecast" is still rejected below.
+                    window = lowered[max(0, match.start() - 32) : match.end() + 16]
+                    token = re.search(r"[a-z0-9_./-]*forecast[a-z0-9_./-]*", window)
+                    if token and "-" in token.group(0):
+                        continue
                     prefix = lowered[max(0, match.start() - 24) : match.start()]
                     if not re.search(r"(not|never|no)\s+(a\s+)?$", prefix):
                         banned.append(f"{name}: positive forecast claim")
@@ -896,7 +951,20 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
         provenance_detail = "publish will aggregate fragments into provenance.json"
     else:
         entries = {entry.get("id"): entry for entry in provenance.get("entries", [])}
-        required_entries = ["terrain", "boundaries", "rivers", "flood", "risk", "series", "hillshade", "validation"]
+        required_entries = [
+            "terrain",
+            "boundaries",
+            "rivers",
+            "flood",
+            "risk",
+            "series",
+            "era5_rainfall",
+            "era5_current_window",
+            "population",
+            "exposure",
+            "hillshade",
+            "validation",
+        ]
         for entry_id in required_entries:
             entry = entries.get(entry_id)
             if not entry:
@@ -1606,6 +1674,147 @@ def run(cfg: Config, data_path: Path, report_path: Path, version: str) -> dict:
             if a10_failures
             else "frame-index and PNG agree for every step",
             "fail" if a10_failures else "pass",
+        )
+    )
+
+    # V21 - class discipline, ERA5-not-observed, exposure field names and data age.
+    discipline_failures = []
+    series_class_enum = {"observed", "reanalysis", "scenario"}
+    panel_feeds = [
+        "scenario.json",
+        "flood/flood-summary.json",
+        "flood/frame-index.json",
+        "risk/district-risk.json",
+        "series/monsoon-series.json",
+        "series/rainfall.json",
+        "series/rainfall-forecast.json",
+        "exposure/district-exposure.json",
+        "validation/scorecard.json",
+        "series/cross-sections.json",
+    ]
+    for name in panel_feeds:
+        doc = docs.get(name)
+        if not isinstance(doc, dict):
+            continue
+        if not isinstance(doc.get("data_as_of"), str) or len(doc["data_as_of"]) < 10:
+            discipline_failures.append(f"{name}: missing data_as_of")
+    for name in ("series/monsoon-series.json", "series/rainfall.json"):
+        doc = docs.get(name) or {}
+        for item in doc.get("series", []):
+            if item.get("class") not in series_class_enum:
+                discipline_failures.append(
+                    f"{name}: series {item.get('id')} class {item.get('class')!r} outside {sorted(series_class_enum)}"
+                )
+    for name, doc in docs.items():
+        if name == "validation-report.json":
+            continue
+        for item in doc.get("series", []) if isinstance(doc, dict) else []:
+            if item.get("class") != "observed":
+                continue
+            identity = " ".join(
+                str(item.get(key, ""))
+                for key in ("id", "label", "source_note", "source_kind", "endpoint")
+            ).lower()
+            if "era5" in identity or "reanalysis" in identity or "open-meteo" in identity:
+                discipline_failures.append(
+                    f"{name}: series {item.get('id')} is observed but ERA5/reanalysis-derived"
+                )
+    exposure_doc = docs.get("exposure/district-exposure.json") or {}
+    for key_path, value in _walk_with_path(exposure_doc):
+        key = key_path.rsplit(".", 1)[-1].lower()
+        if re.search(r"affected|displaced|casualt|death|fatalit", key):
+            discipline_failures.append(f"exposure: forbidden field {key_path}")
+        if "resident" in key and key not in (
+            "potentially_exposed_residents",
+            "peak_mask_potentially_exposed_residents",
+        ):
+            discipline_failures.append(
+                "exposure: resident field must be potentially_exposed_residents or its "
+                f"documented peak-mask alias ({key_path})"
+            )
+    checks.append(
+        _check(
+            "V21",
+            "Class discipline and exposure naming",
+            "series class in {observed,reanalysis,scenario}; no ERA5 series labelled "
+            "observed; only potentially_exposed_residents in exposure; data_as_of on "
+            "every panel feed",
+            f"{len(discipline_failures)} violation(s)",
+            "; ".join(discipline_failures[:6])
+            if discipline_failures
+            else "class enum, ERA5-not-observed, exposure naming and data_as_of all valid",
+            "fail" if discipline_failures else "pass",
+        )
+    )
+
+    # V22 - exposure value gates (REVIEW-21).  The district table must reconcile
+    # to the peak mask, the AOI total must be Assam-plausible rather than the
+    # India-wide raster total, and no district can expose more people than live
+    # in it.
+    v22_failures: list[str] = []
+    exposure_totals = exposure_doc.get("totals", {}) if isinstance(exposure_doc, dict) else {}
+    exposure_peak = exposure_doc.get("peak_mask", {}) if isinstance(exposure_doc, dict) else {}
+    exposure_districts = exposure_doc.get("districts", []) if isinstance(exposure_doc, dict) else []
+    peak_exposed = int(exposure_peak.get("potentially_exposed_residents", 0))
+    district_sum = sum(
+        int(row.get("potentially_exposed_residents", 0)) for row in exposure_districts
+    )
+    totals_exposed = int(exposure_totals.get("potentially_exposed_residents", -1))
+    population_within_aoi = int(exposure_totals.get("population_within_aoi", -1))
+    raster_scope = exposure_totals.get("population_raster_scope")
+    if peak_exposed <= 0:
+        v22_failures.append("peak mask exposure is not positive")
+    elif abs(district_sum - peak_exposed) / peak_exposed > 0.01:
+        v22_failures.append(
+            f"district sum {district_sum:,} differs from peak mask {peak_exposed:,} "
+            f"by {abs(district_sum - peak_exposed) / peak_exposed:.2%} (>1%)"
+        )
+    if totals_exposed != district_sum:
+        v22_failures.append(
+            f"totals.potentially_exposed_residents {totals_exposed:,} != district sum {district_sum:,}"
+        )
+    if not (20_000_000 <= population_within_aoi <= 45_000_000):
+        v22_failures.append(
+            f"population_within_aoi {population_within_aoi:,} outside 20,000,000-45,000,000"
+        )
+    if raster_scope != "AOI v2 polygon":
+        v22_failures.append(f"population_raster_scope is {raster_scope!r}, expected 'AOI v2 polygon'")
+    for row in exposure_districts:
+        district_population = int(row.get("district_population", -1))
+        exposed = int(row.get("potentially_exposed_residents", 0))
+        if district_population < 0:
+            v22_failures.append(f"{row.get('name', row.get('district_id'))}: no district_population")
+        elif exposed > district_population:
+            v22_failures.append(
+                f"{row.get('name', row.get('district_id'))}: exposed {exposed:,} > "
+                f"district population {district_population:,}"
+            )
+        elif district_population > 0:
+            expected_share = exposed / district_population
+            share = row.get("exposed_share_of_district")
+            if share is None or abs(float(share) - expected_share) > 1e-5:
+                v22_failures.append(
+                    f"{row.get('name', row.get('district_id'))}: exposed_share_of_district "
+                    f"{share} != {expected_share:.6f}"
+                )
+    if peak_exposed >= population_within_aoi:
+        v22_failures.append(
+            f"peak mask exposure {peak_exposed:,} is not a strict subset of "
+            f"population_within_aoi {population_within_aoi:,}"
+        )
+    checks.append(
+        _check(
+            "V22",
+            "Exposure value gates",
+            "sum(districts) ≈ peak mask within 1%; 20M ≤ population_within_aoi ≤ 45M; "
+            "every district exposed ≤ its own district_population; peak mask < AOI total",
+            (
+                f"district sum {district_sum:,} vs peak {peak_exposed:,}; "
+                f"AOI population {population_within_aoi:,}; "
+                f"{len(exposure_districts)} district rows"
+            ),
+            "; ".join(v22_failures[:6]) if v22_failures else "all four exposure value gates pass",
+            "fail" if v22_failures else "pass",
         )
     )
 

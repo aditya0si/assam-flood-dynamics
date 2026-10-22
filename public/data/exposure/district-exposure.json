@@ -1,0 +1,345 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_version": "2026.10.0",
+  "class": "derived",
+  "data_as_of": "2020-01-01",
+  "source": {
+    "name": "WorldPop 2020 population per 1 km cell (India, Aggregated)",
+    "rest_endpoint": "https://www.worldpop.org/rest/data/pop/wpgp?iso3=IND",
+    "rest_status": "unreachable (FetchError)",
+    "rest_catalogue_used": false,
+    "rest_fallback_note": "The public REST catalogue host timed out from this build host. The published product is the same WorldPop 2020 India 1 km Aggregated raster fetched directly from data.worldpop.org. The 1 km Aggregated grid is the practical national product; the 100 m national raster is 1.8 GB and is not used.",
+    "endpoint_used": "https://data.worldpop.org/GIS/Population/Global_2000_2020_1km/2020/IND/ind_ppp_2020_1km_Aggregated.tif",
+    "vintage": "2020",
+    "resolution_m": 1000,
+    "resolution_deg": 0.008333333333333333,
+    "units": "residents per cell",
+    "licence": "WorldPop (University of Southampton) Open Data, CC BY 4.0",
+    "retrieved_at": "2026-10-21T22:02:37Z",
+    "method": "Static WorldPop 2020 population counts per 1 km cell. The peak-mask total uses the fractional 1 km cell area covered by the 90 m wet mask. District exposure is the zonal sum of population x wet fraction (cell-centre containment), so district values reconcile to the peak mask. district_population is the raw zonal population and exposed_share_of_district is the exposed share of it. Population totals are clipped to the AOI v2 core mask and published as population_within_aoi; the unclipped India-wide raster total is kept only under source.raster_total_unclipped with scope=India.",
+    "uncertainty": "This is a static population raster crossed with a synthetic flood mask. It is not an impact assessment: it does not estimate humanitarian impact, population movement, or loss of life, and it carries no timing, warning or response information. WorldPop 2020 itself has model and census-input uncertainty, and a 1 km cell is coarse relative to the 90 m flood mask; treat the totals as order-of-magnitude planning context.",
+    "raster_total_unclipped": 1409367663,
+    "raster_scope_unclipped": "India",
+    "raster_cell_count_unclipped": 12106108
+  },
+  "method_sentence": "Static WorldPop 2020 population counts per 1 km cell. The peak-mask total uses the fractional 1 km cell area covered by the 90 m wet mask. District exposure is the zonal sum of population x wet fraction (cell-centre containment), so district values reconcile to the peak mask. district_population is the raw zonal population and exposed_share_of_district is the exposed share of it. Population totals are clipped to the AOI v2 core mask and published as population_within_aoi; the unclipped India-wide raster total is kept only under source.raster_total_unclipped with scope=India.",
+  "uncertainty_statement": "This is a static population raster crossed with a synthetic flood mask. It is not an impact assessment: it does not estimate humanitarian impact, population movement, or loss of life, and it carries no timing, warning or response information. WorldPop 2020 itself has model and census-input uncertainty, and a 1 km cell is coarse relative to the 90 m flood mask; treat the totals as order-of-magnitude planning context.",
+  "caveat": "Static WorldPop 2020 population crossed with a synthetic flood mask. This is a derived exposure estimate, not an impact assessment and not a record of a real event.",
+  "peak_mask": {
+    "step": 7,
+    "step_label": "25 Aug",
+    "wet_area_km2": 10033.138,
+    "mask_file": "step-07-wet.tif",
+    "potentially_exposed_residents": 5807467,
+    "class": "derived",
+    "data_as_of": "2020-01-01"
+  },
+  "districts": [
+    {
+      "district_id": "76128533B8221925175605",
+      "name": "Baksa",
+      "district_population": 1233179,
+      "potentially_exposed_residents": 250039,
+      "exposed_share_of_district": 0.20276,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B47772746709007",
+      "name": "Barpeta",
+      "district_population": 1931901,
+      "potentially_exposed_residents": 412221,
+      "exposed_share_of_district": 0.213376,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B40714385808093",
+      "name": "Biswanath",
+      "district_population": 662505,
+      "potentially_exposed_residents": 82908,
+      "exposed_share_of_district": 0.125143,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B46490409917345",
+      "name": "Bongaigaon",
+      "district_population": 815311,
+      "potentially_exposed_residents": 98117,
+      "exposed_share_of_district": 0.120343,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B26964150246712",
+      "name": "Cachar",
+      "district_population": 2116481,
+      "potentially_exposed_residents": 344413,
+      "exposed_share_of_district": 0.162729,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B89228414823983",
+      "name": "Charaideo",
+      "district_population": 477647,
+      "potentially_exposed_residents": 52638,
+      "exposed_share_of_district": 0.110203,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B56012535339305",
+      "name": "Chirang",
+      "district_population": 512877,
+      "potentially_exposed_residents": 38067,
+      "exposed_share_of_district": 0.074222,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B96719327593873",
+      "name": "Darrang",
+      "district_population": 1131200,
+      "potentially_exposed_residents": 214349,
+      "exposed_share_of_district": 0.189488,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B50650763703739",
+      "name": "Dhemaji",
+      "district_population": 747366,
+      "potentially_exposed_residents": 104783,
+      "exposed_share_of_district": 0.140203,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B25835998628545",
+      "name": "Dhubri",
+      "district_population": 1584414,
+      "potentially_exposed_residents": 150486,
+      "exposed_share_of_district": 0.094979,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B57825981663822",
+      "name": "Dibrugarh",
+      "district_population": 1519358,
+      "potentially_exposed_residents": 96139,
+      "exposed_share_of_district": 0.063276,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B66125202864966",
+      "name": "Dima Hasao",
+      "district_population": 289739,
+      "potentially_exposed_residents": 3448,
+      "exposed_share_of_district": 0.0119,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B91472319248603",
+      "name": "Goalpara",
+      "district_population": 1061768,
+      "potentially_exposed_residents": 124353,
+      "exposed_share_of_district": 0.117119,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B55519385298440",
+      "name": "Golaghat",
+      "district_population": 1231246,
+      "potentially_exposed_residents": 95481,
+      "exposed_share_of_district": 0.077548,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B16749627383755",
+      "name": "Hailakandi",
+      "district_population": 744369,
+      "potentially_exposed_residents": 272784,
+      "exposed_share_of_district": 0.366463,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B70315194619807",
+      "name": "Hojai",
+      "district_population": 1107787,
+      "potentially_exposed_residents": 204017,
+      "exposed_share_of_district": 0.184166,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B334793883930",
+      "name": "Jorhat",
+      "district_population": 1016315,
+      "potentially_exposed_residents": 197922,
+      "exposed_share_of_district": 0.194745,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B66682530790248",
+      "name": "Kamrup",
+      "district_population": 1597300,
+      "potentially_exposed_residents": 381099,
+      "exposed_share_of_district": 0.238589,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B38230828972906",
+      "name": "Kamrup Metropolitan",
+      "district_population": 1395019,
+      "potentially_exposed_residents": 68365,
+      "exposed_share_of_district": 0.049007,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B38548995376745",
+      "name": "Karbi Anglong East",
+      "district_population": 706936,
+      "potentially_exposed_residents": 41792,
+      "exposed_share_of_district": 0.059117,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B57995625790051",
+      "name": "Karbi Anglong West",
+      "district_population": 366791,
+      "potentially_exposed_residents": 18625,
+      "exposed_share_of_district": 0.050778,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B23092176497025",
+      "name": "Karimganj",
+      "district_population": 1397367,
+      "potentially_exposed_residents": 252467,
+      "exposed_share_of_district": 0.180673,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B91480770176940",
+      "name": "Kokrajhar",
+      "district_population": 1132338,
+      "potentially_exposed_residents": 89756,
+      "exposed_share_of_district": 0.079266,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B85627242103654",
+      "name": "Lakhimpur",
+      "district_population": 1129769,
+      "potentially_exposed_residents": 200248,
+      "exposed_share_of_district": 0.177247,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B15157901669242",
+      "name": "Majuli",
+      "district_population": 221092,
+      "potentially_exposed_residents": 51339,
+      "exposed_share_of_district": 0.232207,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B17968019348564",
+      "name": "Morigaon",
+      "district_population": 1171572,
+      "potentially_exposed_residents": 237401,
+      "exposed_share_of_district": 0.202635,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B13437137070957",
+      "name": "Nagaon",
+      "district_population": 2279612,
+      "potentially_exposed_residents": 690431,
+      "exposed_share_of_district": 0.302872,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B40995085026980",
+      "name": "Nalbari",
+      "district_population": 965529,
+      "potentially_exposed_residents": 354022,
+      "exposed_share_of_district": 0.366661,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B21722277889516",
+      "name": "Sivasagar",
+      "district_population": 799399,
+      "potentially_exposed_residents": 316756,
+      "exposed_share_of_district": 0.396243,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B41005496708834",
+      "name": "Sonitpur",
+      "district_population": 1481612,
+      "potentially_exposed_residents": 177036,
+      "exposed_share_of_district": 0.119489,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B20298037622173",
+      "name": "South Salmara-Mankachar",
+      "district_population": 540744,
+      "potentially_exposed_residents": 120220,
+      "exposed_share_of_district": 0.222323,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B8920527783032",
+      "name": "Tinsukia",
+      "district_population": 1414897,
+      "potentially_exposed_residents": 8620,
+      "exposed_share_of_district": 0.006092,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    },
+    {
+      "district_id": "76128533B20307518801538",
+      "name": "Udalguri",
+      "district_population": 927057,
+      "potentially_exposed_residents": 51400,
+      "exposed_share_of_district": 0.055444,
+      "class": "derived",
+      "data_as_of": "2020-01-01"
+    }
+  ],
+  "totals": {
+    "potentially_exposed_residents": 5801742,
+    "peak_mask_potentially_exposed_residents": 5807467,
+    "district_count": 33,
+    "district_population_total": 35710497,
+    "population_within_aoi": 32667772,
+    "population_raster_scope": "AOI v2 polygon",
+    "worldpop_cell_count_within_aoi": 73337
+  }
+}

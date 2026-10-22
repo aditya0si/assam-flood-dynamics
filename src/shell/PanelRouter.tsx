@@ -38,7 +38,9 @@ export function PanelRouter({ dataset }: PanelRouterProps) {
       tabIndex={-1}
       data-active-panel={activePanel}
     >
-      {activePanel === 'risk' ? <RiskPanel risk={dataset.districtRisk} /> : null}
+      {activePanel === 'risk' ? (
+        <RiskPanel risk={dataset.districtRisk} exposure={dataset.exposure} />
+      ) : null}
       {activePanel === 'validation' ? (
         <ValidationPanel scorecard={dataset.scorecard} />
       ) : null}

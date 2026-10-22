@@ -1,16 +1,20 @@
 import type { Dataset } from '../data/types';
-import { badgeFor } from '../data/labels';
 import { formatDepthValue, formatPercent } from '../data/format';
+import { ClassBadge, DataAge } from '../shell/DataBadge';
 import styles from './panels.module.css';
 
 interface MethodologyPanelProps {
   dataset: Dataset;
 }
 
+function formatMm(value: number): string {
+  return `${Math.round(value).toLocaleString('en-IN')} mm`;
+}
+
 export function MethodologyPanel({ dataset }: MethodologyPanelProps) {
-  const { scenario, districtRisk, series, summary } = dataset;
+  const { scenario, districtRisk, series, summary, rainfall, exposure } = dataset;
   const model = scenario.model;
-  const rainfall = series.series.find((entry) => entry.id === 'rainfall');
+  const rainfallSeries = series.series.find((entry) => entry.id === 'rainfall');
   const stage = series.series.find((entry) => entry.id === 'stage_above_drainage');
 
   return (
@@ -20,11 +24,18 @@ export function MethodologyPanel({ dataset }: MethodologyPanelProps) {
           <h2 className={styles.panelTitle} tabIndex={-1}>
             Methodology
           </h2>
-          <span className={styles.classBadge}>{badgeFor(summary.class)}</span>
+          <ClassBadge className={summary.class} />
         </div>
         <p className={styles.panelLead}>
-          A HAND screening model in plain language, the depth convention, and what is synthetic
-          versus derived.
+          A HAND screening model in plain language, the depth convention, and what is scenario,
+          derived, reanalysis or observed.
+        </p>
+        <p className={styles.panelAgeLine}>
+          <DataAge dataAsOf={summary.data_as_of} />
+          <span> · ERA5</span>
+          <DataAge dataAsOf={rainfall.data_as_of} compact />
+          <span> · exposure</span>
+          <DataAge dataAsOf={exposure.data_as_of} compact />
         </p>
       </div>
 
@@ -82,23 +93,34 @@ export function MethodologyPanel({ dataset }: MethodologyPanelProps) {
       </section>
 
       <section className={styles.methodCard}>
-        <h3 className={styles.subTitle}>Synthetic vs derived</h3>
+        <h3 className={styles.subTitle}>Class discipline</h3>
         <ul className={styles.classList}>
           <li>
-            <span className={styles.classBadge}>{badgeFor(summary.class)}</span>
+            <ClassBadge className={summary.class} />
             <span>
-              Inundation extent and depth: {summary.class}, derived from the DEM, mapped channels and
-              the synthetic stage curve.
+              Inundation extent and depth: {summary.class}, derived from the DEM, mapped channels
+              and the scenario stage curve. This is the timeline class and it stays SCENARIO even
+              where ERA5 reanalysis informs the comparison.
             </span>
           </li>
           <li>
-            <span className={styles.classBadge}>{badgeFor(rainfall?.class ?? series.class)}</span>
+            <ClassBadge className={rainfallSeries?.class ?? series.class} />
             <span>
-              Rainfall: {rainfall?.label ?? 'rainfall series'}; {rainfall?.source_note ?? rainfall?.class}.
+              Scenario rainfall: {rainfallSeries?.label ?? 'rainfall series'};{' '}
+              {rainfallSeries?.source_note ?? rainfallSeries?.class}.
             </span>
           </li>
           <li>
-            <span className={styles.classBadge}>{badgeFor(stage?.class ?? series.class)}</span>
+            <ClassBadge className="reanalysis" />
+            <span>
+              ERA5 rainfall: class reanalysis, never observed. Daily totals 2015-2025 on a{' '}
+              {rainfall.source.grid_resolution_deg}° grid ({rainfall.source.grid_resolution_km} km),
+              area-weighted over the district polygons. 2022 JJAS and the 2015-2025 mean are
+              published per district below. {rainfall.source.caveat}
+            </span>
+          </li>
+          <li>
+            <ClassBadge className={stage?.class ?? series.class} />
             <span>
               Stage above local drainage: {stage?.label ?? 'scenario stage'};{' '}
               {stage?.source_note ?? stage?.class}. Threshold{' '}
@@ -107,7 +129,7 @@ export function MethodologyPanel({ dataset }: MethodologyPanelProps) {
             </span>
           </li>
           <li>
-            <span className={styles.classBadge}>{badgeFor(districtRisk.class)}</span>
+            <ClassBadge className={districtRisk.class} />
             <span>
               Extent score and district ranking: {districtRisk.class}, weighted{' '}
               {formatPercent(districtRisk.weights.area_share)} area share and{' '}
@@ -118,7 +140,51 @@ export function MethodologyPanel({ dataset }: MethodologyPanelProps) {
               badge.
             </span>
           </li>
+          <li>
+            <ClassBadge className={exposure.class} />
+            <span>
+              Potentially exposed residents: {exposure.class}. WorldPop {exposure.source.vintage} at{' '}
+              {exposure.source.resolution_m} m, aggregated to the S07 peak mask and to districts.
+              The only resident field is <code>potentially_exposed_residents</code>. {exposure.method_sentence}{' '}
+              {exposure.uncertainty_statement}
+            </span>
+          </li>
         </ul>
+      </section>
+
+      <section className={styles.methodCard} data-monsoon-table="true">
+        <div className={styles.panelTitleRow}>
+          <h3 className={styles.subTitle}>2022 monsoon vs 2015-2025 mean (ERA5)</h3>
+          <span className={styles.badgePair}>
+            <ClassBadge className="reanalysis" />
+            <DataAge dataAsOf={rainfall.data_as_of} compact />
+          </span>
+        </div>
+        <p>
+          JJAS is June-September. All 33 district areal means are published; the AOI areal mean is{' '}
+          {formatMm(rainfall.aoi_monsoon.monsoon_2022_mm)} in 2022 against a{' '}
+          {formatMm(rainfall.aoi_monsoon.monsoon_2015_2025_mean_mm)} mean.
+        </p>
+        <div className={styles.monsoonTableWrap}>
+          <table className={styles.validationTable}>
+            <thead>
+              <tr>
+                <th scope="col">District</th>
+                <th scope="col">2022 JJAS</th>
+                <th scope="col">2015-2025 mean</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rainfall.district_monsoon.map((district) => (
+                <tr key={district.district_id} data-monsoon-district={district.district_id}>
+                  <th scope="row">{district.name}</th>
+                  <td>{formatMm(district.monsoon_2022_mm)}</td>
+                  <td>{formatMm(district.monsoon_2015_2025_mean_mm)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className={styles.methodCard}>

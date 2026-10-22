@@ -95,7 +95,7 @@
     {
       "class": "scenario",
       "dataset": "Scenario inundation raster frames and summary",
-      "fetched_at": "2026-10-21T02:33:00Z",
+      "fetched_at": "2026-10-21T21:16:19Z",
       "id": "flood",
       "licence": "Mapzen/Amazon elevation tiles; attribution required; verify terms before public launch; see rivers entry",
       "notes": "REVIEW-04 C1/C2: HAND threshold inside AOI v2 (Assam and DEM <= 120 m); uniform synthetic stage per step; >=9-cell component-area filter applied before statistics and rendering, no morphological opening; half-resolution 5-class paletted PNG per step plus frame-index.json; per-step uint8 wet masks; no per-band GeoJSON, no vector outline and no inundation-stack.npz. The peak-extent plausibility band is reviewer-selected, not calibrated.",
@@ -169,7 +169,7 @@
     {
       "class": "derived",
       "dataset": "Sentinel-1 GRD extent-shape validation scorecard",
-      "fetched_at": "2026-10-21T20:27:33Z",
+      "fetched_at": "2026-10-21T21:27:06Z",
       "id": "validation",
       "licence": "Copernicus Sentinel data; Earth Search STAC; anonymous S3 access",
       "notes": "Two Sentinel-1 IW GRD VV acquisitions (earliest and latest usable Jun–Jul 2022 acquisitions over the AOI core). VV is decimated ~1/9 with average resampling; the SAFE schema-calibration-vv sigmaNought LUT (27 vectors x 642 samples) is applied as 20*log10(DN/A), with the sigma0 water mask at a fixed -16 dB and sensitivity published at -14/-16/-18 dB. Water components below 5 analysis cells and DEM slope >10° are removed; masks are reprojected nearest to the 90 m frame grid with a fractional coverage raster. validity_area_km2 and modelled_in_validity_km2 are published per scene. This is an extent-shape comparison, not an event hindcast; scene binaries and masks remain in the gitignored pipeline cache.",
@@ -187,12 +187,13 @@
       "source_url": "https://earth-search.aws.element84.com/v1"
     },
     {
-      "class": "synthetic",
+      "class": "scenario",
+      "data_as_of": "2026-10-21",
       "dataset": "Synthetic monsoon series and derived cross-sections",
-      "fetched_at": "2026-10-21T02:33:09Z",
+      "fetched_at": "2026-10-21T21:24:47Z",
       "id": "series",
       "licence": "Synthetic model parameters; terrain and channel licences as recorded",
-      "notes": "Rainfall, main-stem stage and backwater values are declared synthetic; the series repeats flood-summary values exactly. Cross-sections sample DEM/HAND at 2 km and are not surveyed sections.",
+      "notes": "Rainfall, main-stem stage and backwater values are declared scenario values, never observed. The series repeats flood-summary values exactly. Cross-sections sample DEM/HAND at 2 km and are not surveyed sections.",
       "output_paths": [
         "data/series/monsoon-series.json",
         "data/series/cross-sections.json"
@@ -211,6 +212,95 @@
       ],
       "source_name": "Synthetic scenario parameters + DEM/HAND profiles",
       "source_url": "pipeline/config/scenario.json"
+    },
+    {
+      "class": "reanalysis",
+      "data_as_of": "2025-09-30",
+      "dataset": "ERA5 daily precipitation reanalysis and district monsoon totals",
+      "fetched_at": "2026-10-22T22:00:49Z",
+      "id": "era5_rainfall",
+      "licence": "Open-Meteo data; ERA5 (ECMWF/Copernicus Climate Change Service) reanalysis, CC BY 4.0",
+      "notes": "ERA5 reanalysis via the Open-Meteo archive endpoint, daily precipitation_sum for JJAS 06-01..09-30 in each year 2015-2025 (off-season days omitted because the fetch is rate-limited, not because they are unavailable) on a 0.5 degree grid (55.6 km), area-weighted over the existing Assam district polygons. Units are mm/day (daily totals). Published 2022 JJAS totals and the 2015-2025 JJAS mean per district. Class is reanalysis, never observed: ERA5 is a model-based reanalysis, not a gauge or satellite observation, and it is biased in complex terrain. It is sampled at 0.5 degree nodes (stride-2 of the native 0.25 degree grid) because the native request volume exceeds the free-tier rate limit; district areal means are therefore smoother than the native product, especially along the Himalayan and Barail margins.",
+      "output_paths": [
+        "data/series/rainfall.json"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli build-rainfall --cache pipeline/cache/rainfall --out-rainfall public/data/series/rainfall.json --out-forecast public/data/series/rainfall-forecast.json",
+          "stage": "17",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "ERA5 reanalysis precipitation via Open-Meteo archive",
+      "source_url": "https://archive-api.open-meteo.com/v1/archive"
+    },
+    {
+      "class": "scenario",
+      "data_as_of": "2026-10-22T22:00:49Z",
+      "dataset": "Open-Meteo current-window model guidance, stored separately",
+      "fetched_at": "2026-10-22T22:00:49Z",
+      "id": "era5_current_window",
+      "licence": "Open-Meteo data; ERA5 (ECMWF/Copernicus Climate Change Service) reanalysis, CC BY 4.0",
+      "notes": "The current-window response is stored in its own file and labelled class=scenario with source_kind=model_current_window. It is model guidance, not an observation and not an archive reanalysis; it never drives the flood scenario and is visually separate from the ERA5 archive series.",
+      "output_paths": [
+        "data/series/rainfall-forecast.json"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli build-rainfall --cache pipeline/cache/rainfall --out-rainfall public/data/series/rainfall.json --out-forecast public/data/series/rainfall-forecast.json",
+          "stage": "17",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "Open-Meteo current-window endpoint (model, not observed)",
+      "source_url": "https://api.open-meteo.com/v1/forecast"
+    },
+    {
+      "class": "source",
+      "data_as_of": "2020-01-01",
+      "dataset": "WorldPop 2020 population per 1 km cell",
+      "fetched_at": "2026-10-21T22:02:37Z",
+      "id": "population",
+      "licence": "WorldPop (University of Southampton) Open Data, CC BY 4.0",
+      "notes": "REST catalogue https://www.worldpop.org/rest/data/pop/wpgp?iso3=IND was attempted; the published endpoint is https://data.worldpop.org/GIS/Population/Global_2000_2020_1km/2020/IND/ind_ppp_2020_1km_Aggregated.tif. Vintage 2020, 1000 m Aggregated grid. Population is a static model/census input, not a live count.",
+      "output_paths": [
+        "data/exposure/district-exposure.json"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli build-exposure --cache pipeline/cache/worldpop --masks pipeline/work/inundation-masks --out public/data/exposure/district-exposure.json",
+          "stage": "18",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "WorldPop 2020 population per 1 km cell (India, Aggregated)",
+      "source_url": "https://data.worldpop.org/GIS/Population/Global_2000_2020_1km/2020/IND/ind_ppp_2020_1km_Aggregated.tif"
+    },
+    {
+      "class": "derived",
+      "data_as_of": "2020-01-01",
+      "dataset": "Potentially exposed residents (derived exposure estimate)",
+      "fetched_at": "2026-10-21T22:02:37Z",
+      "id": "exposure",
+      "licence": "Derived output; WorldPop CC BY 4.0 and terrain/channel licences as recorded",
+      "notes": "The only resident-count field is potentially_exposed_residents (the totals block repeats the peak-mask value as peak_mask_potentially_exposed_residents for reconciliation). It is class derived. Method: Static WorldPop 2020 population counts per 1 km cell. The peak-mask total uses the fractional 1 km cell area covered by the 90 m wet mask. District exposure is the zonal sum of population x wet fraction (cell-centre containment), so district values reconcile to the peak mask. district_population is the raw zonal population and exposed_share_of_district is the exposed share of it. Population totals are clipped to the AOI v2 core mask and published as population_within_aoi; the unclipped India-wide raster total is kept only under source.raster_total_unclipped with scope=India. Uncertainty: This is a static population raster crossed with a synthetic flood mask. It is not an impact assessment: it does not estimate humanitarian impact, population movement, or loss of life, and it carries no timing, warning or response information. WorldPop 2020 itself has model and census-input uncertainty, and a 1 km cell is coarse relative to the 90 m flood mask; treat the totals as order-of-magnitude planning context.",
+      "output_paths": [
+        "data/exposure/district-exposure.json"
+      ],
+      "pipeline": [
+        {
+          "command": "python -m baanh_pipeline.cli build-inundation --dem pipeline/work/dem-burned.tif --hand pipeline/work/hand-90m.tif --distance pipeline/work/channel-distance-90m.tif --channels pipeline/work/channels-90m.tif --state public/data/admin/assam-state.geojson --scenario pipeline/config/scenario.json --frame-index public/data/flood/frame-index.json --out-summary public/data/flood/flood-summary.json --out-masks pipeline/work/inundation-masks --out-frames-dir public/data/flood/frames",
+          "stage": "09",
+          "version": "1.0.0"
+        },
+        {
+          "command": "python -m baanh_pipeline.cli build-exposure --cache pipeline/cache/worldpop --masks pipeline/work/inundation-masks --out public/data/exposure/district-exposure.json",
+          "stage": "18",
+          "version": "1.0.0"
+        }
+      ],
+      "source_name": "WorldPop population crossed with the scenario peak wet mask and districts",
+      "source_url": "https://data.worldpop.org/GIS/Population/Global_2000_2020_1km/2020/IND/ind_ppp_2020_1km_Aggregated.tif"
     },
     {
       "class": "source",
@@ -356,7 +446,7 @@
       "source_url": "https://unosat.org/products/"
     }
   ],
-  "generated_at": "2026-10-21T20:27:39Z",
+  "generated_at": "2026-10-22T22:08:33Z",
   "schema_version": "1.0.0",
   "versions": {
     "Pillow": "12.3.0",

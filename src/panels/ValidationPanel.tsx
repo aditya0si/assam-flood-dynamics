@@ -1,6 +1,6 @@
 import type { Scorecard } from '../data/schemas';
-import { badgeFor } from '../data/labels';
 import { formatArea, formatPercent, formatScore, formatStepCode } from '../data/format';
+import { ClassBadge, DataAge } from '../shell/DataBadge';
 import styles from './panels.module.css';
 
 interface ValidationPanelProps {
@@ -22,11 +22,18 @@ export function ValidationPanel({ scorecard }: ValidationPanelProps) {
           <h2 className={styles.panelTitle} tabIndex={-1}>
             Sentinel-1 validation
           </h2>
-          <span className={styles.classBadge}>{badgeFor('derived')}</span>
+          <span className={styles.badgePair}>
+            <ClassBadge className="observed" />
+            <ClassBadge className="derived" />
+          </span>
         </div>
         <p className={styles.panelLead}>
           Two real Sentinel-1 GRD acquisitions, scored against the committed scenario frames.
           This is an extent-shape comparison, not an event hindcast.
+        </p>
+        <p className={styles.panelAgeLine}>
+          <DataAge dataAsOf={scorecard.data_as_of} />
+          <span> · SAR acquisition dates are the observed data; the scorecard is derived.</span>
         </p>
         <p className={styles.formulaNote}>
           {method.collection} · VV decimated with {method.resampling} · σ0 calibration from
@@ -61,14 +68,20 @@ export function ValidationPanel({ scorecard }: ValidationPanelProps) {
           data-validation-scene={scene.scene_id}
         >
           <h3 className={styles.subTitle}>{scene.scene_id}</h3>
-          <p className={styles.validationMeta}>
-            {formatUtc(scene.datetime)} · {scene.platform} · relative orbit{' '}
-            {scene.relative_orbit} · σ0 {formatScore(scene.threshold_db)} dB
+          <p className={styles.panelAgeLine}>
+            <ClassBadge className="observed" />
+            <DataAge dataAsOf={scene.datetime.slice(0, 10)} />
+            <span className={styles.validationMeta}>
+              {' '}· {formatUtc(scene.datetime)} · {scene.platform} · relative orbit{' '}
+              {scene.relative_orbit} · σ0 {formatScore(scene.threshold_db)} dB
+            </span>
           </p>
           <dl className={styles.validationGrid}>
             <div>
               <dt>Observed water</dt>
-              <dd>{formatArea(scene.observed_area_km2)} km²</dd>
+              <dd>
+                <ClassBadge className="observed" /> {formatArea(scene.observed_area_km2)} km²
+              </dd>
             </div>
             <div>
               <dt>Observed fraction</dt>

@@ -2,6 +2,14 @@ import { z } from 'zod';
 
 const bboxSchema = z.tuple([z.number(), z.number(), z.number(), z.number()]);
 
+/** P1.3: every series carries exactly one of these three classes. */
+export const seriesClassSchema = z.enum(['observed', 'reanalysis', 'scenario']);
+
+/** P1.6: the four badges rendered on data surfaces. */
+export const dataClassSchema = z.enum(['observed', 'reanalysis', 'derived', 'scenario']);
+
+const dataAsOfSchema = z.string().min(10);
+
 const geojsonSchema = z.object({
   type: z.literal('FeatureCollection'),
   features: z.array(
@@ -45,6 +53,7 @@ export const scenarioSchema = z.object({
   name: z.string(),
   class: z.string(),
   not_a_forecast: z.boolean(),
+  data_as_of: dataAsOfSchema,
   year_label: z.string().nullable(),
   step_count: z.number().int().positive(),
   total_days: z.number().int().positive(),
@@ -119,6 +128,7 @@ export const floodSummarySchema = z.object({
   schema_version: z.string(),
   scenario_id: z.string(),
   class: z.string(),
+  data_as_of: dataAsOfSchema,
   peak_step: z.number().int().nonnegative(),
   series_class: z.object({
     rainfall: z.string(),
@@ -163,6 +173,7 @@ export const frameIndexSchema = z.object({
   dataset_version: z.string(),
   scenario_id: z.string(),
   class: z.string(),
+  data_as_of: dataAsOfSchema,
   bbox: bboxSchema,
   width: z.number().int().positive(),
   height: z.number().int().positive(),
@@ -192,6 +203,7 @@ export const provenanceEntrySchema = z.object({
   licence: z.string(),
   notes: z.string(),
   fetched_at: z.string().nullable(),
+  data_as_of: z.string().optional(),
   output_paths: z.array(z.string()),
   pipeline: z.array(provenanceStageSchema),
 });
@@ -233,6 +245,7 @@ export const districtRiskSchema = z.object({
   scenario_id: z.string(),
   class: z.string(),
   generated_at: z.string(),
+  data_as_of: dataAsOfSchema,
   weights_version: z.string(),
   weights: z.object({
     area_share: z.number(),
@@ -379,6 +392,7 @@ export const scorecardSceneSchema = z.object({
 export const scorecardSchema = z.object({
   schema_version: z.string(),
   generated_at: z.string(),
+  data_as_of: dataAsOfSchema,
   method: z.object({
     collection: z.literal('sentinel-1-grd'),
     threshold_method: z.literal('fixed_sigma0'),
@@ -424,7 +438,8 @@ export const seriesEntrySchema = z.object({
   id: z.string(),
   label: z.string(),
   unit: z.string(),
-  class: z.string(),
+  class: seriesClassSchema,
+  data_as_of: dataAsOfSchema,
   source_note: z.string(),
   points: z.array(seriesPointSchema),
 });
@@ -434,6 +449,7 @@ export const monsoonSeriesSchema = z.object({
   dataset_version: z.string(),
   scenario_id: z.string(),
   class: z.string(),
+  data_as_of: dataAsOfSchema,
   series: z.array(seriesEntrySchema),
   threshold: z.object({
     id: z.string(),
@@ -442,6 +458,160 @@ export const monsoonSeriesSchema = z.object({
     unit: z.string(),
     class: z.string(),
     note: z.string(),
+  }),
+});
+
+const rainfallPointSchema = z.object({
+  date: z.string().min(10),
+  value: z.number(),
+});
+
+export const rainfallSourceSchema = z.object({
+  name: z.string(),
+  endpoint: z.string(),
+  query: z.record(z.string(), z.unknown()),
+  retrieved_at: z.string(),
+  model: z.string(),
+  grid_resolution_deg: z.number(),
+  grid_resolution_km: z.number(),
+  units: z.string(),
+  licence: z.string(),
+  caveat: z.string(),
+  retrieval_note: z.string().optional(),
+});
+
+export const rainfallDistrictSchema = z.object({
+  district_id: z.string(),
+  name: z.string(),
+  monsoon_2022_mm: z.number().nonnegative(),
+  monsoon_2015_2025_mean_mm: z.number().nonnegative(),
+  anomaly_2022_vs_mean_mm: z.number(),
+  anomaly_2022_vs_mean_pct: z.number().nullable(),
+  class: z.literal('reanalysis'),
+  data_as_of: dataAsOfSchema,
+  grid_cells: z.number().int().nonnegative(),
+  covered_area_km2: z.number().nonnegative(),
+});
+
+export const rainfallSchema = z.object({
+  schema_version: z.string(),
+  dataset_version: z.string(),
+  class: z.literal('reanalysis'),
+  data_as_of: dataAsOfSchema,
+  source: rainfallSourceSchema,
+  monsoon_definition: z.object({
+    months: z.array(z.number().int()),
+    label: z.string(),
+    target_year: z.number().int(),
+    mean_start_year: z.number().int(),
+    mean_end_year: z.number().int(),
+  }),
+  series: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      unit: z.string(),
+      class: seriesClassSchema,
+      source_note: z.string(),
+      data_as_of: dataAsOfSchema,
+      points: z.array(rainfallPointSchema),
+    }),
+  ),
+  aoi_monsoon: z.object({
+    monsoon_2022_mm: z.number().nonnegative(),
+    monsoon_2015_2025_mean_mm: z.number().nonnegative(),
+    anomaly_2022_vs_mean_mm: z.number(),
+    anomaly_2022_vs_mean_pct: z.number().nullable(),
+    seasons: z.array(
+      z.object({
+        year: z.number().int(),
+        monsoon_mm: z.number().nonnegative(),
+        days: z.number().int().positive(),
+      }),
+    ),
+    class: z.literal('reanalysis'),
+    data_as_of: dataAsOfSchema,
+  }),
+  district_monsoon: z.array(rainfallDistrictSchema),
+});
+
+export const rainfallForecastSchema = z.object({
+  schema_version: z.string(),
+  dataset_version: z.string(),
+  class: z.literal('scenario'),
+  data_as_of: dataAsOfSchema,
+  source: z.object({
+    name: z.string(),
+    endpoint: z.string(),
+    query: z.record(z.string(), z.unknown()),
+    retrieved_at: z.string(),
+    units: z.string(),
+    licence: z.string(),
+    note: z.string(),
+  }),
+  forecast_window: z.object({
+    id: z.string(),
+    label: z.string(),
+    class: seriesClassSchema,
+    source_kind: z.literal('model_current_window'),
+    data_as_of: dataAsOfSchema,
+    window_start: z.string(),
+    window_end: z.string(),
+    points: z.array(rainfallPointSchema),
+  }),
+});
+
+export const exposureDistrictSchema = z.object({
+  district_id: z.string(),
+  name: z.string(),
+  district_population: z.number().int().nonnegative(),
+  potentially_exposed_residents: z.number().int().nonnegative(),
+  exposed_share_of_district: z.number().min(0).max(1),
+  class: z.literal('derived'),
+  data_as_of: dataAsOfSchema,
+});
+
+export const exposureSchema = z.object({
+  schema_version: z.string(),
+  dataset_version: z.string(),
+  class: z.literal('derived'),
+  data_as_of: dataAsOfSchema,
+  source: z.object({
+    name: z.string(),
+    rest_endpoint: z.string(),
+    rest_status: z.string(),
+    rest_catalogue_used: z.boolean(),
+    endpoint_used: z.string(),
+    vintage: z.string(),
+    resolution_m: z.number().int().positive(),
+    resolution_deg: z.number().positive(),
+    units: z.string(),
+    licence: z.string(),
+    retrieved_at: z.string(),
+    method: z.string(),
+    uncertainty: z.string(),
+  }),
+  method_sentence: z.string().min(1),
+  uncertainty_statement: z.string().min(1),
+  caveat: z.string().min(1),
+  peak_mask: z.object({
+    step: z.number().int().min(0).max(11),
+    step_label: z.string(),
+    wet_area_km2: z.number().nonnegative(),
+    mask_file: z.string(),
+    potentially_exposed_residents: z.number().int().nonnegative(),
+    class: z.literal('derived'),
+    data_as_of: dataAsOfSchema,
+  }),
+  districts: z.array(exposureDistrictSchema),
+  totals: z.object({
+    potentially_exposed_residents: z.number().int().nonnegative(),
+    peak_mask_potentially_exposed_residents: z.number().int().nonnegative(),
+    district_count: z.number().int().positive(),
+    district_population_total: z.number().int().nonnegative().optional(),
+    population_within_aoi: z.number().int().nonnegative(),
+    population_raster_scope: z.literal('AOI v2 polygon'),
+    worldpop_cell_count_within_aoi: z.number().int().nonnegative(),
   }),
 });
 
@@ -525,6 +695,13 @@ export type ScorecardPeak = z.infer<typeof scorecardPeakSchema>;
 export type ScorecardSensitivity = z.infer<typeof scorecardSensitivitySchema>;
 export type MonsoonSeries = z.infer<typeof monsoonSeriesSchema>;
 export type SeriesEntry = z.infer<typeof seriesEntrySchema>;
+export type Rainfall = z.infer<typeof rainfallSchema>;
+export type RainfallDistrict = z.infer<typeof rainfallDistrictSchema>;
+export type RainfallForecast = z.infer<typeof rainfallForecastSchema>;
+export type Exposure = z.infer<typeof exposureSchema>;
+export type ExposureDistrict = z.infer<typeof exposureDistrictSchema>;
+export type SeriesClass = z.infer<typeof seriesClassSchema>;
+export type DataClass = z.infer<typeof dataClassSchema>;
 export type RiskZoneCollection = z.infer<typeof riskZoneFeatureCollectionSchema>;
 export type RiskZoneProperties = RiskZoneCollection['features'][number]['properties'];
 export type HotspotCollection = z.infer<typeof hotspotFeatureCollectionSchema>;

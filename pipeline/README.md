@@ -65,6 +65,8 @@ All commands run from the repository root. `$py` below means
 | 14 | `$py validate --data public/data --config pipeline/config --report public/data/validation-report.json --version 2026.10.0` | `validation-report.json` |
 | 15 | `$py publish --data public/data --version 2026.10.0 --manifest public/data/manifest.json --provenance public/data/provenance.json` | `manifest.json`, `provenance.json` |
 | 16 | `$py build-validation --aoi pipeline/config/aoi.json --sources pipeline/config/sources.json --core-mask pipeline/work/aoi-v2-core-90m.tif --dem pipeline/work/dem-90m.tif --frame-index public/data/flood/frame-index.json --frames public/data/flood/frames --scenario pipeline/config/scenario.json --out public/data/validation/scorecard.json --cache pipeline/cache/s1` | `validation/scorecard.json` (P1; no scene or mask committed) |
+| 17 | `$py build-rainfall --cache pipeline/cache/era5 --out-rainfall public/data/series/rainfall.json --out-forecast public/data/series/rainfall-forecast.json` | `series/rainfall.json` (ERA5 JJAS 06-01..09-30 only, 2015-2025, district 2022 JJAS and 2015-2025 JJAS means; 32-point calls cached per year/chunk, ≥10 s apart, resumable on 429) and `series/rainfall-forecast.json` (separate current-window model series) |
+| 18 | `$py build-exposure --cache pipeline/cache/worldpop --masks pipeline/work/inundation-masks --out public/data/exposure/district-exposure.json` | `exposure/district-exposure.json` (WorldPop 2020 masked zonal `potentially_exposed_residents`, `district_population`, `exposed_share_of_district`; AOI-clipped `population_within_aoi`) |
 
 Each stage writes `pipeline/work/provenance/<stage>.json` with the command,
 wall time, byte counts, source URLs, resolved package versions and output
@@ -77,10 +79,10 @@ hashes. `publish` aggregates those fragments. Writes are atomic
 ```powershell
 $env:PYTHONPATH = (Resolve-Path pipeline\src).Path
 Remove-Item -Recurse -Force pipeline/cache, pipeline/work, public/data -ErrorAction SilentlyContinue
-# run stages 01..15 in the table above, in order
+# run stages 01..18 in the table above, in order
 ```
 
-`public/data/` is rebuilt entirely by stages 04–15. Do not hand-edit it.
+`public/data/` is rebuilt entirely by stages 04–18. Do not hand-edit it.
 
 ## Cache and intermediates
 
@@ -91,6 +93,8 @@ Remove-Item -Recurse -Force pipeline/cache, pipeline/work, public/data -ErrorAct
 | `pipeline/cache/rivers/overpass-rivers.json` | exact whole-AOI Overpass response, when it succeeds | no |
 | `pipeline/cache/rivers/overpass-split/*.json` | same query split into 1.0° × 0.6° cells, cached per cell | no |
 | `pipeline/cache/rivers/ne_10m_rivers_lake_centerlines.geojson` | Natural Earth fallback copy | no |
+| `pipeline/cache/era5/` | Open-Meteo archive batches (0.25° ERA5 grid) and the separate current-window response | no |
+| `pipeline/cache/worldpop/` | WorldPop 2020 India 1 km Aggregated population raster (~19 MB) | no |
 | `pipeline/work/*.tif` | DEM, burned DEM, channel mask, distance, HAND, nearest-channel elevation | no |
 | `pipeline/work/inundation-masks/step-XX-wet.tif` | per-step uint8 wet masks (≤300 MB total), consumed by stages 10 and 12 | no |
 | `pipeline/work/aoi-v2-*.tif`, `aoi-v2.json` | AOI v2 core/edge/clip masks and measured areas | no |

@@ -1,5 +1,6 @@
 import type {
   DistrictRisk,
+  Exposure,
   FeatureCollection,
   FloodSummary,
   FrameIndex,
@@ -7,6 +8,8 @@ import type {
   Manifest,
   MonsoonSeries,
   Provenance,
+  Rainfall,
+  RainfallForecast,
   RiskZoneCollection,
   Scenario,
   Scorecard,
@@ -24,6 +27,9 @@ export interface Dataset {
   provenance: Provenance;
   districtRisk: DistrictRisk;
   series: MonsoonSeries;
+  rainfall: Rainfall;
+  rainfallForecast: RainfallForecast;
+  exposure: Exposure;
   riskZones: RiskZoneCollection;
   hotspots: HotspotCollection;
   scorecard: Scorecard;

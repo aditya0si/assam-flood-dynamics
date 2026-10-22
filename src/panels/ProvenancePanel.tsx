@@ -1,13 +1,23 @@
 import type { Dataset } from '../data/types';
 import type { ProvenanceEntry } from '../data/schemas';
-import { HONESTY_CHIP, badgeFor } from '../data/labels';
+import { HONESTY_CHIP } from '../data/labels';
+import { ClassBadge, DataAge } from '../shell/DataBadge';
 import styles from './panels.module.css';
 
 interface ProvenancePanelProps {
   dataset: Dataset;
 }
 
-const REQUIRED_ENTRIES = ['terrain', 'boundaries', 'rivers', 'flood', 'risk'] as const;
+const REQUIRED_ENTRIES = [
+  'terrain',
+  'boundaries',
+  'rivers',
+  'flood',
+  'risk',
+  'era5_rainfall',
+  'population',
+  'exposure',
+] as const;
 
 function entryOrder(entry: ProvenanceEntry): number {
   const index = REQUIRED_ENTRIES.indexOf(entry.id as (typeof REQUIRED_ENTRIES)[number]);
@@ -48,9 +58,15 @@ export function ProvenancePanel({ dataset }: ProvenancePanelProps) {
         {entries.map((entry) => (
           <article key={entry.id} className={styles.provenanceCard} data-prov-entry={entry.id}>
             <header className={styles.provenanceHead}>
-              <span className={styles.classBadge}>{badgeFor(entry.class)}</span>
+              <ClassBadge className={entry.class} />
               <h3 className={styles.provenanceTitle}>{entry.dataset}</h3>
             </header>
+            <p className={styles.stageLine}>
+              <DataAge
+                dataAsOf={entry.data_as_of ?? dataset.provenance.generated_at.slice(0, 10)}
+                compact
+              />
+            </p>
             <p className={styles.sourceLine}>
               <span className={styles.fieldLabel}>Source</span>
               <span>{entry.source_name}</span>
@@ -93,10 +109,11 @@ export function ProvenancePanel({ dataset }: ProvenancePanelProps) {
       </section>
 
       <p className={styles.panelFoot}>
-        No hidden live feed, agency identifier or event record is used. Derived layers carry the
+        No hidden live feed, agency identifier or event record is used. Derived layers carry
         {' '}
-        {badgeFor(dataset.districtRisk.class)} and {badgeFor(dataset.summary.class)} badges at the
-        point of use.
+        <ClassBadge className={dataset.districtRisk.class} /> and{' '}
+        <ClassBadge className={dataset.summary.class} /> badges; ERA5 rainfall is{' '}
+        <ClassBadge className="reanalysis" />, never observed.
       </p>
     </div>
   );

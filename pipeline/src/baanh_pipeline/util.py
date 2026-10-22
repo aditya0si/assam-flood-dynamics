@@ -51,6 +51,7 @@ def ensure_dirs() -> None:
         data_dir() / "flood",
         data_dir() / "risk",
         data_dir() / "series",
+        data_dir() / "exposure",
         data_dir() / "basemap",
         data_dir() / "assets",
         data_dir() / "gauges",

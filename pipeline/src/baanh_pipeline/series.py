@@ -37,11 +37,11 @@ def run(
         raise RuntimeError("stage 11: flood summary step count mismatch")
 
     series_defs = [
-        ("rainfall", "Rainfall (synthetic)", "mm/day", "synthetic", "rainfall_mm_day",
-         "Parameterised monsoon curve; no gauge record."),
-        ("mainstem_stage", "Main-stem stage anomaly (synthetic)", "m", "synthetic", "mainstem_stage_m",
+        ("rainfall", "Rainfall (synthetic)", "mm/day", "scenario", "rainfall_mm_day",
+         "Parameterised monsoon curve; no gauge record. Shown as SCENARIO; the separate ERA5 reanalysis file is the real-season comparison."),
+        ("mainstem_stage", "Main-stem stage anomaly (synthetic)", "m", "scenario", "mainstem_stage_m",
          "Parameterised stage anomaly relative to a pre-monsoon baseline; not a gauge reading."),
-        ("backwater", "Backwater allowance (synthetic)", "m", "synthetic", "backwater_m",
+        ("backwater", "Backwater allowance (synthetic)", "m", "scenario", "backwater_m",
          "Declared additive allowance for tributary/backwater stacking; not a solved backwater term."),
         ("stage_above_drainage", "Stage above local drainage (scenario)", "m", "scenario", "stage_m",
          "Synthetic stage applied to the HAND threshold; not a gauge reading."),
@@ -64,6 +64,7 @@ def run(
                 "label": label,
                 "unit": unit,
                 "class": cls,
+                "data_as_of": str(scenario.raw.get("data_as_of", "2026-10-21")),
                 "source_note": note,
                 "points": points,
             }
@@ -72,7 +73,8 @@ def run(
         "schema_version": "1.0.0",
         "dataset_version": version,
         "scenario_id": scenario.scenario_id,
-        "class": "synthetic",
+        "class": "scenario",
+        "data_as_of": str(scenario.raw.get("data_as_of", "2026-10-21")),
         "series": series,
         "threshold": {
             "id": "scenario_threshold",
@@ -180,6 +182,7 @@ def run(
         "dataset_version": version,
         "scenario_id": scenario.scenario_id,
         "class": "derived",
+        "data_as_of": str(scenario.raw.get("data_as_of", "2026-10-21")),
         "transects": transects_out,
     }
     out_profiles.parent.mkdir(parents=True, exist_ok=True)

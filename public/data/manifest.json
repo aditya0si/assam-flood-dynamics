@@ -3,7 +3,7 @@
   "dataset_version": "2026.10.0",
   "app_min_version": "0.1.0",
   "scenario_id": "assam-monsoon-composite-v1",
-  "generated_at": "2026-10-21T20:27:39Z",
+  "generated_at": "2026-10-22T22:08:33Z",
   "crs": "EPSG:4326",
   "analysis_crs": "EPSG:32646",
   "bbox": [
@@ -28,11 +28,13 @@
     "critical": [
       "data/admin/assam-districts.geojson",
       "data/admin/assam-state.geojson",
+      "data/exposure/district-exposure.json",
       "data/hydro/assam-rivers.geojson",
       "data/provenance.json",
       "data/risk/district-risk.json",
       "data/scenario.json",
       "data/series/monsoon-series.json",
+      "data/series/rainfall.json",
       "data/validation-report.json",
       "data/validation/scorecard.json"
     ],
@@ -57,7 +59,8 @@
       "data/assets/critical-facilities.geojson",
       "data/gauges/virtual-gauges.geojson",
       "data/risk/hotspots.geojson",
-      "data/series/cross-sections.json"
+      "data/series/cross-sections.json",
+      "data/series/rainfall-forecast.json"
     ],
     "fallback": [
       "data/basemap/assam-hillshade.webp"
@@ -97,17 +100,25 @@
       "description": "8-bit hillshade relief fallback derived from the AWS Terrarium DEM."
     },
     {
+      "path": "data/exposure/district-exposure.json",
+      "bytes": 13151,
+      "sha256": "1c5d67cf5297339b1ce8b2035e4cd758ebbf1e235c1650cb592b43e2ff7ead69",
+      "class": "derived",
+      "tier": "critical",
+      "description": "WorldPop 2020 population zonal-summed as pop x wet fraction per district, with district_population and exposed_share_of_district; totals are clipped to AOI v2 as population_within_aoi. potentially_exposed_residents is the only resident count, with vintage, method and uncertainty."
+    },
+    {
       "path": "data/flood/flood-summary.json",
-      "bytes": 21926,
-      "sha256": "04c439818055d98d84a129f5a8edc3ef835c9c47a0eda0de5a46bdcbcde926eb",
+      "bytes": 21953,
+      "sha256": "79d9e5cfab5faef210e5e565e296ee238f9d8cac6b67360498e785fd0d842854",
       "class": "scenario",
       "tier": "animation",
       "description": "Per-step inundation area, depth, stage, component-filter audit and district-count summary."
     },
     {
       "path": "data/flood/frame-index.json",
-      "bytes": 3863,
-      "sha256": "a13657c9317700d66ba6c3a84f7f0dd493dbe28449082ffa2420c2b83cb51def",
+      "bytes": 3893,
+      "sha256": "30240427fc55d7e68ed9e330ec6e1598568c01d00db901b1a99762ebd336a1db",
       "class": "scenario",
       "tier": "animation",
       "description": "Frame placement contract: WGS84 bbox, half-resolution width/height, 5-class palette and per-step PNG file/area."
@@ -226,16 +237,16 @@
     },
     {
       "path": "data/provenance.json",
-      "bytes": 23019,
-      "sha256": "145d8fa506f0c1fa774ac7eb156cb2d4d3e9f0c1642946c7757e9fe88f0027c3",
+      "bytes": 29860,
+      "sha256": "e59d1332ed5f6c06f477f45d875f8d8188dda5590404cdce2c9220a17d0e84e2",
       "class": "derived",
       "tier": "critical",
       "description": "Source → stage → file provenance for every dataset."
     },
     {
       "path": "data/risk/district-risk.json",
-      "bytes": 20995,
-      "sha256": "c3db06525374fa1b14e536df829191d0667a53ce75a1e07b9af1489e0c766832",
+      "bytes": 21025,
+      "sha256": "bf7aeb3f62660ffb9904266f1bee5473800dd6942b00040344c848690b4ef3d5",
       "class": "derived",
       "tier": "critical",
       "description": "Scenario-conditional district exposure ranking (no demographics)."
@@ -258,43 +269,59 @@
     },
     {
       "path": "data/scenario.json",
-      "bytes": 6588,
-      "sha256": "3618eeaabf27ab99866835020cf83c114e165e815d8ea1f40698a857e67e4946",
+      "bytes": 6618,
+      "sha256": "0c0a85efefdbac19fe3f0f9fb78c13c80237182906b5e145c7128349a6bf3c5d",
       "class": "synthetic",
       "tier": "critical",
       "description": "Synthetic 12-step monsoon scenario and HAND model parameters."
     },
     {
       "path": "data/series/cross-sections.json",
-      "bytes": 58222,
-      "sha256": "99f59cc683c563ec53630dcdbe8bf4d82b2042dcb9633efe928546780de53d85",
+      "bytes": 58248,
+      "sha256": "caa582989d7451c0dceacf72c2e47c427bd914fd2e2d4fcb0e33f1adb6f773a7",
       "class": "derived",
       "tier": "optional",
       "description": "DEM + HAND valley profiles with scenario water surface by step."
     },
     {
       "path": "data/series/monsoon-series.json",
-      "bytes": 5564,
-      "sha256": "da26ab645c8fa05374693f7578a065d83b8a468442565cee61aa86fd5ef56877",
-      "class": "synthetic",
+      "bytes": 5810,
+      "sha256": "19ff6f821dce1fbc2ffaafe1177492fb0c718323f95f87f73c09964b7f54f8b1",
+      "class": "scenario",
       "tier": "critical",
-      "description": "Chart-ready synthetic rainfall and scenario stage series."
+      "description": "Chart-ready scenario rainfall and scenario stage series; every series is class scenario, never observed."
+    },
+    {
+      "path": "data/series/rainfall-forecast.json",
+      "bytes": 2695,
+      "sha256": "6c23ddaee0ba7eab7620ae6b1df55bce803bd34936d34b3d0982c0d763c24ce3",
+      "class": "scenario",
+      "tier": "optional",
+      "description": "Open-Meteo current-window model guidance stored separately from the ERA5 archive; class scenario, not observed."
+    },
+    {
+      "path": "data/series/rainfall.json",
+      "bytes": 121903,
+      "sha256": "44da9ada3e0201a5cb6b0daa6a34f0b887024ba7efbb9234e7a807c0adb2ebc6",
+      "class": "reanalysis",
+      "tier": "critical",
+      "description": "ERA5 daily precipitation reanalysis for JJAS 06-01..09-30 only, 2015-2025, sampled on a documented 0.5 degree grid (stride-2 of the native 0.25 degree product), with 2022 JJAS and 2015-2025 JJAS mean totals per district. Off-season days are omitted because the fetch is rate-limited, not because they are unavailable. Class reanalysis, never observed."
     },
     {
       "path": "data/validation/scorecard.json",
-      "bytes": 15564,
-      "sha256": "892864ed34754f4d088e31ec9050b3634020ab15f961a4cac3204edaaea3ee07",
+      "bytes": 15594,
+      "sha256": "7dc5f30d6cde3a9479d106d9f86b024df5c4a66fcaa51fef8ac2faf255ed81ba",
       "class": "derived",
       "tier": "critical",
       "description": "Sentinel-1 GRD validation scorecard: calibrated sigma0 extent-shape IoU/precision/recall at fixed -16 dB, sensitivity at -14/-16/-18 dB, not an event hindcast."
     },
     {
       "path": "data/validation-report.json",
-      "bytes": 10476,
-      "sha256": "df5e379f0b153eea02c90b7e3db97223305fc5b3bdf8cde0c77186da8f001741",
+      "bytes": 11322,
+      "sha256": "e6bf873b4ed25f8f3adb6e379b73c0f38a9d3abdd2a2b4f3cefbb81d3c01c928",
       "class": "derived",
       "tier": "critical",
-      "description": "V01–V20 plus V-A1–V-A10 validation report for the committed data."
+      "description": "V01–V22 plus V-A1–V-A10 validation report for the committed data."
     }
   ],
   "attribution": [
@@ -317,6 +344,16 @@
       "name": "Natural Earth",
       "url": "https://www.naturalearthdata.com/",
       "licence": "Public domain"
+    },
+    {
+      "name": "ERA5 via Open-Meteo archive",
+      "url": "https://open-meteo.com/en/docs/historical-weather-api",
+      "licence": "CC BY 4.0; ERA5 © ECMWF/Copernicus Climate Change Service"
+    },
+    {
+      "name": "WorldPop 2020",
+      "url": "https://www.worldpop.org/",
+      "licence": "CC BY 4.0"
     },
     {
       "name": "Esri, Maxar, Earthstar Geographics",

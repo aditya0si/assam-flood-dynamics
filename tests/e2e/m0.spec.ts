@@ -277,6 +277,48 @@ test.describe('M0 acceptance', () => {
     expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
 
+  test('P1.6 class badges and data ages appear on the rain chart and Validation tab', async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await openApp(page);
+
+    // The four labels are the entire class vocabulary: OBSERVED, REANALYSIS,
+    // DERIVED, SCENARIO. SCENARIO owns the timeline even where ERA5 informs it.
+    for (const badge of ['scenario', 'derived', 'reanalysis', 'observed']) {
+      await expect(page.locator(`[data-class-badge="${badge}"]`).first()).toBeVisible();
+    }
+
+    const rainfallChart = page.locator('[data-rainfall-chart="true"]');
+    await expect(rainfallChart).toBeVisible();
+    await expect(rainfallChart.locator('[data-class-badge="scenario"]').first()).toBeVisible();
+    await expect(rainfallChart.locator('[data-class-badge="reanalysis"]').first()).toBeVisible();
+    const rainfallAge = rainfallChart.locator('[data-data-as-of]').first();
+    await expect(rainfallAge).toContainText(/data as of \d{4}-\d{2}-\d{2}/);
+    await expect(rainfallAge).toContainText(/(day|month|year)s? old/);
+    await expect(rainfallChart.locator('[data-forecast-window="true"]')).toContainText(
+      /current window/i,
+    );
+
+    await openPanel(page, 'Validation');
+    const panel = page.locator('[data-validation-panel="true"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('[data-class-badge="observed"]').first()).toBeVisible();
+    await expect(panel.locator('[data-class-badge="derived"]').first()).toBeVisible();
+    const validationAge = panel.locator('[data-data-as-of]').first();
+    await expect(validationAge).toContainText(/data as of \d{4}-\d{2}-\d{2}/);
+    await expect(validationAge).toContainText(/(day|month|year)s? old/);
+
+    await openPanel(page, 'Layers');
+    for (const layer of ['flood', 'risk-zones', 'rivers', 'districts', 'hillshade', 'hotspots']) {
+      const row = page.locator(`[data-layer-id="${layer}"]`);
+      await expect(row.locator('[data-class-badge]').first()).toBeVisible();
+      await expect(row.locator('[data-layer-age] [data-data-as-of]')).toHaveCount(1);
+    }
+
+    expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
   test('coverage badge and row annotation appear for the lowest-coverage district', async ({
     page,
   }) => {
