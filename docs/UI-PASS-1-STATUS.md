@@ -76,12 +76,32 @@ So there is **no hang and no per-test regression** — the earlier "2.5× slowdo
 12-test run with a 20-test run. The real lever, if CI time matters later, is fewer page loads
 (shared fixture) or more workers, not a bug hunt.
 
-## Resume plan (when the limit refreshes)
+## Keyboard-path failure: environment, not code (reviewer investigation)
 
-1. Confirm `gpt-6-astra --provider openai-codex --reasoning medium` responds again.
-2. Add the three missing assertions (map height at both rail states, DOM cardinality of the warning,
-   legend/map hex equality).
-3. Get PR #1 CI green, then a screenshot pass and a merge decision.
-4. Still parked from earlier phases: **N-01** (`risk_class_area_share_denominator`), **N-02**
-   (attribution clipping), **N-03** (AOI-relative scores stated only on flagged rows) — all `open` in
-   `docs/NITS.md`.
+`m0.spec.ts:79` ("Space plays, arrows step") failed twice on `6e5515b`, then **passed on a rerun of the
+same commit** (`verify:m0` pass, 10 m 5 s). Evidence gathered before concluding:
+
+- Reproduced locally **4/4 at HEAD and 3/3 at `2444418`** — every commit fails on this Windows host, so
+  the UI change cannot be the cause.
+- The failure snapshot shows the app already at **S07, 8/12**: playback ran, then `playing` went false
+  before the poll observed it.
+- Mechanism: `usePlayback` pauses when `document.hidden` is true — deliberate product behaviour. On this
+  host the headless window is treated as occluded; CI headless is not.
+
+**No product change made.** Two follow-ups:
+
+- **N-04** — the keyboard test should `page.bringToFront()` or wait for `visibilityState === 'visible'`
+  before asserting transport behaviour, so it cannot depend on window occlusion.
+- **N-05** — pausing playback in a hidden tab is intentional; "keep playing in the background" would be
+  an explicit product decision, not a regression fix.
+
+A fixed-slice timer clock was prototyped against this failure and **reverted unverified**: local runs on
+this host cannot validate transport timing, so it must not be resurrected without a failing CI case.
+
+## Resume plan (complete)
+
+1. ~~Confirm `gpt-6-astra --provider openai-codex --reasoning medium` responds~~ — confirmed
+   (`ASTRA_READY`); it executed 1C.
+2. ~~Add the three assertions~~ — they already existed; 1C tightened them (see the table above).
+3. ~~Get PR #1 CI green~~ — green at `6e5515b`, mergeable.
+4. Screenshot pass and merge decision remain open, plus parked nits **N-01** … **N-05** in `docs/NITS.md`.
