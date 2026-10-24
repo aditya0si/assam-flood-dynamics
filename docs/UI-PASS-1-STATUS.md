@@ -1,5 +1,10 @@
 # UI pass 1 — state at pause (OpenAI/Codex usage limit)
 
+> Historical handoff, superseded by `docs/UI-PASS-1.md` for 1C acceptance and
+> runtime evidence. The “no per-test regression” conclusion below was not a
+> controlled measurement. The current suite consolidates the six UI checks into
+> one isolated page with named steps; browser results and timing belong to CI.
+
 Paused deliberately: the Codex seat hit its usage limit (429, ~5 h). Nothing is lost; the UI work is
 committed, pushed and open as a PR. This file exists so the retry starts from facts, not memory.
 

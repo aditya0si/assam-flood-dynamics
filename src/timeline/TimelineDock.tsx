@@ -49,6 +49,7 @@ export function TimelineDock({ dataset }: TimelineDockProps) {
       tabIndex={0}
       data-timeline="true"
       data-expanded={expanded}
+      data-rail-size={expanded ? 'default' : 'collapsed'}
     >
         <div className={styles.dockHeader}>
           <PlaybackControls />
