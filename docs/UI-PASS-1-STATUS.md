@@ -37,9 +37,6 @@ not respond.
 
 Two notes for the retry:
 
-- **E2E runtime regressed ~2.5×** (7 min → 18 m 24 s) on an unchanged suite plus one new test. Green
-  is not the same as healthy: find which test is slow (`test.setTimeout(180_000)` at m0.spec.ts:146
-  is a candidate) before merging.
 - `data-district-id` lives in the new `src/panels/RiskRow.tsx`, not `RiskPanel.tsx` — that is why the
   33-row assertion still passes after the panel was restructured.
 
@@ -50,16 +47,29 @@ Two notes for the retry:
    `npx vite preview --port 4192` serves the new build at `http://localhost:4192/assam-flood-dynamics/`
    for a screenshot pass once the browser is free.
 
-## Acceptance tests from the brief — delivered vs missing
+## Acceptance tests from the brief — all six delivered
 
-| # | Requirement | State |
-|---|---|---|
-| 2 | District rows visible, ≥5 in view | **Delivered** — 33-row assertion plus `toBeInViewport` |
-| 4 | Formula not clipped | **Delivered** — `scrollWidth <= clientWidth + 2` |
-| 6 | Onset empty-state copy | **Implemented**; assertion not added |
-| 3 | Legend hex equals map constant | **Satisfied by construction** (shared function); no explicit test |
-| 1 | Map ≥ 60 vh with rails open, ≥ 75 vh collapsed | **Missing** — needs an explicit assertion |
-| 5 | Exactly one `NOT A FORECAST` in the DOM | **Missing** — tests assert `.first()` visible, not cardinality |
+They live in **`tests/e2e/ui-pass-1.ts`** (a new spec, not `m0.spec.ts`), and CI ran them green.
+An earlier reviewer note claiming three were missing was wrong: it grepped only `m0.spec.ts`.
+
+| # | Requirement | Where | How it is actually asserted |
+|---|---|---|---|
+| 1 | Map owns the screen | `ui-pass-1.ts:6` | 1440×900: map ≥ 540 px (60 vh) with rails open, ≥ 675 px (75 vh) after collapsing analytics; rail widths 380 → 520 → 44; toggled by keyboard Enter/Space |
+| 2 | Five district rows visible | `:25` | rows 1–5 must contain `#1…` and their `data-score`, and each row's box must sit inside the panel box |
+| 3 | Legend equals map palette | `:40` | DOM `getComputedStyle` colours converted to hex and compared with **`DEPTH_PRESENTATION` imported from source** |
+| 4 | Formula not clipped | `:51` | `scrollWidth <= clientWidth + 2` |
+| 5 | Exactly one warning | `:58` | across all five tabs: `toHaveCount(1)` **plus** a text-node count of 1 (ancestors excluded) |
+| 6 | Onset empty state | `:71` | timeline-analytics region contains `Onset — no accumulated change yet.` |
+
+## E2E runtime — corrected reading
+
+Suite result: **20 tests passed in 10.4 min**. The 18 m 24 s job figure includes install, build and
+artifact upload. Per-test cost is 17–47 s, which is normal for a WebGL map that loads and settles per
+test; the longest are the S00/S04/S07 paint comparison (47.5 s) and the S07 scrub (40.0 s).
+
+So there is **no hang and no per-test regression** — the earlier "2.5× slowdown" note compared a
+12-test run with a 20-test run. The real lever, if CI time matters later, is fewer page loads
+(shared fixture) or more workers, not a bug hunt.
 
 ## Resume plan (when the limit refreshes)
 
