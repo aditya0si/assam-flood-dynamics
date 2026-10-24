@@ -30,9 +30,22 @@ not respond.
 `npm run build:sandbox` ✓ 5.99 s · `check-data` **38/38** · `check-budget` PASS · `check-honesty` PASS
 + `--self-test` PASS · unit **14/14** · pipeline pytest **29 passed**
 
+## CI result (PR #1, run `40108839515`)
+
+**All green:** `pipeline pytest` **pass** 23 s · `verify:m0` (Playwright, 12+ tests) **pass**
+**18 m 24 s** · GitGuardian **pass**. PR is `MERGEABLE` / `CLEAN`.
+
+Two notes for the retry:
+
+- **E2E runtime regressed ~2.5×** (7 min → 18 m 24 s) on an unchanged suite plus one new test. Green
+  is not the same as healthy: find which test is slow (`test.setTimeout(180_000)` at m0.spec.ts:146
+  is a candidate) before merging.
+- `data-district-id` lives in the new `src/panels/RiskRow.tsx`, not `RiskPanel.tsx` — that is why the
+  33-row assertion still passes after the panel was restructured.
+
 ## Not yet verified
 
-1. **Playwright E2E** — CI on PR #1 is the authority (local Chromium cannot fork: `spawn EPERM`).
+1. ~~**Playwright E2E**~~ — **passed in CI** (18 m 24 s). Local Chromium still cannot fork (`spawn EPERM`).
 2. **Visual review** — Chrome holds the real profile lock, so no local screenshot was possible.
    `npx vite preview --port 4192` serves the new build at `http://localhost:4192/assam-flood-dynamics/`
    for a screenshot pass once the browser is free.
