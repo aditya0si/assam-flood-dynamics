@@ -1,9 +1,10 @@
 :root {
   color-scheme: dark;
 
-  --bg: #071014;
+  --bg: #050d11;
+  --warning: #e2553d;
   --bg-deep: #040b0e;
-  --panel: #0c191f;
+  --panel: rgba(8, 20, 26, 0.94);
   --panel-2: #11242c;
   --panel-3: #162d36;
   --line: #1e3440;
@@ -17,20 +18,20 @@
   --accent: #7cc7e8;
   --accent-strong: #b6e6f8;
   --accent-wash: rgba(124, 199, 232, 0.12);
-  --amber: #f2b84b;
-  --amber-strong: #f8d488;
-  --amber-wash: rgba(242, 184, 75, 0.09);
+  --amber: #8aa2ad;
+  --amber-strong: #c2d3da;
+  --amber-wash: rgba(194, 211, 218, 0.06);
   --ok: #7fd4b0;
   --danger: #e07a63;
   --danger-wash: rgba(224, 122, 99, 0.1);
 
-  --radius-sm: 4px;
-  --radius: 9px;
-  --radius-lg: 14px;
+  --radius-sm: 2px;
+  --radius: 2px;
+  --radius-lg: 2px;
 
-  --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --mono: var(--sans);
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
-  --shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+  --shadow: none;
   --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 }

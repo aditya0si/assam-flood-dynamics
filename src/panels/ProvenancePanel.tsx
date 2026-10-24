@@ -1,6 +1,5 @@
 import type { Dataset } from '../data/types';
 import type { ProvenanceEntry } from '../data/schemas';
-import { HONESTY_CHIP } from '../data/labels';
 import { ClassBadge, DataAge } from '../shell/DataBadge';
 import styles from './panels.module.css';
 
@@ -40,10 +39,9 @@ export function ProvenancePanel({ dataset }: ProvenancePanelProps) {
           <h2 className={styles.panelTitle} tabIndex={-1}>
             Provenance
           </h2>
-          <span className={styles.notForecastSmall}>{HONESTY_CHIP}</span>
         </div>
         <p className={styles.honestyStatement}>
-          This is <strong>{HONESTY_CHIP}</strong>. It is a synthetic-monsoon, terrain-derived
+          This is a synthetic-monsoon, terrain-derived
           explanatory scenario, not an operational warning, not a record of a real event, and not a
           prediction of what will happen.
         </p>

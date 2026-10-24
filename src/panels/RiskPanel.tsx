@@ -28,36 +28,23 @@ export function RiskPanel({ risk, exposure }: RiskPanelProps) {
   const medianDepthMax = Math.max(...districts.map((district) => district.median_depth_m), 1e-9);
 
   return (
-    <div className={styles.panelBody}>
-      <div className={styles.panelIntro}>
+    <div className={`${styles.panelBody} ${styles.riskPanel}`}>
+      <header className={`${styles.panelIntro} ${styles.riskHeader}`} data-risk-header>
         <div className={styles.panelTitleRow}>
           <h2 className={styles.panelTitle} tabIndex={-1}>
             District extent and severity
           </h2>
           <span className={styles.badgePair}>
             <ClassBadge className={risk.class} />
-            <ClassBadge className={exposure.class} />
           </span>
         </div>
         <p className={styles.panelLead}>
-          {districts.length} districts ordered by the extent score. Each row shows both the
-          extent rank and the separate severity rank; click a row to focus the district.
+          {districts.length} districts ordered by the extent score. Select for inputs.
         </p>
         <p className={styles.panelAgeLine}>
           <DataAge dataAsOf={risk.data_as_of} />
-          <span> · exposure:</span>
-          <DataAge dataAsOf={exposure.data_as_of} />
         </p>
-        <p className={styles.formulaNote}>
-          <strong>Extent score</strong> = {formatPercent(risk.weights.area_share)} area share +{' '}
-          {formatPercent(risk.weights.duration)} duration. Area saturates at{' '}
-          {formatPercent(risk.reference_values.area_share_saturation)}; duration at{' '}
-          {risk.reference_values.duration_saturation_days} days. <strong>Severity index</strong>{' '}
-          = 100 × min–max of the product of district z-scores for depth &gt;1.5 m share, median
-          depth and mean duration. Extent rank orders the extent score; severity rank orders the
-          index. The two are never combined. Weights {risk.weights_version}.
-        </p>
-      </div>
+      </header>
 
       <div className={styles.riskLegend} aria-label="Risk classes">
         <span>
@@ -89,6 +76,16 @@ export function RiskPanel({ risk, exposure }: RiskPanelProps) {
           </li>
         ))}
       </ol>
+
+      <p className={styles.formulaNote} data-extent-formula>
+        <strong>Extent score</strong> = {formatPercent(risk.weights.area_share)} area share +{' '}
+        {formatPercent(risk.weights.duration)} duration. Area saturates at{' '}
+        {formatPercent(risk.reference_values.area_share_saturation)}; duration at{' '}
+        {risk.reference_values.duration_saturation_days} days. <strong>Severity index</strong>{' '}
+        = 100 × min–max of the product of district z-scores for depth &gt;1.5 m share, median
+        depth and mean duration. Extent rank orders the extent score; severity rank orders the
+        index. The two are never combined. Weights {risk.weights_version}.
+      </p>
 
       <section className={styles.methodCard} data-exposure-card="true">
         <div className={styles.panelTitleRow}>

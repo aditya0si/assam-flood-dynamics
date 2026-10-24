@@ -80,7 +80,7 @@ export function ValidationPanel({ scorecard }: ValidationPanelProps) {
             <div>
               <dt>Observed water</dt>
               <dd>
-                <ClassBadge className="observed" /> {formatArea(scene.observed_area_km2)} km²
+                {formatArea(scene.observed_area_km2)} km²
               </dd>
             </div>
             <div>

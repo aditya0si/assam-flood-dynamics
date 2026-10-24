@@ -1,5 +1,5 @@
 import type { Dataset } from '../data/types';
-import { SYNTHETIC_SERIES_NOTE } from '../data/attribution';
+import { useState } from 'react';
 import { formatArea, formatPercent, formatPhase, formatStage, formatStepCode, stepAriaText } from '../data/format';
 import { useTimelineStore } from '../state/timelineStore';
 import { ClassBadge, DataAge } from '../shell/DataBadge';
@@ -36,6 +36,7 @@ function Metric({ label, value, unit, detail }: MetricProps) {
 
 export function TimelineDock({ dataset }: TimelineDockProps) {
   usePlayback();
+  const [expanded, setExpanded] = useState(true);
   const step = useTimelineStore((state) => state.step);
   const stepCount = dataset.summary.steps.length;
   const current = dataset.summary.steps[step] ?? dataset.summary.steps[0];
@@ -47,8 +48,8 @@ export function TimelineDock({ dataset }: TimelineDockProps) {
       aria-label="Scenario timeline"
       tabIndex={0}
       data-timeline="true"
+      data-expanded={expanded}
     >
-      <div className={styles.dockMain}>
         <div className={styles.dockHeader}>
           <PlaybackControls />
 
@@ -62,10 +63,22 @@ export function TimelineDock({ dataset }: TimelineDockProps) {
             </div>
           </div>
 
-          <ClassBadge className={dataset.summary.class} />
-          <DataAge dataAsOf={dataset.summary.data_as_of} compact />
+          <div className={styles.timelineTrack}><TimelineScrubber summary={dataset.summary} /></div>
+          <button type="button" className={styles.collapseButton} aria-expanded={expanded}
+            aria-controls="timeline-analytics" onClick={() => setExpanded((value) => !value)}>
+            {expanded ? 'Hide analytics' : 'Show analytics'} <span aria-hidden="true">{expanded ? '⌄' : '⌃'}</span>
+          </button>
         </div>
-
+      <div id="timeline-analytics" role="region" aria-label="Timeline analytics" className={styles.analytics} hidden={!expanded}>
+      <div className={styles.dockMain}>
+        <div className={styles.chartPaneHead}>
+          <span className={styles.paneKicker}>Scenario snapshot</span>
+          <span className={styles.chartPaneBadges}>
+            <ClassBadge className={dataset.summary.class} />
+            <DataAge dataAsOf={dataset.summary.data_as_of} compact />
+          </span>
+        </div>
+        {step === 0 ? <p className={styles.onset} role="status">Onset — no accumulated change yet.</p> : null}
         <div className={styles.metrics}>
           <Metric label="Scenario stage" value={formatStage(current.stage_m)} unit="m" />
           <Metric label="Inundated area" value={formatArea(current.inundated_area_km2)} unit="km²" />
@@ -77,27 +90,18 @@ export function TimelineDock({ dataset }: TimelineDockProps) {
           <DepthDecileStrip step={current} />
         </div>
 
-        <TimelineScrubber summary={dataset.summary} />
+
       </div>
 
       <div className={styles.chartPane}>
-        <div className={styles.chartPaneHead}>
-          <span className={styles.paneKicker}>Timeline analytics</span>
-          <span className={styles.chartPaneBadges}>
-            <ClassBadge className={dataset.summary.series_class.rainfall} />
-            <DataAge dataAsOf={dataset.summary.data_as_of} compact />
-          </span>
-        </div>
+
         <ChartGrid
           summary={dataset.summary}
           series={dataset.series}
           rainfall={dataset.rainfall}
           forecast={dataset.rainfallForecast}
         />
-        <p className={styles.seriesNote}>
-          {SYNTHETIC_SERIES_NOTE} · area is scenario-derived. The REANALYSIS series is ERA5, never
-          observed.
-        </p>
+      </div>
       </div>
 
       <p className={styles.srOnly} aria-live="polite" aria-atomic="true">
