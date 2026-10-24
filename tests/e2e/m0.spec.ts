@@ -1,3 +1,4 @@
+import './ui-pass-1';
 import { expect, test } from '@playwright/test';
 import { decodePng, countDifferentPixels } from '../../scripts/lib/png.mjs';
 import {
@@ -214,6 +215,23 @@ test.describe('M0 acceptance', () => {
     expect(errors, `unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
 
+  test('risk rail shows five full district rows before scrolling and wraps the formula', async ({ page }) => {
+    await openApp(page);
+    const panel = page.locator('#panel-risk');
+    const rows = panel.locator('button[data-district-id]');
+    await expect(rows).toHaveCount(33);
+    expect(await panel.evaluate((node) => node.scrollTop)).toBe(0);
+    for (let index = 0; index < 5; index += 1) {
+      await expect(rows.nth(index)).toBeInViewport({ ratio: 1 });
+    }
+    const formula = panel.locator('[data-extent-formula]');
+    expect(await formula.evaluate((node) => node.scrollWidth <= node.clientWidth + 2)).toBe(true);
+    await formula.scrollIntoViewIfNeeded();
+    await expect(formula).toBeInViewport({ ratio: 1 });
+    const header = panel.locator('[data-risk-header]');
+    await expect(header).toBeInViewport({ ratio: 1 });
+  });
+
   test('risk ranking and keyboard focus path: Enter selects first row, Escape returns to tab', async ({
     page,
   }) => {
@@ -225,7 +243,8 @@ test.describe('M0 acceptance', () => {
     await expect(rows.first()).toContainText('Sivasagar');
     await expect(rows.first()).toContainText('66.8');
     await expect(rows.first()).toContainText('Very high');
-    await expect(rows.first().locator('[data-depth-share]')).toBeVisible();
+    // Inputs expand when the row is selected; the default is a scan-sized list.
+    await expect(rows.first().locator('[data-depth-share]')).toBeHidden();
     await expect(rows.first()).toContainText('Severity inputs');
     await expect(rows.first()).toHaveAttribute('data-rank', '1');
     await expect(rows.first()).toHaveAttribute('data-severity-rank', /^\d+$/);

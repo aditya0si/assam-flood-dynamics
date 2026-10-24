@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { SYNTHETIC_SERIES_NOTE } from '../data/attribution';
 import type { FloodSummary, MonsoonSeries, Rainfall, RainfallForecast } from '../data/schemas';
 import {
   formatArea,
@@ -27,8 +28,7 @@ interface ChartModel {
   color: string;
   values: number[];
   formatValue: (value: number) => string;
-  className: string;
-  dataAsOf: string;
+
   fill: boolean;
   threshold?: number;
   thresholdLabel?: string;
@@ -115,19 +115,15 @@ export function ChartGrid({ summary, series, rainfall, forecast }: ChartGridProp
         color: '#7cc7e8',
         values: summary.steps.map((entry) => entry.inundated_area_km2),
         formatValue: formatArea,
-        className: summary.class,
-        dataAsOf: summary.data_as_of,
         fill: true,
       },
       {
         id: 'stage',
         label: 'Scenario stage above local drainage',
         unit: 'm',
-        color: '#f2b84b',
+        color: '#b8cbd3',
         values: summary.steps.map((entry) => entry.stage_m),
         formatValue: formatStage,
-        className: summary.class,
-        dataAsOf: summary.data_as_of,
         fill: false,
         threshold: series.threshold.value,
         thresholdLabel: `threshold ${formatStage(series.threshold.value)} m`,
@@ -139,8 +135,7 @@ export function ChartGrid({ summary, series, rainfall, forecast }: ChartGridProp
         color: '#7fd4b0',
         values: xs.map((stepIndex) => rainfallByStep.get(stepIndex) ?? 0),
         formatValue: formatMmDay,
-        className: rainfallSeries?.class ?? 'scenario',
-        dataAsOf: rainfallSeries?.data_as_of ?? summary.data_as_of,
+
         fill: true,
       },
     ];
@@ -158,6 +153,13 @@ export function ChartGrid({ summary, series, rainfall, forecast }: ChartGridProp
 
   return (
     <div className={styles.chartGrid} aria-label="Three synced scenario charts" data-rainfall-chart="true">
+      <div className={styles.chartPaneHead}>
+        <span className={styles.paneKicker}>Timeline analytics</span>
+        <span className={styles.chartPaneBadges}>
+          <ClassBadge className={summary.series_class.rainfall} />
+          <DataAge dataAsOf={summary.data_as_of} compact />
+        </span>
+      </div>
       <div className={styles.seriesLegend}>
         {models.map((model) => (
           <span key={model.id} className={styles.seriesKey} data-series-id={model.id}>
@@ -169,13 +171,11 @@ export function ChartGrid({ summary, series, rainfall, forecast }: ChartGridProp
       </div>
 
       <div className={styles.chartList}>
-        {models.map((model, index) => (
+        {models.map((model) => (
           <section key={model.id} className={styles.chartRow} data-chart-id={model.id}>
             <div className={styles.chartRowHead}>
               <span className={styles.chartRowTitle}>{model.label}</span>
               <span className={styles.chartRowMeta}>
-                <ClassBadge className={model.className} />
-                <DataAge dataAsOf={model.dataAsOf} compact />
                 <span className={styles.chartRowValue}>{currentValues[model.id]}</span>
                 <span className={styles.chartMuted}>{model.unit}</span>
               </span>
@@ -189,17 +189,20 @@ export function ChartGrid({ summary, series, rainfall, forecast }: ChartGridProp
               unit={model.unit}
               formatValue={model.formatValue}
               fill={model.fill}
-              showXLabels={index === models.length - 1}
+              showXLabels
               syncKey={SYNC_KEY}
               threshold={model.threshold}
               thresholdLabel={model.thresholdLabel}
-              height={34}
+              height={76}
             />
           </section>
         ))}
       </div>
 
       <RainfallContext rainfall={rainfall} forecast={forecast} />
+      <p className={styles.seriesNote}>
+        {SYNTHETIC_SERIES_NOTE} · area is scenario-derived. The REANALYSIS series is ERA5, never observed.
+      </p>
 
       <table className={styles.srOnly}>
         <caption>Rainfall, scenario stage, inundated area and depth deciles by step</caption>

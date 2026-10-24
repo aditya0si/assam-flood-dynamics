@@ -560,11 +560,25 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
         />
       )}
 
-      <div className={styles.legend} aria-label="Scenario flood depth classes" data-map-legend="true">
-        <div className={styles.legendHead}>
-          <span>Scenario depth</span>
-          <ClassBadge className={dataset.frameIndex.class} />
-        </div>
+      <details className={styles.legend} aria-label="Scenario flood depth classes" data-map-legend="true">
+        <summary className={styles.legendToggle}>
+          <span className={styles.legendHead}>
+            <span>Depth · m</span>
+            <ClassBadge className={dataset.frameIndex.class} />
+            <span className={styles.legendChevron} aria-hidden="true">+</span>
+          </span>
+          <DataAge className={styles.legendAge} dataAsOf={dataset.frameIndex.data_as_of} compact />
+          <span className={styles.legendRamp} aria-hidden="true">
+            {depthClasses.map((entry) => (
+              <span key={entry.id} style={{ backgroundColor: depthPresentationColor(entry.id, entry.color) }} />
+            ))}
+          </span>
+          <span className={styles.legendRange}>
+            <span>{depthClasses[0]?.label} m</span>
+            <span>{floodVisible ? 'Depth key' : 'Layer hidden'}</span>
+            <span>{depthClasses.at(-1)?.label} m</span>
+          </span>
+        </summary>
         <ul className={styles.legendList} data-flood-visible={floodVisible ? 'true' : 'false'}>
           {depthClasses.map((entry) => (
             <li key={entry.id} className={styles.legendItem}>
@@ -572,7 +586,7 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
                 className={styles.swatch}
                 style={{
                   backgroundColor: depthPresentationColor(entry.id, entry.color),
-                  opacity: floodVisible ? Math.max(0.55, entry.alpha / 255) : 0.35,
+                  opacity: floodVisible ? 1 : 0.35,
                 }}
               />
               <span>{`${entry.label} m`}</span>
@@ -580,7 +594,6 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
           ))}
         </ul>
         <p className={styles.legendMeta}>
-          <DataAge dataAsOf={dataset.summary.data_as_of} compact /> ·{' '}
           {floodVisible
             ? `${frameWidth} × ${frameHeight} px · ${formatStage(frameResolution)} m/px · classes from frame-index.json`
             : 'Flood extent hidden in Layers; depth classes still from frame-index.json.'}
@@ -589,7 +602,7 @@ export function MapCanvas({ dataset }: MapCanvasProps) {
           District markers: <strong>#1 · 66.8</strong> = rank · district risk score 0–100; rank
           matches the Risk panel.
         </p>
-      </div>
+      </details>
 
       {showHealthChip ? (
         <div

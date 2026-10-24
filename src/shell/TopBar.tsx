@@ -26,7 +26,7 @@ function FloodMark() {
         strokeWidth="4"
         strokeLinecap="round"
       />
-      <path d="M32 9v22M21 31h22" stroke="#f2b84b" strokeWidth="3" strokeLinecap="round" />
+      <path d="M32 9v22M21 31h22" stroke="#c2d3da" strokeWidth="3" strokeLinecap="round" />
     </svg>
   );
 }
@@ -42,7 +42,7 @@ export function TopBar({ dataset }: TopBarProps) {
       <div className={styles.brand}>
         <FloodMark />
         <div className={styles.brandText}>
-          <span className={styles.brandName}>Baanh</span>
+          <h1 className={styles.brandName}>Baanh</h1>
           <span className={styles.brandSub}>Assam Flood Dynamics</span>
         </div>
       </div>
