@@ -144,9 +144,10 @@ export function buildMapStyle(dataset: Dataset): StyleSpecification {
         'raster-opacity': 0,
         'raster-opacity-transition': { duration: 0 },
         'raster-fade-duration': 0,
-        'raster-saturation': 0.1,
-        'raster-contrast': 0.08,
-        'raster-resampling': 'linear',
+        // Keep the shared categorical ramp intact; no extra colour grading.
+        'raster-saturation': 0,
+        'raster-contrast': 0,
+        'raster-resampling': 'nearest',
       },
     },
     {
@@ -157,9 +158,10 @@ export function buildMapStyle(dataset: Dataset): StyleSpecification {
         'raster-opacity': FLOOD_OPACITY,
         'raster-opacity-transition': { duration: 0 },
         'raster-fade-duration': 0,
-        'raster-saturation': 0.1,
-        'raster-contrast': 0.08,
-        'raster-resampling': 'linear',
+        // Keep the shared categorical ramp intact; no extra colour grading.
+        'raster-saturation': 0,
+        'raster-contrast': 0,
+        'raster-resampling': 'nearest',
       },
     },
     {

@@ -4,12 +4,15 @@
   min-height: 0;
   height: 100%;
   border-left: 1px solid var(--line-strong);
-  background:
-    linear-gradient(180deg, rgba(18, 38, 47, 0.72) 0%, rgba(7, 16, 20, 0.95) 46%),
-    rgba(7, 16, 20, 0.94);
-  backdrop-filter: blur(10px);
-  box-shadow: -18px 0 42px rgba(0, 0, 0, 0.24);
+  background: var(--panel);
 }
+
+.railContent { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.railContent[hidden] { display: none; }
+.railControls { display: flex; gap: 4px; }
+.railControls button { width: 30px; height: 30px; padding: 0; border: 1px solid var(--line-strong); border-radius: 2px; background: transparent; color: var(--accent); cursor: pointer; font-size: 20px; }
+.rail[data-rail-size="collapsed"] .railTitleBlock { display: none; }
+.rail[data-rail-size="collapsed"] .railHead { padding: 6px; }
 
 .railHead {
   display: flex;
@@ -32,7 +35,8 @@
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.16em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--accent);
 }
 
@@ -46,15 +50,16 @@
 .notForecastSmall {
   flex-shrink: 0;
   padding: 3px 6px;
-  border: 1px solid rgba(242, 184, 75, 0.45);
-  border-radius: 3px;
+  border: 1px solid rgba(194, 211, 218, 0.45);
+  border-radius: 2px;
   background: var(--amber-wash);
   color: var(--amber-strong);
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   white-space: nowrap;
 }
 
@@ -67,6 +72,10 @@
 }
 
 .tab {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
   min-width: 0;
   height: 35px;
   padding: 0 3px;
@@ -76,9 +85,10 @@
   background: transparent;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -99,10 +109,55 @@
 }
 
 .panelRouter {
+  display: flex;
+  flex-direction: column;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   scrollbar-gutter: stable;
+}
+
+.panelRouter > .panelBody {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.riskPanel {
+  padding-top: 0;
+}
+
+.riskHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 0;
+  background: #0b191f;
+}
+
+.riskPanel .riskRow {
+  padding: 3px 6px;
+  line-height: 1.2;
+}
+
+/* Keep the ranking scan-sized; selecting a district reveals its inputs. */
+.riskRow:not(.riskRowSelected) .driverGrid,
+.riskRow:not(.riskRowSelected) .depthContext {
+  display: none;
+}
+
+.riskPanel .riskRanks {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+.riskPanel .riskRow {
+  grid-template-columns: 82px minmax(0, 1fr);
+}
+
+.riskPanel .riskScoreLabel {
+  display: none;
 }
 
 .panelBody {
@@ -141,14 +196,14 @@
   gap: 3px 5px;
   margin: 0;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.35;
   color: var(--faint);
 }
 
 .panelTitle {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.015em;
   outline: none;
@@ -159,19 +214,20 @@
   align-items: center;
   padding: 2px 5px;
   border: 1px solid rgba(124, 199, 232, 0.35);
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--accent-wash);
   color: var(--accent-strong);
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   white-space: nowrap;
 }
 
 .panelLead {
   margin: 0;
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--muted);
 }
@@ -186,10 +242,12 @@
 }
 
 .formulaNote {
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0;
   padding: 6px 8px;
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: 2px;
   background: rgba(17, 36, 44, 0.42);
   font-family: var(--mono);
   font-size: 11px;
@@ -235,7 +293,7 @@
   width: 100%;
   padding: 7px 8px 7px 6px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 2px;
   background: rgba(17, 36, 44, 0.36);
   color: var(--text-soft);
   text-align: left;
@@ -248,8 +306,8 @@
 }
 
 .riskRowSelected {
-  border-color: rgba(242, 184, 75, 0.62);
-  background: rgba(242, 184, 75, 0.07);
+  border-color: rgba(194, 211, 218, 0.62);
+  background: rgba(194, 211, 218, 0.07);
 }
 
 .riskRanks {
@@ -275,9 +333,10 @@
 .riskRank em,
 .riskRankSeverity em {
   font-style: normal;
-  font-size: 8px;
+  font-size: 11px;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--faint);
 }
 
@@ -307,7 +366,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 640;
   color: var(--text);
 }
@@ -322,26 +381,27 @@
 
 .riskScore {
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 20px;
   font-weight: 620;
-  color: var(--amber-strong);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
 .riskScoreLabel {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--faint);
 }
 
 .riskCoverageBadge {
   padding: 1px 4px;
-  border: 1px solid rgba(242, 184, 75, 0.34);
+  border: 1px solid rgba(194, 211, 218, 0.34);
   border-radius: 2px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 560;
   color: var(--amber-strong);
   white-space: nowrap;
@@ -369,7 +429,7 @@
 
 .riskCoverageNote {
   color: var(--amber-strong);
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .driverGrid {
@@ -386,7 +446,7 @@
   min-width: 0;
   padding: 3px 4px;
   border: 1px solid rgba(30, 52, 64, 0.74);
-  border-radius: 3px;
+  border-radius: 2px;
   background: rgba(7, 16, 20, 0.28);
 }
 
@@ -422,9 +482,10 @@
 
 .depthContextLabel {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--faint);
 }
 
@@ -434,7 +495,7 @@
   align-items: center;
   gap: 5px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -484,10 +545,10 @@
   gap: 3px 10px;
   padding: 6px 8px;
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: 2px;
   background: rgba(17, 36, 44, 0.42);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -507,7 +568,7 @@
 .validationMeta {
   margin: 0;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.4;
   color: var(--faint);
 }
@@ -525,22 +586,23 @@
   gap: 0;
   padding: 3px 4px;
   border: 1px solid rgba(30, 52, 64, 0.74);
-  border-radius: 3px;
+  border-radius: 2px;
   background: rgba(7, 16, 20, 0.28);
 }
 
 .validationGrid dt {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--faint);
 }
 
 .validationGrid dd {
   margin: 0;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.35;
   color: var(--text-soft);
 }
@@ -549,16 +611,17 @@
   width: 100%;
   border-collapse: collapse;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
 }
 
 .validationTable caption {
   padding-top: 2px;
   text-align: left;
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--faint);
 }
 
@@ -587,7 +650,7 @@
   gap: 4px;
   padding: 8px 9px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 2px;
   background: rgba(17, 36, 44, 0.34);
 }
 
@@ -599,7 +662,7 @@
 
 .provenanceTitle {
   margin: 0;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 620;
   line-height: 1.3;
   color: var(--text-soft);
@@ -623,7 +686,8 @@
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.09em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--faint);
 }
 
@@ -692,7 +756,8 @@
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--text-soft);
 }
 
@@ -717,7 +782,7 @@
   gap: 6px;
   padding: 9px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 2px;
   background: rgba(17, 36, 44, 0.34);
 }
 
@@ -738,7 +803,7 @@
 }
 
 .biasCard {
-  border-color: rgba(242, 184, 75, 0.34);
+  border-color: rgba(194, 211, 218, 0.34);
   background: var(--amber-wash);
 }
 
@@ -748,7 +813,7 @@
 
 .quote {
   padding-left: 8px;
-  border-left: 2px solid rgba(242, 184, 75, 0.4);
+  border-left: 2px solid rgba(194, 211, 218, 0.4);
   color: var(--amber-strong) !important;
   font-style: italic;
 }
@@ -771,7 +836,8 @@
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--faint);
 }
 
@@ -807,7 +873,7 @@
   gap: 5px;
   padding: 8px 9px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 2px;
   background: rgba(17, 36, 44, 0.42);
 }
 
@@ -817,20 +883,21 @@
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: 2px;
   background: rgba(7, 16, 20, 0.5);
 }
 
 .segment {
   height: 27px;
   border: 0;
-  border-radius: 3px;
+  border-radius: 2px;
   background: transparent;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   cursor: pointer;
 }
 
@@ -863,7 +930,7 @@
   gap: 4px;
   padding: 8px 9px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 2px;
   background: rgba(17, 36, 44, 0.34);
 }
 
@@ -976,7 +1043,7 @@
 }
 
 .exposureTotal span {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
   color: var(--faint);
 }
@@ -988,7 +1055,7 @@
   padding: 0;
   list-style: none;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -1010,7 +1077,7 @@
 .exposureMethod,
 .exposureCaveat {
   margin: 0;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.4;
   color: var(--muted);
 }
@@ -1037,7 +1104,8 @@
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--faint);
 }
 
@@ -1083,7 +1151,8 @@
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
   cursor: pointer;
 }
 
@@ -1091,6 +1160,15 @@
   border-color: var(--line-strong);
   color: var(--text);
 }
+
+/* Report prose is body text, distinct from compact source metadata. */
+.panelFoot, .formulaNote, .honestyStatement, .methodCard p,
+.assumptionList, .definitionList dd, .classList li, .provenanceDetails,
+.modeNote, .layerFoot p, .exposureMethod, .exposureCaveat { font-size: 13px; }
+.subTitle { font-size: 15px; overflow-wrap: anywhere; }
+.exposureTotal, .methodCard .exposureTotal { font-size: 34px; }
+.validationGrid dd { font-size: 13px; }
+.validationWorst { white-space: normal; overflow-wrap: anywhere; }
 
 @media (max-width: 1180px) {
   .railHead {

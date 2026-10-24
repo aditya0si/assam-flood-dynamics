@@ -51,7 +51,7 @@ export function TelemetryChart({
     const labels = xs.map((value) => formatStepCode(value));
 
     const makePlayhead = (plot: uPlot) => {
-      const x = plot.valToPos(stepRef.current, 'x');
+      const x = plot.valToPos(stepRef.current, 'x') + plot.over.offsetLeft;
       if (!Number.isFinite(x) || plot.width <= 0) {
         setPlayheadPercent(0);
         return;
@@ -61,9 +61,9 @@ export function TelemetryChart({
 
     const plot = new uPlot(
       {
-        width: Math.max(260, host.clientWidth),
+        width: Math.max(100, host.clientWidth),
         height,
-        padding: [4, 4, 0, 0],
+        padding: [10, 16, 0, 0],
         legend: { show: false },
         cursor: {
           show: true,
@@ -77,11 +77,11 @@ export function TelemetryChart({
           draw: [
             (self) => {
               if (threshold === undefined) return;
-              const y = self.valToPos(threshold, 'y');
+              const y = self.valToPos(threshold, 'y', true);
               if (!Number.isFinite(y)) return;
               const { ctx } = self;
               ctx.save();
-              ctx.strokeStyle = 'rgba(242, 184, 75, 0.55)';
+              ctx.strokeStyle = 'rgba(184, 203, 211, 0.65)';
               ctx.lineWidth = 1;
               ctx.setLineDash([3, 3]);
               ctx.beginPath();
@@ -99,10 +99,11 @@ export function TelemetryChart({
         axes: [
           {
             stroke: '#849ca6',
-            font: '11px ui-monospace, "Cascadia Mono", Consolas, monospace',
+            font: `11px ${getComputedStyle(host).getPropertyValue('--sans').trim() || 'sans-serif'}`,
             ticks: { show: true, stroke: '#27414c', width: 1, size: 3 },
             grid: { show: false },
-            size: 18,
+            size: 20,
+            space: 48,
             values: (_u, splits) =>
               splits.map((value) => {
                 const index = Math.round(value);
@@ -114,7 +115,7 @@ export function TelemetryChart({
           },
           {
             stroke: '#849ca6',
-            font: '11px ui-monospace, "Cascadia Mono", Consolas, monospace',
+            font: `11px ${getComputedStyle(host).getPropertyValue('--sans').trim() || 'sans-serif'}`,
             ticks: { show: false },
             grid: { stroke: '#1e3440', width: 1 },
             size: 46,
@@ -185,7 +186,7 @@ export function TelemetryChart({
 
   return (
     <div className={styles.chartStack}>
-      <div ref={hostRef} className={styles.chartHost} aria-hidden="true" />
+      <div ref={hostRef} className={styles.chartHost} style={{ height }} aria-hidden="true" />
       {threshold !== undefined ? (
         <span className={styles.thresholdKey} aria-hidden="true">
           {thresholdLabel ?? `threshold ${formatValue(threshold)} ${unit}`}

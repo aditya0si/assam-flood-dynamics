@@ -1,20 +1,16 @@
 import type { FrameIndex } from '../data/schemas';
 
 /**
- * B4 depth ramp: shallow cyan -> teal -> indigo -> blue. The committed PNG
- * bakes four blues into its pixels, so the controller recolours each decoded
- * frame at runtime. This is a presentation transform: class ids, extents and
- * depths are untouched, and public/data is never rewritten.
- *
- * B8: the deepest band moved from violet to blue. Violet sat in the same
- * magenta family as the very_high risk class (#d95f9b), so one hue carried two
- * meanings; blue is reserved for scenario depth only.
+ * Shared, ordered depth presentation: pale cyan to deep indigo.
+ * The committed PNG encodes the frame-index source colours, not this ramp.
+ * Recolour decoded pixels at runtime; never change class ids, bounds, alpha,
+ * depths or public/data. Map paint must not add saturation/contrast to this ramp.
  */
-export const DEPTH_PRESENTATION: Record<number, { color: string; name: string }> = {
-  1: { color: '#49d6e8', name: 'Cyan' },
-  2: { color: '#23b39f', name: 'Teal' },
-  3: { color: '#5c63d8', name: 'Indigo' },
-  4: { color: '#2f63e6', name: 'Blue' },
+export const DEPTH_PRESENTATION: Readonly<Record<number, { readonly color: string; readonly name: string }>> = {
+  1: { color: '#d6f2fb', name: 'Pale cyan' },
+  2: { color: '#8fcce3', name: 'Cyan' },
+  3: { color: '#5288bd', name: 'Blue' },
+  4: { color: '#343d7e', name: 'Deep indigo' },
 };
 
 export function depthPresentationColor(classId: number, fallback: string): string {
@@ -36,7 +32,7 @@ function parseHex(hex: string): [number, number, number] | null {
 }
 
 /**
- * Return a data URL with each committed class colour swapped for its B4 ramp
+ * Return a data URL with each committed class colour swapped for its shared ramp
  * colour. Returns null when the frame has no mapped wet pixels, so callers can
  * safely fall back to the committed image URL.
  */
